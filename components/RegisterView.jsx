@@ -334,40 +334,6 @@ export default function RegisterView({
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]"
-        >
-          <div className="min-w-0">
-            <BrandMark />
-            <h1 className="mt-2 font-display text-2xl text-ink sm:text-3xl">Employee registration</h1>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-                onClick={onBack}
-                type="button"
-              >
-                Back to kiosk
-              </button>
-              <button
-                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-                onClick={() => setShowRoster(current => !current)}
-                type="button"
-                disabled={!showRosterTools}
-              >
-                {showRoster ? 'Hide roster' : 'Show roster'}
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <CompactMetric label="Current step" value={STEPS[stepIndex]?.title} detail={statusMsg} />
-            <CompactMetric label="Roster" value={`${persons.length} enrolled`} detail={dataStatus} />
-          </div>
-        </motion.section>
-
-        <motion.section
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 18 }}
-          transition={{ duration: 0.38, ease: 'easeOut', delay: 0.05 }}
           className="rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
         >
           <div className="grid gap-2 lg:grid-cols-4">
@@ -704,15 +670,5 @@ function InfoCard({ title, text, tone = 'default' }) {
       <h3 className="text-sm font-semibold uppercase tracking-[0.14em]">{title}</h3>
       <p className="mt-2 text-sm leading-7">{text}</p>
     </section>
-  )
-}
-
-function CompactMetric({ label, value, detail }) {
-  return (
-    <div className="rounded-[1.2rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/90 to-accent/10 p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{label}</div>
-      <div className="mt-2 text-sm font-semibold text-ink">{value}</div>
-      <div className="mt-1 text-xs text-muted">{detail}</div>
-    </div>
   )
 }
