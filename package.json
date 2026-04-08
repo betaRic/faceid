@@ -9,6 +9,8 @@
     "check:env": "node scripts/check-env.mjs"
   },
   "dependencies": {
+    "@vercel/analytics": "^1.5.0",
+    "@vercel/speed-insights": "^1.2.0",
     "@vladmandic/face-api": "^1.7.13",
     "autoprefixer": "^10.4.20",
     "firebase": "^12.11.0",
