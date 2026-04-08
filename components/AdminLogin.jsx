@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import BrandMark from './BrandMark'
 
 export default function AdminLogin() {
   const router = useRouter()
@@ -47,9 +48,7 @@ export default function AdminLogin() {
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
-            <span className="inline-flex rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
-              Secure Admin Entry
-            </span>
+            <BrandMark />
             <h1 className="mt-4 font-display text-4xl leading-none text-ink sm:text-5xl">
               Admin access should be server-validated, not hidden by client state.
             </h1>

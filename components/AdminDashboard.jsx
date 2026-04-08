@@ -7,6 +7,7 @@ import { buildAttendanceSummary } from '../lib/attendance-summary'
 import { subscribeToAttendance, subscribeToPersons, updatePersonRecord } from '../lib/data-store'
 import { firebaseEnabled } from '../lib/firebase'
 import { saveOfficeConfig, subscribeToOfficeConfigs } from '../lib/office-admin-store'
+import BrandMark from './BrandMark'
 
 const dayOptions = [
   { value: 1, label: 'Mon' },
@@ -242,9 +243,7 @@ export default function AdminDashboard() {
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
-            <span className="inline-flex rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
-              Admin Console
-            </span>
+            <BrandMark />
             <h1 className="mt-4 font-display text-4xl leading-none text-ink sm:text-5xl">
               Office setup should be centralized, simple, and hard to misuse.
             </h1>

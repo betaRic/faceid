@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
+import BrandMark from './BrandMark'
 
 const entryCards = [
   {
@@ -42,9 +43,7 @@ export default function PlatformNavigator() {
             initial={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.45, ease: 'easeOut' }}
           >
-            <span className="inline-flex rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
-              DILG Region XII
-            </span>
+            <BrandMark />
             <h1 className="mt-4 max-w-4xl font-display text-4xl leading-none text-ink sm:text-5xl lg:text-6xl">
               A cleaner entry point for kiosk, registration, and secure admin workflows.
             </h1>

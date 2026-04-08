@@ -12,7 +12,9 @@ import {
   UNKNOWN_DEBOUNCE_MS,
 } from '../lib/config'
 import { analyzeLiveness, isLivenessChallengePassed, pickLivenessChallenge } from '../lib/liveness'
-import { calculateDistanceMeters, getOfficeById, isOfficeWfhDay } from '../lib/offices'
+import { evaluateDetectionQuality } from '../lib/biometric-quality'
+import BrandMark from './BrandMark'
+import { useAudioCue } from '../hooks/useAudioCue'
 
 const pad = value => String(value).padStart(2, '0')
 
@@ -99,6 +101,7 @@ export default function KioskView({
   const [flashKey, setFlashKey] = useState(0)
   const [livenessChallenge, setLivenessChallenge] = useState(() => pickLivenessChallenge())
   const [livenessPassed, setLivenessPassed] = useState(false)
+  const playAudioCue = useAudioCue()
 
   const scanRef = useRef(null)
   const busyRef = useRef(false)
@@ -108,6 +111,7 @@ export default function KioskView({
   const confirmedTimer = useRef(null)
   const unknownTimer = useRef(null)
   const smoothConfidenceRef = useRef({})
+  const previousStateRef = useRef('idle')
 
   const stopLoop = useCallback(() => {
     if (scanRef.current) {
@@ -132,11 +136,6 @@ export default function KioskView({
     const interval = window.setInterval(tick, 1000)
     return () => window.clearInterval(interval)
   }, [])
-
-  useEffect(() => {
-    camera.start().then(() => startLoop())
-    return () => stopLoop()
-  }, [camera, startLoop, stopLoop])
 
   useEffect(() => {
     const activePersons = persons.filter(person => person.active !== false)
@@ -169,58 +168,6 @@ export default function KioskView({
     })
   }, [camera])
 
-  const validateAttendance = useCallback(async matchedPerson => {
-    const office = getOfficeById(matchedPerson.officeId) || offices.find(item => item.id === matchedPerson.officeId) || null
-    const officeWfhToday = isOfficeWfhDay(office)
-
-    if (officeWfhToday) {
-      return {
-        allowed: true,
-        attendanceMode: 'WFH',
-        geofenceStatus: 'WFH office day',
-        office,
-        distanceMeters: null,
-        coordinates: null,
-      }
-    }
-
-    const position = await getCurrentPosition()
-    const coordinates = {
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude,
-    }
-
-    if (!office?.gps) {
-      return {
-        allowed: false,
-        reason: 'Assigned office has no GPS coordinates configured',
-        office,
-      }
-    }
-
-    const distanceMeters = calculateDistanceMeters(coordinates, office.gps)
-    const withinRadius = distanceMeters <= office.gps.radiusMeters
-
-    if (!withinRadius) {
-      return {
-        allowed: false,
-        reason: `Outside ${office.name} geofence`,
-        office,
-        distanceMeters,
-        coordinates,
-      }
-    }
-
-    return {
-      allowed: true,
-      attendanceMode: 'On-site',
-      geofenceStatus: `Inside office radius (${Math.round(distanceMeters)}m)`,
-      office,
-      distanceMeters,
-      coordinates,
-    }
-  }, [offices])
-
   const runScan = useCallback(async () => {
     if (busyRef.current || !camera.camOn || !modelsReady) return
 
@@ -249,6 +196,18 @@ export default function KioskView({
       unknownTimer.current = null
 
       const primaryDetection = detections[0]
+      const primaryQuality = evaluateDetectionQuality(primaryDetection, canvas.width, canvas.height)
+      if (!primaryQuality.ok) {
+        setKioskState('idle')
+        setCurrentMatch({
+          name: 'Face quality too weak',
+          confidence: 0,
+          detail: primaryQuality.reason,
+        })
+        busyRef.current = false
+        return
+      }
+
       const liveness = analyzeLiveness(primaryDetection)
       const passedChallenge = isLivenessChallengePassed(livenessChallenge.id, liveness)
 
@@ -269,6 +228,8 @@ export default function KioskView({
 
       let bestMatch = null
       const matched = await Promise.all(detections.map(async detection => {
+        const quality = evaluateDetectionQuality(detection, canvas.width, canvas.height)
+        if (!quality.ok) return { identified: false, distance: null }
         const match = await matchDescriptor(matcherRef.current, detection.descriptor)
         if (match?.identified && match.confidence >= CONFIDENCE_MIN) {
           if (!bestMatch || match.confidence > bestMatch.confidence) bestMatch = match
@@ -279,6 +240,18 @@ export default function KioskView({
       drawOverlay(detections, matched)
 
       if (!bestMatch) {
+        const ambiguousMatch = matched.find(match => match?.ambiguous)
+        if (ambiguousMatch) {
+          setKioskState('blocked')
+          setCurrentMatch({
+            name: 'Ambiguous match',
+            confidence: ambiguousMatch.confidence || 0,
+            detail: `Too close to ${ambiguousMatch.name} and ${ambiguousMatch.runnerUpName}. Rescan in better lighting.`,
+          })
+          busyRef.current = false
+          return
+        }
+
         if (!confirmedTimer.current && !unknownTimer.current) {
           unknownTimer.current = window.setTimeout(() => {
             setKioskState('unknown')
@@ -292,7 +265,9 @@ export default function KioskView({
         return
       }
 
-      const matchedPerson = persons.find(person => person.name === bestMatch.name && person.active !== false)
+      const matchedPerson = persons.find(
+        person => (person.employeeId || person.id) === bestMatch.key && person.active !== false,
+      )
       if (!matchedPerson) {
         setKioskState('blocked')
         setCurrentMatch({
@@ -319,45 +294,47 @@ export default function KioskView({
         const lastLog = cooldownRef.current[name] || 0
 
         if (now - lastLog > COOLDOWN_MS) {
-          const validation = await validateAttendance(matchedPerson)
-
-          if (!validation.allowed) {
-            setKioskState('blocked')
-            setCurrentMatch({
-              name,
-              confidence: smoothed,
-              officeName: matchedPerson.officeName,
-              detail: validation.reason,
-            })
-            confirmRef.current = { name: null, count: 0 }
-            busyRef.current = false
-            return
-          }
+          const position = await getCurrentPosition().catch(() => null)
+          const coordinates = position
+            ? {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+              }
+            : null
 
           cooldownRef.current[name] = now
 
-          await onLogAttendance({
+          const result = await onLogAttendance({
             id: `${now}_${name}`,
             name,
-            employeeId: matchedPerson.employeeId,
-            officeId: matchedPerson.officeId,
-            officeName: matchedPerson.officeName,
-            attendanceMode: validation.attendanceMode,
-            geofenceStatus: validation.geofenceStatus,
+            employeeId: '',
+            officeId: '',
+            officeName: '',
+            attendanceMode: '',
+            geofenceStatus: '',
             confidence: smoothed,
             timestamp: now,
             date: new Date(now).toLocaleDateString('en-PH'),
             time: formatTime(now),
-            latitude: validation.coordinates?.latitude ?? null,
-            longitude: validation.coordinates?.longitude ?? null,
+            latitude: coordinates?.latitude ?? null,
+            longitude: coordinates?.longitude ?? null,
+            descriptor: Array.from(primaryDetection.descriptor),
           })
+
+          const acceptedEntry = result.entry || {
+            name,
+            officeName: matchedPerson.officeName,
+            attendanceMode: matchedPerson.attendanceMode,
+            geofenceStatus: matchedPerson.geofenceStatus,
+            confidence: smoothed,
+          }
 
           setFlashKey(value => value + 1)
           setCurrentMatch({
-            name,
-            confidence: smoothed,
-            officeName: matchedPerson.officeName,
-            detail: `${validation.attendanceMode} • ${validation.geofenceStatus}`,
+            name: acceptedEntry.name,
+            confidence: acceptedEntry.confidence ?? smoothed,
+            officeName: acceptedEntry.officeName,
+            detail: `${acceptedEntry.attendanceMode} • ${acceptedEntry.geofenceStatus}`,
           })
         }
 
@@ -383,7 +360,7 @@ export default function KioskView({
     }
 
     busyRef.current = false
-  }, [camera, drawOverlay, livenessChallenge.id, livenessPassed, modelsReady, offices, onLogAttendance, persons, resetLiveness, validateAttendance])
+  }, [camera, drawOverlay, livenessChallenge.id, livenessPassed, modelsReady, onLogAttendance, persons, resetLiveness])
 
   const startLoop = useCallback(() => {
     if (scanRef.current) return
@@ -391,11 +368,28 @@ export default function KioskView({
   }, [runScan])
 
   useEffect(() => {
+    camera.start().then(() => startLoop())
+    return () => stopLoop()
+  }, [camera, startLoop, stopLoop])
+
+  useEffect(() => {
     if (!modelsReady) return
     stopLoop()
     startLoop()
     return stopLoop
   }, [modelsReady, startLoop, stopLoop])
+
+  useEffect(() => {
+    const previous = previousStateRef.current
+    if (previous === kioskState) return
+
+    if (kioskState === 'confirmed') playAudioCue('success')
+    if ((kioskState === 'blocked' || kioskState === 'unknown') && previous !== 'blocked' && previous !== 'unknown') {
+      playAudioCue('notify')
+    }
+
+    previousStateRef.current = kioskState
+  }, [kioskState, playAudioCue])
 
   const today = new Date().toLocaleDateString('en-PH')
   const todayLog = attendance.filter(entry => entry.date === today)
@@ -472,9 +466,7 @@ export default function KioskView({
           className="flex min-w-0 flex-col gap-4"
         >
           <section className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
-            <div className="inline-flex rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
-              DILG Region XII
-            </div>
+            <BrandMark compact />
             <h1 className="mt-4 font-display text-3xl leading-tight text-ink">GPS Face Attendance</h1>
             <p className="mt-2 text-sm leading-7 text-muted">Shared office scanning for assigned employees only.</p>
 

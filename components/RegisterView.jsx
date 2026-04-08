@@ -1,12 +1,22 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { detectSingleDescriptor } from '../lib/face-api'
 import { FACE_COLORS } from '../lib/config'
 import { analyzeLiveness, isLivenessChallengePassed, pickLivenessChallenge } from '../lib/liveness'
+import { evaluateDetectionQuality } from '../lib/biometric-quality'
+import BrandMark from './BrandMark'
+import { useAudioCue } from '../hooks/useAudioCue'
 
 const MIN_SAMPLES = 3
+
+const STEPS = [
+  { id: 'capture', number: '1', title: 'Capture face', description: 'Use automatic face capture with liveness confirmation.' },
+  { id: 'review', number: '2', title: 'Review photo', description: 'Retake the image if the preview is unclear.' },
+  { id: 'details', number: '3', title: 'Employee details', description: 'Enter employee ID, name, and assigned office.' },
+  { id: 'complete', number: '4', title: 'Enrollment saved', description: 'Continue with another sample or a new employee.' },
+]
 
 export default function RegisterView({
   camera,
@@ -29,12 +39,21 @@ export default function RegisterView({
   const [toast, setToast] = useState(null)
   const [livenessChallenge, setLivenessChallenge] = useState(() => pickLivenessChallenge())
   const [livenessPassed, setLivenessPassed] = useState(false)
+  const [step, setStep] = useState('capture')
+  const [lastSavedSummary, setLastSavedSummary] = useState(null)
+  const [showRoster, setShowRoster] = useState(false)
+  const playAudioCue = useAudioCue()
 
   const autoRef = useRef(null)
   const nameRef = useRef(null)
   const busyRef = useRef(false)
 
   const selectedOffice = offices.find(office => office.id === officeId) || null
+  const existingPerson = useMemo(
+    () => persons.find(person => person.employeeId === employeeId.trim()),
+    [employeeId, persons],
+  )
+  const existingSamples = existingPerson?.descriptors.length ?? 0
 
   const showToast = useCallback((message, duration = 3500) => {
     setToast(message)
@@ -99,16 +118,25 @@ export default function RegisterView({
       return
     }
 
+    const quality = evaluateDetectionQuality(faceResult, canvas.width, canvas.height)
+    if (!quality.ok) {
+      setStatusMsg(quality.reason)
+      showToast(quality.reason)
+      return
+    }
+
     setPendingDesc(faceResult.descriptor)
     setPreviewUrl(canvas.toDataURL('image/jpeg', 0.85))
     camera.clearOverlay()
-    setStatusMsg('Face captured automatically. Enter employee name and assigned office.')
-    window.setTimeout(() => nameRef.current?.focus(), 100)
-  }, [camera, showToast])
+    setStatusMsg('Face captured. Review the preview before continuing.')
+    playAudioCue('notify')
+    setStep('review')
+  }, [camera, playAudioCue, showToast])
 
   const startDetect = useCallback(() => {
     stopDetect()
     resetLiveness()
+    setStep('capture')
     setStatusMsg('Align face with camera and complete the liveness check...')
 
     autoRef.current = window.setInterval(async () => {
@@ -123,6 +151,12 @@ export default function RegisterView({
         if (!result) {
           setLivenessPassed(false)
           setStatusMsg('Scanning for face...')
+          return
+        }
+
+        const quality = evaluateDetectionQuality(result, canvas.width, canvas.height)
+        if (!quality.ok) {
+          setStatusMsg(quality.reason)
           return
         }
 
@@ -154,10 +188,26 @@ export default function RegisterView({
     return () => stopDetect()
   }, [camera, startDetect, stopDetect])
 
+  const goToDetails = useCallback(() => {
+    if (!previewUrl || !pendingDesc) {
+      showToast('Capture a face first')
+      return
+    }
+
+    setStep('details')
+    setStatusMsg('Enter employee details to finish enrollment.')
+    window.setTimeout(() => nameRef.current?.focus(), 100)
+  }, [pendingDesc, previewUrl, showToast])
+
   const handleRegister = useCallback(async () => {
     if (!name.trim()) {
       showToast('Enter the employee name')
       nameRef.current?.focus()
+      return
+    }
+
+    if (!employeeId.trim()) {
+      showToast('Enter the employee ID')
       return
     }
 
@@ -175,11 +225,6 @@ export default function RegisterView({
     const existing = persons.find(person => person.employeeId === employeeId.trim())
     const sampleCount = (existing?.descriptors.length ?? 0) + 1
 
-    if (!employeeId.trim()) {
-      showToast('Enter the employee ID')
-      return
-    }
-
     try {
       await onEnrollPerson(
         {
@@ -192,24 +237,34 @@ export default function RegisterView({
       )
     } catch (error) {
       showToast(error.message || 'Failed to save enrollment')
-      startDetect()
+      setStep('details')
       return
     }
 
-    const remaining = MIN_SAMPLES - sampleCount
-    if (remaining > 0) showToast(`Sample ${sampleCount} saved for ${trimmed}. Add ${remaining} more for better accuracy.`)
-    else showToast(`${trimmed} enrolled under ${selectedOffice?.name || 'selected office'}.`, 4000)
-
-    setPendingDesc(null)
-    setPreviewUrl(null)
-    setFaceFound(false)
-    startDetect()
-  }, [employeeId, name, officeId, onEnrollPerson, pendingDesc, persons, selectedOffice, showToast, startDetect])
+    const remaining = Math.max(0, MIN_SAMPLES - sampleCount)
+    setLastSavedSummary({
+      name: trimmed,
+      employeeId: employeeId.trim(),
+      officeName: selectedOffice?.name || 'Unassigned',
+      sampleCount,
+      remaining,
+    })
+    setStep('complete')
+    setStatusMsg(remaining > 0 ? `Enrollment saved. ${remaining} more sample(s) recommended.` : 'Enrollment saved successfully.')
+    playAudioCue('success')
+    showToast(
+      remaining > 0
+        ? `Sample ${sampleCount} saved for ${trimmed}. Add ${remaining} more for better accuracy.`
+        : `${trimmed} enrolled under ${selectedOffice?.name || 'selected office'}.`,
+      4000,
+    )
+  }, [employeeId, name, officeId, onEnrollPerson, pendingDesc, persons, playAudioCue, selectedOffice, showToast])
 
   const handleRetake = useCallback(() => {
     setPendingDesc(null)
     setPreviewUrl(null)
     setFaceFound(false)
+    setLastSavedSummary(null)
     startDetect()
   }, [startDetect])
 
@@ -220,9 +275,17 @@ export default function RegisterView({
     setPendingDesc(null)
     setPreviewUrl(null)
     setFaceFound(false)
+    setLastSavedSummary(null)
     startDetect()
-    nameRef.current?.focus()
   }, [offices, startDetect])
+
+  const handleAddAnotherSample = useCallback(() => {
+    setPendingDesc(null)
+    setPreviewUrl(null)
+    setFaceFound(false)
+    setLastSavedSummary(null)
+    startDetect()
+  }, [startDetect])
 
   const handleDelete = useCallback(async (id, personName) => {
     if (!window.confirm(`Remove ${personName}?`)) return
@@ -234,8 +297,7 @@ export default function RegisterView({
     }
   }, [onDeletePerson, showToast])
 
-  const existingPerson = persons.find(person => person.employeeId === employeeId.trim())
-  const existingSamples = existingPerson?.descriptors.length ?? 0
+  const stepIndex = STEPS.findIndex(item => item.id === step)
 
   return (
     <main className="min-h-screen bg-hero-wash px-4 py-6 sm:px-6 lg:px-8">
@@ -260,191 +322,275 @@ export default function RegisterView({
             Back to kiosk
           </button>
           <div className="min-w-0">
-            <div className="inline-flex rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
-              DILG
-            </div>
-            <h1 className="mt-2 font-display text-3xl text-ink">Employee Enrollment</h1>
+            <BrandMark />
+            <h1 className="mt-2 font-display text-3xl text-ink">Employee Enrollment Wizard</h1>
+            <p className="mt-1 text-sm text-muted">Capture first, review second, then save employee details.</p>
           </div>
-          <div className="ml-auto rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm">
-            {persons.length} enrolled
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+              onClick={() => setShowRoster(current => !current)}
+              type="button"
+            >
+              {showRoster ? 'Hide roster' : 'Show roster'}
+            </button>
+            <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm">
+              {persons.length} enrolled
+            </div>
           </div>
         </motion.section>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_400px]">
+        <motion.section
+          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, y: 18 }}
+          transition={{ duration: 0.38, ease: 'easeOut', delay: 0.05 }}
+          className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+        >
+          <div className="grid gap-3 lg:grid-cols-4">
+            {STEPS.map((item, index) => (
+              <WizardStep
+                key={item.id}
+                active={item.id === step}
+                complete={index < stepIndex}
+                description={item.description}
+                number={item.number}
+                title={item.title}
+              />
+            ))}
+          </div>
+        </motion.section>
+
+        <div className={`grid gap-6 ${showRoster ? 'xl:grid-cols-[minmax(0,1fr)_360px]' : ''}`}>
           <motion.section
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
-            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.06 }}
-            className="flex min-w-0 flex-col gap-4"
+            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
+            className="flex min-w-0 flex-col gap-4 rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
           >
-            <div className="overflow-hidden rounded-[1.9rem] border border-black/5 bg-black shadow-glow">
-              <div className="relative aspect-[4/5] min-h-[420px] sm:aspect-video xl:aspect-[4/3]">
-                <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
-                <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
-                <canvas ref={camera.overlayRef} className="absolute inset-0 h-full w-full" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Current step</span>
+                <h2 className="mt-2 font-display text-3xl text-ink">{STEPS[stepIndex]?.title}</h2>
+              </div>
+              <div className="rounded-full bg-brand/10 px-4 py-2 text-sm font-semibold text-brand-dark">
+                {statusMsg}
+              </div>
+            </div>
 
-                {!camera.camOn ? (
-                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
-                    <div className="text-5xl opacity-60">◈</div>
-                    <div className="text-sm font-medium">{camera.camError || 'Camera offline'}</div>
+            {step === 'capture' ? (
+              <section className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_320px]">
+                <div className="overflow-hidden rounded-[1.9rem] border border-black/5 bg-black shadow-glow">
+                  <div className="relative aspect-[4/5] min-h-[420px] sm:aspect-video xl:aspect-[4/3]">
+                    <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+                    <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
+                    <canvas ref={camera.overlayRef} className="absolute inset-0 h-full w-full" />
+
+                    {!camera.camOn ? (
+                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
+                        <div className="text-5xl opacity-60">◈</div>
+                        <div className="text-sm font-medium">{camera.camError || 'Camera offline'}</div>
+                      </div>
+                    ) : null}
+
+                    <div className="absolute right-4 top-4 z-10">
+                      <span className={`rounded-full px-4 py-2 text-sm font-semibold backdrop-blur ${faceFound ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-stone-100'}`}>
+                        {faceFound ? 'Face detected' : 'No face'}
+                      </span>
+                    </div>
+
+                    <div className="absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 px-4">
+                      <span className="rounded-full bg-brand/20 px-4 py-2 text-sm font-semibold text-white backdrop-blur">
+                        Automatic capture only
+                      </span>
+                      <span className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] backdrop-blur ${livenessPassed ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-stone-100'}`}>
+                        {livenessPassed ? 'Liveness passed' : livenessChallenge.label}
+                      </span>
+                    </div>
                   </div>
-                ) : null}
-
-                <div className="absolute right-4 top-4 z-10">
-                  <span className={`rounded-full px-4 py-2 text-sm font-semibold backdrop-blur ${previewUrl || faceFound ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-stone-100'}`}>
-                    {previewUrl ? 'Captured' : faceFound ? 'Detecting' : 'No face'}
-                  </span>
                 </div>
 
-                <div className="absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 px-4">
-                  <span className="rounded-full bg-brand/20 px-4 py-2 text-sm font-semibold text-white backdrop-blur">
-                    Automatic capture only
-                  </span>
-                  <span className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] backdrop-blur ${livenessPassed ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-stone-100'}`}>
-                    {livenessPassed ? 'Liveness passed' : livenessChallenge.label}
-                  </span>
+                <div className="grid gap-4">
+                  <InfoCard
+                    title="How this works"
+                    text="The wizard waits for a detected face and a simple liveness action, then captures automatically. No manual photo button is needed."
+                  />
+                  <InfoCard
+                    title="Camera note"
+                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Use the front camera in normal lighting. The user does not need to be perfectly still.'}
+                    tone={!modelsReady ? 'warn' : 'default'}
+                  />
+                  <InfoCard
+                    title="Storage"
+                    text={errorMessage ? `${dataStatus}. ${errorMessage}` : dataStatus}
+                    tone={errorMessage ? 'warn' : 'default'}
+                  />
                 </div>
-              </div>
-            </div>
-
-            <div className="rounded-[1.6rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur">
-              <p className="text-sm font-medium text-ink">{statusMsg}</p>
-            </div>
-
-            {!modelsReady ? (
-              <div className="rounded-[1.6rem] border border-amber-300/50 bg-amber-50 p-4 text-sm text-amber-800 shadow-glow">
-                Loading recognition models...
-              </div>
+              </section>
             ) : null}
 
-            <div className="rounded-[1.6rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Storage</span>
-                <span className="text-sm font-semibold text-ink">{dataStatus}</span>
-              </div>
-              {errorMessage ? <div className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm text-warn">{errorMessage}</div> : null}
-
-              <div className="mt-5 grid gap-3">
-                <Step active={!previewUrl && camera.camOn} done={Boolean(previewUrl)} number="1" text="Face camera for automatic capture" />
-                <Step active={Boolean(previewUrl) && !name.trim()} done={Boolean(previewUrl) && Boolean(name.trim())} number="2" text="Enter employee name and office" />
-                <Step active={Boolean(previewUrl) && Boolean(name.trim())} done={false} number="3" text={`Enroll at least ${MIN_SAMPLES} samples`} />
-              </div>
-
-              {previewUrl ? (
-                <button
-                  className="mt-5 inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
-                  onClick={handleRetake}
-                  type="button"
-                >
-                  Retake face
-                </button>
-              ) : (
-                <div className="mt-5 rounded-2xl bg-brand/8 px-4 py-3 text-center text-sm text-brand-dark">
-                  Capture is automatic right after face detection and liveness confirmation.
+            {step === 'review' ? (
+              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="overflow-hidden rounded-[1.75rem] border border-black/5 bg-stone-100">
+                  {previewUrl ? (
+                    <img alt="Captured preview" className="h-full min-h-[420px] w-full object-cover" src={previewUrl} />
+                  ) : (
+                    <div className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-muted">
+                      No preview available yet.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </motion.section>
 
-          <motion.aside
-            animate={{ opacity: 1, x: 0 }}
-            initial={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
-            className="flex min-w-0 flex-col gap-4"
-          >
-            <section className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Capture preview</span>
-              <div className="mt-4 overflow-hidden rounded-[1.35rem] border border-black/5 bg-stone-50">
-                {previewUrl ? (
-                  <img alt="Preview" className="h-auto w-full object-cover" src={previewUrl} />
-                ) : (
-                  <div className="flex min-h-[240px] items-center justify-center px-6 text-center text-sm leading-7 text-muted">
-                    Look at the camera naturally. The system captures automatically after face detection and liveness confirmation.
+                <div className="grid gap-4">
+                  <InfoCard
+                    title="Review"
+                    text="Check if the face is clear, centered, and usable. If it looks weak, retake before saving details."
+                  />
+                  <div className="grid gap-3">
+                    <button
+                      className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                      onClick={goToDetails}
+                      type="button"
+                    >
+                      Continue to details
+                    </button>
+                    <button
+                      className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                      onClick={handleRetake}
+                      type="button"
+                    >
+                      Retake capture
+                    </button>
                   </div>
-                )}
-              </div>
-            </section>
+                </div>
+              </section>
+            ) : null}
 
-            <section className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Employee details</span>
-              <div className="mt-4 grid gap-4">
-                <Field label="Full name">
-                  <input
-                    ref={nameRef}
-                    className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
-                    onChange={event => setName(event.target.value)}
-                    onKeyDown={event => {
-                      if (event.key === 'Enter') handleRegister()
-                    }}
-                    placeholder="Enter full name"
-                    type="text"
-                    value={name}
-                  />
-                </Field>
+            {step === 'details' ? (
+              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="grid gap-4 rounded-[1.75rem] border border-black/5 bg-stone-50 p-5">
+                  <Field label="Full name">
+                    <input
+                      ref={nameRef}
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                      onChange={event => setName(event.target.value)}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter') handleRegister()
+                      }}
+                      placeholder="Enter full name"
+                      type="text"
+                      value={name}
+                    />
+                  </Field>
 
-                <Field label="Employee ID">
-                  <input
-                    className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
-                    onChange={event => setEmployeeId(event.target.value)}
-                    placeholder="Enter employee ID"
-                    type="text"
-                    value={employeeId}
-                  />
-                </Field>
+                  <Field label="Employee ID">
+                    <input
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                      onChange={event => setEmployeeId(event.target.value)}
+                      placeholder="Enter employee ID"
+                      type="text"
+                      value={employeeId}
+                    />
+                  </Field>
 
-                <Field label="Assigned office">
-                  <select
-                    className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
-                    onChange={event => setOfficeId(event.target.value)}
-                    value={officeId}
+                  <Field label="Assigned office">
+                    <select
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                      onChange={event => setOfficeId(event.target.value)}
+                      value={officeId}
+                    >
+                      {offices.map(office => (
+                        <option key={office.id} value={office.id}>{office.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                      onClick={() => setStep('review')}
+                      type="button"
+                    >
+                      Back to review
+                    </button>
+                    <button
+                      className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!pendingDesc || !name.trim() || !employeeId.trim() || !officeId}
+                      onClick={handleRegister}
+                      type="button"
+                    >
+                      Save enrollment
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4">
+                  <section className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-white">
+                    {previewUrl ? (
+                      <img alt="Preview" className="h-auto w-full object-cover" src={previewUrl} />
+                    ) : (
+                      <div className="flex min-h-[220px] items-center justify-center px-6 text-center text-sm text-muted">
+                        Capture preview unavailable.
+                      </div>
+                    )}
+                  </section>
+
+                  {existingPerson ? (
+                    <InfoCard
+                      title="Existing employee"
+                      text={`${existingPerson.name} currently has ${existingSamples} sample(s) under ${existingPerson.officeName}.`}
+                    />
+                  ) : (
+                    <InfoCard
+                      title="New employee"
+                      text="This employee ID does not exist yet in the current roster."
+                    />
+                  )}
+                </div>
+              </section>
+            ) : null}
+
+            {step === 'complete' ? (
+              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="rounded-[1.75rem] border border-emerald-200 bg-emerald-50 p-6">
+                  <span className="inline-flex rounded-full bg-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
+                    Enrollment saved
+                  </span>
+                  <h3 className="mt-4 font-display text-3xl text-ink">{lastSavedSummary?.name}</h3>
+                  <div className="mt-3 space-y-2 text-sm text-muted">
+                    <p><strong className="text-ink">Employee ID:</strong> {lastSavedSummary?.employeeId}</p>
+                    <p><strong className="text-ink">Office:</strong> {lastSavedSummary?.officeName}</p>
+                    <p><strong className="text-ink">Sample count:</strong> {lastSavedSummary?.sampleCount}</p>
+                    <p><strong className="text-ink">Recommended remaining:</strong> {lastSavedSummary?.remaining}</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3">
+                  <button
+                    className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                    onClick={handleAddAnotherSample}
+                    type="button"
                   >
-                    {offices.map(office => (
-                      <option key={office.id} value={office.id}>{office.name}</option>
-                    ))}
-                  </select>
-                </Field>
-
-                {name.trim() && existingPerson ? (
-                  <div className="rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
-                    <div className="h-2 overflow-hidden rounded-full bg-stone-200">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.min(100, (existingSamples / MIN_SAMPLES) * 100)}%`,
-                          background: existingSamples >= MIN_SAMPLES ? '#22c55e' : '#f59e0b',
-                        }}
-                      />
-                    </div>
-                    <div className="mt-3 text-sm leading-7 text-muted">
-                      {existingSamples} / {MIN_SAMPLES} samples
-                      {existingPerson.employeeId ? ` • ID: ${existingPerson.employeeId}` : ''}
-                      {existingPerson.officeName ? ` • Current office: ${existingPerson.officeName}` : ''}
-                    </div>
-                  </div>
-                ) : null}
-
-                <button
-                  className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!pendingDesc || !name.trim() || !employeeId.trim() || !officeId}
-                  onClick={handleRegister}
-                  type="button"
-                >
-                  Enroll employee
-                </button>
-
-                {name.trim() && existingPerson ? (
+                    Add another sample
+                  </button>
                   <button
                     className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
                     onClick={handleNewPerson}
                     type="button"
                   >
-                    Clear form
+                    Enroll new employee
                   </button>
-                ) : null}
-              </div>
-            </section>
+                </div>
+              </section>
+            ) : null}
+          </motion.section>
 
-            <section className="flex min-h-0 flex-1 flex-col rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
+          {showRoster ? (
+            <motion.aside
+              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.35, ease: 'easeOut', delay: 0.1 }}
+              className="flex min-h-0 flex-col rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+            >
               <div className="mb-4 flex items-center justify-between gap-4">
                 <h2 className="font-display text-2xl text-ink">Enrolled employees</h2>
                 <span className="rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
@@ -491,8 +637,8 @@ export default function RegisterView({
                   ))
                 )}
               </div>
-            </section>
-          </motion.aside>
+            </motion.aside>
+          ) : null}
         </div>
       </div>
     </main>
@@ -508,13 +654,31 @@ function Field({ label, children }) {
   )
 }
 
-function Step({ active, done, number, text }) {
+function WizardStep({ active, complete, number, title, description }) {
   return (
-    <div className={`flex items-center gap-3 rounded-[1.1rem] border px-4 py-3 text-sm ${done ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : active ? 'border-brand/25 bg-brand/8 text-brand-dark' : 'border-black/5 bg-white text-muted'}`}>
-      <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${done ? 'bg-emerald-500 text-white' : active ? 'bg-brand text-white' : 'bg-stone-100 text-muted'}`}>
-        {number}
-      </span>
-      <span>{text}</span>
+    <div className={`rounded-[1.35rem] border px-4 py-4 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-brand/30 bg-brand/8' : 'border-black/5 bg-stone-50'}`}>
+      <div className="flex items-center gap-3">
+        <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-brand text-white' : 'bg-white text-muted'}`}>
+          {number}
+        </span>
+        <div>
+          <div className="text-sm font-semibold text-ink">{title}</div>
+          <div className="text-xs leading-5 text-muted">{description}</div>
+        </div>
+      </div>
     </div>
+  )
+}
+
+function InfoCard({ title, text, tone = 'default' }) {
+  const toneClass = tone === 'warn'
+    ? 'border-amber-200 bg-amber-50 text-amber-900'
+    : 'border-black/5 bg-stone-50 text-muted'
+
+  return (
+    <section className={`rounded-[1.5rem] border p-4 ${toneClass}`}>
+      <h3 className="text-sm font-semibold uppercase tracking-[0.14em]">{title}</h3>
+      <p className="mt-2 text-sm leading-7">{text}</p>
+    </section>
   )
 }
