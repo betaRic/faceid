@@ -76,7 +76,7 @@ function drawBracketBox(ctx, box, color, label, confidence, scaleX = 1, scaleY =
   ctx.fillText(text, x + 8, y - 12)
 }
 
-function getCurrentPosition() {
+function getCurrentPositionWithOptions(options = {}) {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Location services are not available on this device'))
@@ -87,8 +87,79 @@ function getCurrentPosition() {
       enableHighAccuracy: true,
       timeout: 10000,
       maximumAge: 0,
+      ...options,
     })
   })
+}
+
+const GPS_CACHE_TTL_MS = 30 * 1000
+const GPS_REFRESH_INTERVAL_MS = 15 * 1000
+
+function getCachedPositionCoordinates(cacheRef) {
+  const cached = cacheRef.current
+  if (!cached) return null
+  if (Date.now() - cached.timestamp > GPS_CACHE_TTL_MS) return null
+
+  return {
+    latitude: cached.latitude,
+    longitude: cached.longitude,
+  }
+}
+
+function getSafeDecisionMessage(decisionCode) {
+  switch (decisionCode) {
+    case 'blocked_no_reliable_match':
+      return {
+        name: 'Not recognized',
+        detail: 'Face could not be matched reliably.',
+      }
+    case 'blocked_ambiguous_match':
+      return {
+        name: 'Ambiguous match',
+        detail: 'Face is too close to multiple enrolled employees.',
+      }
+    case 'blocked_recent_duplicate':
+      return {
+        name: 'Attendance already recorded',
+        detail: 'Attendance already recorded recently.',
+      }
+    case 'blocked_missing_gps':
+      return {
+        name: 'Attendance blocked',
+        detail: 'GPS unavailable - ensure location is enabled.',
+      }
+    case 'blocked_geofence':
+      return {
+        name: 'Attendance blocked',
+        detail: 'Device is outside the assigned office geofence.',
+      }
+    case 'blocked_rate_limited':
+      return {
+        name: 'Attendance blocked',
+        detail: 'Too many attempts. Wait a moment and try again.',
+      }
+    case 'blocked_inactive':
+      return {
+        name: 'Attendance blocked',
+        detail: 'Employee account is inactive.',
+      }
+    case 'blocked_missing_office_config':
+      return {
+        name: 'Attendance blocked',
+        detail: 'Assigned office is not configured correctly.',
+      }
+    case 'blocked_no_candidate_office':
+    case 'blocked_wrong_office_context':
+      return {
+        name: 'Attendance blocked',
+        detail: 'Current location does not match the assigned office context.',
+      }
+    default:
+      return {
+        name: 'Attendance blocked',
+        detail: 'Attendance could not be processed. Please try again or contact an administrator.',
+      }
+  }
 }
 
 export default function KioskView({
@@ -120,6 +191,8 @@ export default function KioskView({
   const unknownTimer = useRef(null)
   const previousStateRef = useRef('idle')
   const livenessTrackerRef = useRef(createLivenessTracker())
+  const cachedPositionRef = useRef(null)
+  const gpsRefreshPendingRef = useRef(false)
 
   const stopLoop = useCallback(() => {
     if (scanRef.current) {
@@ -144,6 +217,45 @@ export default function KioskView({
     tick()
     const interval = window.setInterval(tick, 1000)
     return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return undefined
+
+    let active = true
+
+    const refreshPosition = async () => {
+      if (gpsRefreshPendingRef.current) return
+
+      gpsRefreshPendingRef.current = true
+
+      try {
+        const position = await getCurrentPositionWithOptions({
+          timeout: 5000,
+          maximumAge: GPS_CACHE_TTL_MS,
+        })
+
+        if (!active) return
+
+        cachedPositionRef.current = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          timestamp: Date.now(),
+        }
+      } catch {
+        // Keep the last known good position; scan flow will treat stale or missing cache as unavailable.
+      } finally {
+        gpsRefreshPendingRef.current = false
+      }
+    }
+
+    refreshPosition()
+    const interval = window.setInterval(refreshPosition, GPS_REFRESH_INTERVAL_MS)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
   }, [])
 
   const drawOverlay = useCallback((detections, sourceWidth, sourceHeight) => {
@@ -241,13 +353,7 @@ export default function KioskView({
 
       if (confirmRef.current >= CONFIRM_FRAMES) {
         const now = Date.now()
-        const position = await getCurrentPosition().catch(() => null)
-        const coordinates = position
-          ? {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            }
-          : null
+        const coordinates = getCachedPositionCoordinates(cachedPositionRef)
 
         const result = await onLogAttendance({
           id: `${now}`,
@@ -291,15 +397,17 @@ export default function KioskView({
       }
     } catch (error) {
       const decisionCode = error.decisionCode || ''
+      const safeDecision = getSafeDecisionMessage(decisionCode)
+
       if (decisionCode === 'blocked_no_reliable_match' || decisionCode === 'blocked_ambiguous_match') {
         if (!confirmedTimer.current && !unknownTimer.current) {
           unknownTimer.current = window.setTimeout(() => {
             setKioskState(decisionCode === 'blocked_ambiguous_match' ? 'blocked' : 'unknown')
-            setLastMeaningfulFailure(error.message || 'Face could not be matched reliably.')
+            setLastMeaningfulFailure(safeDecision.detail)
             setCurrentMatch({
-              name: decisionCode === 'blocked_ambiguous_match' ? 'Ambiguous match' : 'Not recognized',
+              name: safeDecision.name,
               confidence: 0,
-              detail: error.message || 'Face could not be matched reliably.',
+              detail: safeDecision.detail,
             })
             confirmRef.current = 0
             unknownTimer.current = null
@@ -307,20 +415,20 @@ export default function KioskView({
         }
       } else if (decisionCode === 'blocked_recent_duplicate') {
         setKioskState('blocked')
-        setLastMeaningfulFailure(error.message || 'Attendance already recorded recently.')
+        setLastMeaningfulFailure(safeDecision.detail)
         setCurrentMatch({
-          name: error.entry?.name || 'Attendance already recorded',
+          name: error.entry?.name || safeDecision.name,
           confidence: error.entry?.confidence ?? 0,
           officeName: error.entry?.officeName,
-          detail: error.message || 'Attendance already recorded recently.',
+          detail: safeDecision.detail,
         })
       } else {
         setKioskState('blocked')
-        setLastMeaningfulFailure(error.message || 'Attendance is blocked right now.')
+        setLastMeaningfulFailure(safeDecision.detail)
         setCurrentMatch({
-          name: 'Attendance blocked',
+          name: safeDecision.name,
           confidence: 0,
-          detail: error.message || 'Location permission is required for on-site attendance',
+          detail: safeDecision.detail,
         })
       }
       resetLiveness()
@@ -384,8 +492,8 @@ export default function KioskView({
       )}
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-8.8rem)]">
-        <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1.15fr)_360px]">
+      <div className="page-frame flex flex-col gap-4 xl:min-h-[calc(100dvh-10.5rem)]">
+        <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,360px)]">
           <div className="min-w-0">
             <BrandMark />
             <h1 className="mt-2 font-display text-3xl leading-tight text-ink sm:text-4xl">Shared kiosk attendance workspace.</h1>
@@ -401,7 +509,7 @@ export default function KioskView({
           </div>
         </section>
 
-        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_380px]">
+        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,420px)]">
         <motion.section
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
@@ -429,7 +537,7 @@ export default function KioskView({
           </div>
 
           <div className="min-h-0 overflow-hidden rounded-[1.6rem] border border-black/5 bg-black shadow-glow">
-            <div className="relative h-full min-h-[360px] xl:min-h-[520px]">
+            <div className="relative h-full min-h-[360px] xl:min-h-[560px]">
               <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
               <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
               <canvas ref={camera.overlayRef} className="absolute inset-0 h-full w-full" />

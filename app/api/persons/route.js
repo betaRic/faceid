@@ -5,10 +5,12 @@ import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
+  resolveAdminSession,
 } from '../../../lib/admin-auth'
 import { DUPLICATE_FACE_THRESHOLD } from '../../../lib/config'
 import { writeAuditLog } from '../../../lib/audit-log'
 import { syncPersonBiometricIndex } from '../../../lib/biometric-index'
+import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
 
 function safeArray(value) {
   return Array.isArray(value) ? value : []
@@ -66,9 +68,18 @@ function validateBody(body) {
 }
 
 export async function GET(request) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required to load employees.' }, { status: 401 })
+  }
+
   try {
-    const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     const snapshot = await db.collection('persons').orderBy('nameLower').get()
     const persons = snapshot.docs.map(record => {
       const data = record.data()
@@ -84,7 +95,7 @@ export async function GET(request) {
         active: data.active !== false,
         sampleCount: descriptors.length,
       }
-    }).filter(person => adminSessionAllowsOffice(session, person.officeId))
+    }).filter(person => adminSessionAllowsOffice(resolvedSession, person.officeId))
 
     return NextResponse.json({ ok: true, persons })
   } catch (error) {
@@ -107,15 +118,32 @@ export async function POST(request) {
     return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
   }
 
-  if (!adminSessionAllowsOffice(session, body.officeId)) {
-    return NextResponse.json({ ok: false, message: 'This admin session cannot register employees for that office.' }, { status: 403 })
-  }
-
   try {
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+    if (!adminSessionAllowsOffice(resolvedSession, body.officeId)) {
+      return NextResponse.json({ ok: false, message: 'This admin session cannot register employees for that office.' }, { status: 403 })
+    }
+
+    const ip = getRequestIp(request)
+    const ipLimit = await enforceRateLimit(db, {
+      key: `persons-ip:${ip}`,
+      limit: 30,
+      windowMs: 60 * 1000,
+    })
+
+    if (!ipLimit.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many enrollment attempts from this device or network. Slow down and try again.' },
+        { status: 429 },
+      )
+    }
+
     const snapshot = await db.collection('persons').get()
     const persons = snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
-    const existing = persons.find(person => person.employeeId === body.employeeId) || null
 
     const duplicateFace = findDuplicateFace(persons, body.employeeId, body.descriptor)
     if (duplicateFace) {
@@ -134,27 +162,55 @@ export async function POST(request) {
       nameLower: body.name.toLowerCase(),
       officeId: body.officeId,
       officeName: body.officeName,
-      active: existing?.active !== false,
       updatedAt: FieldValue.serverTimestamp(),
     }
 
-    if (existing) {
-      const nextPerson = {
-        ...existing,
-        ...payload,
-        descriptors: [...safeArray(existing.descriptors), body.descriptor],
+    const transactionResult = await db.runTransaction(async transaction => {
+      const employeeLockRef = db.collection('person_enrollment_locks').doc(body.employeeId)
+      await transaction.get(employeeLockRef)
+      const existingSnapshot = await transaction.get(
+        db.collection('persons').where('employeeId', '==', body.employeeId).limit(1),
+      )
+      const existingRecord = existingSnapshot.docs[0] || null
+      const existing = existingRecord ? { id: existingRecord.id, ...existingRecord.data() } : null
+      const personRef = existingRecord ? existingRecord.ref : db.collection('persons').doc()
+      const nextPerson = existing
+        ? {
+            ...existing,
+            ...payload,
+            active: existing.active !== false,
+            descriptors: [...safeArray(existing.descriptors), body.descriptor],
+          }
+        : {
+            ...payload,
+            active: true,
+            descriptors: [body.descriptor],
+            createdAt: FieldValue.serverTimestamp(),
+          }
+
+      transaction.set(personRef, nextPerson, { merge: true })
+      transaction.set(employeeLockRef, {
+        updatedAt: FieldValue.serverTimestamp(),
+        personId: personRef.id,
+      }, { merge: true })
+
+      return {
+        existing,
+        personId: personRef.id,
+        nextPerson,
       }
+    })
 
-      await db.collection('persons').doc(existing.id).set(nextPerson, { merge: true })
-      await syncPersonBiometricIndex(db, existing.id, nextPerson)
+    await syncPersonBiometricIndex(db, transactionResult.personId, transactionResult.nextPerson)
 
+    if (transactionResult.existing) {
       await writeAuditLog(db, {
-        actorRole: session.role,
-        actorScope: session.scope,
-        actorOfficeId: session.officeId,
+        actorRole: resolvedSession.role,
+        actorScope: resolvedSession.scope,
+        actorOfficeId: resolvedSession.officeId,
         action: 'person_sample_add',
         targetType: 'person',
-        targetId: existing.id,
+        targetId: transactionResult.personId,
         officeId: body.officeId,
         summary: `Added enrollment sample for ${body.name}`,
         metadata: {
@@ -163,21 +219,13 @@ export async function POST(request) {
         },
       })
     } else {
-      const nextPerson = {
-        ...payload,
-        descriptors: [body.descriptor],
-        createdAt: FieldValue.serverTimestamp(),
-      }
-      const record = await db.collection('persons').add(nextPerson)
-      await syncPersonBiometricIndex(db, record.id, nextPerson)
-
       await writeAuditLog(db, {
-        actorRole: session.role,
-        actorScope: session.scope,
-        actorOfficeId: session.officeId,
+        actorRole: resolvedSession.role,
+        actorScope: resolvedSession.scope,
+        actorOfficeId: resolvedSession.officeId,
         action: 'person_create',
         targetType: 'person',
-        targetId: record.id,
+        targetId: transactionResult.personId,
         officeId: body.officeId,
         summary: `Created employee record for ${body.name}`,
         metadata: {

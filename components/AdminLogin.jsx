@@ -53,9 +53,9 @@ export default function AdminLogin() {
   }
 
   return (
-    <AppShell contentClassName="px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4">
-        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-5 shadow-glow backdrop-blur xl:grid-cols-[1.1fr_.75fr]">
+    <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
+      <div className="page-frame flex flex-col gap-4">
+        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-5 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,460px)]">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}

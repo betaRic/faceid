@@ -100,7 +100,11 @@ function getCandidateOfficeIds(offices, entry) {
     .map(office => office.id)
 
   if (!Number.isFinite(entry.latitude) || !Number.isFinite(entry.longitude)) {
-    return wfhOfficeIds
+    return {
+      candidateOfficeIds: wfhOfficeIds,
+      onsiteOfficeIds: [],
+      wfhOfficeIds,
+    }
   }
 
   const onsiteOfficeIds = offices
@@ -118,16 +122,20 @@ function getCandidateOfficeIds(offices, entry) {
     })
     .map(office => office.id)
 
-  return Array.from(new Set([...onsiteOfficeIds, ...wfhOfficeIds]))
+  return {
+    candidateOfficeIds: Array.from(new Set([...onsiteOfficeIds, ...wfhOfficeIds])),
+    onsiteOfficeIds,
+    wfhOfficeIds,
+  }
 }
 
 async function getCandidateAttendanceContext(db, entry) {
   const offices = await getAllOffices(db)
-  const candidateOfficeIds = getCandidateOfficeIds(offices, entry)
+  const candidateContext = getCandidateOfficeIds(offices, entry)
 
   return {
     offices,
-    candidateOfficeIds,
+    ...candidateContext,
   }
 }
 
@@ -265,7 +273,7 @@ export async function POST(request) {
       )
     }
 
-    const { candidateOfficeIds } = await getCandidateAttendanceContext(db, entry)
+    const { candidateOfficeIds, onsiteOfficeIds, wfhOfficeIds } = await getCandidateAttendanceContext(db, entry)
 
     if (candidateOfficeIds.length === 0) {
       return NextResponse.json(
@@ -318,6 +326,20 @@ export async function POST(request) {
       )
     }
 
+    const officeMatchedOnsite = onsiteOfficeIds.includes(person.officeId)
+    const officeMatchedWfh = wfhOfficeIds.includes(person.officeId)
+
+    if (!officeMatchedOnsite && !officeMatchedWfh) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Attendance context did not match the employee office.',
+          decisionCode: 'blocked_wrong_office_context',
+        },
+        { status: 403 },
+      )
+    }
+
     entry.name = person.name
     entry.employeeId = person.employeeId
     entry.officeId = person.officeId
@@ -325,7 +347,7 @@ export async function POST(request) {
     entry.confidence = personMatch.confidence ?? entry.confidence
     entry.id = buildAttendanceDocId(entry.employeeId, entry.timestamp)
 
-    if (isOfficeWfhDay(office)) {
+    if (officeMatchedWfh) {
       entry.attendanceMode = 'WFH'
       entry.geofenceStatus = 'WFH office day'
       entry.decisionCode = 'accepted_wfh'

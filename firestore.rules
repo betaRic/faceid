@@ -2,7 +2,46 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
+    // This application uses Firebase Admin SDK server routes only.
+    // Explicit collection rules make the intended security posture clear and
+    // prevent accidental client-side adoption from silently widening access.
+    match /persons/{personId} {
+      allow read, write: if false;
+    }
+
+    match /biometric_index/{sampleId} {
+      allow read, write: if false;
+    }
+
+    match /attendance/{attendanceId} {
+      allow read, write: if false;
+    }
+
+    match /attendance_daily/{recordId} {
+      allow read, write: if false;
+    }
+
+    match /offices/{officeId} {
+      allow read, write: if false;
+    }
+
+    match /admins/{adminId} {
+      allow read, write: if false;
+    }
+
+    match /audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    match /rate_limits/{limitId} {
+      allow read, write: if false;
+    }
+
+    match /attendance_locks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /person_enrollment_locks/{lockId} {
       allow read, write: if false;
     }
   }

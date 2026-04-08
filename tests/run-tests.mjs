@@ -96,6 +96,52 @@ run('deriveDailyAttendanceRecord computes complete day totals', () => {
   assert.equal(record.workingHours, '7h 54m')
 })
 
+run('deriveDailyAttendanceRecord does not invent pmIn from extra morning scans', () => {
+  const office = REGION12_OFFICES[0]
+  const person = {
+    employeeId: 'EMP-002',
+    name: 'Morning Only',
+    officeId: office.id,
+    officeName: office.name,
+  }
+
+  const logs = [
+    {
+      timestamp: new Date('2026-04-09T08:03:00+08:00').getTime(),
+      decisionCode: 'accepted_onsite',
+      officeId: office.id,
+      officeName: office.name,
+      name: person.name,
+    },
+    {
+      timestamp: new Date('2026-04-09T08:05:00+08:00').getTime(),
+      decisionCode: 'accepted_onsite',
+      officeId: office.id,
+      officeName: office.name,
+      name: person.name,
+    },
+    {
+      timestamp: new Date('2026-04-09T11:58:00+08:00').getTime(),
+      decisionCode: 'accepted_onsite',
+      officeId: office.id,
+      officeName: office.name,
+      name: person.name,
+    },
+  ]
+
+  const record = deriveDailyAttendanceRecord({
+    logs,
+    person,
+    office,
+    targetDate: '4/9/2026',
+  })
+
+  assert.equal(record.pmInTimestamp, null)
+  assert.equal(record.pmOutTimestamp, null)
+  assert.equal(record.amInTimestamp, logs[0].timestamp)
+  assert.equal(record.amOutTimestamp, logs[2].timestamp)
+})
+
 if (process.exitCode && process.exitCode !== 0) {
   process.exit(process.exitCode)
 }

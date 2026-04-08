@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../../lib/firebase-admin'
-import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, revalidateAdminSession } from '../../../../lib/admin-auth'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '../../../../lib/admin-auth'
 import { writeAuditLog } from '../../../../lib/audit-log'
 import { getActiveRegionalAdminCount } from '../../../../lib/admin-directory'
 
@@ -23,8 +23,8 @@ function validateBody(body) {
 
 export async function PUT(request, { params }) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!isRegionalAdminSession(session)) {
-    return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
   }
 
   const body = normalizeBody(await request.json().catch(() => null))
@@ -35,9 +35,12 @@ export async function PUT(request, { params }) {
 
   try {
     const db = getAdminDb()
-    const stillActive = await revalidateAdminSession(db, session)
-    if (!stillActive) {
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+    if (!isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
     const ref = db.collection('admins').doc(params.adminId)
@@ -75,9 +78,9 @@ export async function PUT(request, { params }) {
     }, { merge: true })
 
     await writeAuditLog(db, {
-      actorRole: session.role,
-      actorScope: session.scope,
-      actorOfficeId: session.officeId,
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
       action: 'admin_update',
       targetType: 'admin',
       targetId: params.adminId,
@@ -101,15 +104,18 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!isRegionalAdminSession(session)) {
-    return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
   }
 
   try {
     const db = getAdminDb()
-    const stillActive = await revalidateAdminSession(db, session)
-    if (!stillActive) {
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+    if (!isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
     const ref = db.collection('admins').doc(params.adminId)
@@ -133,9 +139,9 @@ export async function DELETE(request, { params }) {
     await ref.delete()
 
     await writeAuditLog(db, {
-      actorRole: session.role,
-      actorScope: session.scope,
-      actorOfficeId: session.officeId,
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
       action: 'admin_delete',
       targetType: 'admin',
       targetId: params.adminId,

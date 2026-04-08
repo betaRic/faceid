@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import KioskView from './KioskView'
 import RegisterView from './RegisterView'
+import AppShell from './AppShell'
 import { useCamera } from '../hooks/useCamera'
-import { firebaseEnabled, productionFirebaseRequired } from '../lib/firebase'
+import { firebaseEnabled, localFallbackAllowed, productionFirebaseRequired } from '../lib/firebase'
 import { loadModels } from '../lib/face-api'
 import { REGION12_OFFICES } from '../lib/offices'
 import {
@@ -22,7 +23,13 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
   const [attendance, setAttendance] = useState([])
   const [modelsReady, setModelsReady] = useState(false)
   const [modelStatus, setModelStatus] = useState('Initializing...')
-  const [dataStatus, setDataStatus] = useState(firebaseEnabled ? 'Connecting to Firebase...' : 'Using browser storage')
+  const [dataStatus, setDataStatus] = useState(
+    firebaseEnabled
+      ? 'Connecting to Firebase...'
+      : localFallbackAllowed
+        ? 'Using browser storage (dev biometric fallback enabled)'
+        : 'Firebase required for biometric operations',
+  )
   const [errorMessage, setErrorMessage] = useState(null)
 
   useEffect(() => {
@@ -50,7 +57,13 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
     const unsubscribe = subscribeToPersons(
       nextPersons => {
         setPersons(nextPersons)
-        setDataStatus(firebaseEnabled ? 'Firebase online' : 'Using browser storage')
+        setDataStatus(
+          firebaseEnabled
+            ? 'Firebase online'
+            : localFallbackAllowed
+              ? 'Using browser storage (dev biometric fallback enabled)'
+              : 'Firebase required for biometric operations',
+        )
       },
       error => {
         setErrorMessage(error.message)
@@ -101,18 +114,40 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
 
   if (productionFirebaseRequired && !firebaseEnabled) {
     return (
-      <div className="min-h-screen bg-hero-wash px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-red-200 bg-white/90 p-6 shadow-glow backdrop-blur">
-          <h1 className="font-display text-3xl text-ink">Deployment blocked</h1>
-          <p className="text-sm leading-7 text-muted">
-            Firebase client environment variables are incomplete. Production is not allowed to fall back to browser
-            storage because that would create fake attendance data on one device instead of the real system.
-          </p>
-          <div className="rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-warn">
-            Fix the Vercel Firebase environment variables before using this deployment.
+      <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
+        <div className="page-frame">
+          <div className="mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-red-200 bg-white/90 p-6 shadow-glow backdrop-blur">
+            <h1 className="font-display text-3xl text-ink">Deployment blocked</h1>
+            <p className="text-sm leading-7 text-muted">
+              Firebase client environment variables are incomplete. Production is not allowed to fall back to browser
+              storage because that would create fake attendance data on one device instead of the real system.
+            </p>
+            <div className="rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-warn">
+              Fix the Vercel Firebase environment variables before using this deployment.
+            </div>
           </div>
         </div>
-      </div>
+      </AppShell>
+    )
+  }
+
+  if (!firebaseEnabled && !localFallbackAllowed) {
+    return (
+      <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
+        <div className="page-frame">
+          <div className="mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-amber-200 bg-white/90 p-6 shadow-glow backdrop-blur">
+            <h1 className="font-display text-3xl text-ink">Firebase required for biometric mode</h1>
+            <p className="text-sm leading-7 text-muted">
+              Enrollment and attendance are blocked when Firebase is not configured. Browser storage is no longer used
+              for biometric data unless an explicit development flag enables it.
+            </p>
+            <div className="rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-900">
+              Configure Firebase, or set <code>NEXT_PUBLIC_ALLOW_LOCAL_BIOMETRIC_FALLBACK=true</code> only for isolated
+              development work with non-sensitive test data.
+            </div>
+          </div>
+        </div>
+      </AppShell>
     )
   }
 

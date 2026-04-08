@@ -3,8 +3,7 @@
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
-import { useEffect, useMemo, useState } from 'react'
-import { buildAttendanceSummary } from '../lib/attendance-summary'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { subscribeToAttendance, subscribeToPersons, updatePersonRecord } from '../lib/data-store'
 import { firebaseEnabled } from '../lib/firebase'
 import { saveOfficeConfig, subscribeToOfficeConfigs } from '../lib/office-admin-store'
@@ -78,6 +77,10 @@ function getDecisionTone(code) {
   return 'bad'
 }
 
+function areOfficeDraftsEqual(left, right) {
+  return JSON.stringify(left || null) === JSON.stringify(right || null)
+}
+
 export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '' }) {
   const todayIso = new Date().toISOString().slice(0, 10)
   const [roleScope, setRoleScope] = useState(initialRoleScope)
@@ -100,6 +103,8 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   const [adminDisplayName, setAdminDisplayName] = useState('')
   const [adminScope, setAdminScope] = useState('office')
   const [adminOfficeId, setAdminOfficeId] = useState('')
+  const [officeDraftWarning, setOfficeDraftWarning] = useState('')
+  const draftOfficeRef = useRef(draftOffice)
 
   useEffect(() => {
     const unsubscribe = subscribeToOfficeConfigs(
@@ -120,6 +125,10 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   useEffect(() => {
     setRoleScope(initialRoleScope)
   }, [initialRoleScope])
+
+  useEffect(() => {
+    draftOfficeRef.current = draftOffice
+  }, [draftOffice])
 
   useEffect(() => {
     const unsubscribePersons = subscribeToPersons(setPersons, () => {})
@@ -228,14 +237,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   }, [summaryDate])
 
   const summaryRows = useMemo(() => {
-    const baseRows = firebaseEnabled
-      ? dailySummaryRecords
-      : buildAttendanceSummary({
-          attendance,
-          persons,
-          offices,
-          targetDate: summaryDate,
-        })
+    const baseRows = firebaseEnabled ? dailySummaryRecords : []
 
     return baseRows.filter(row => {
       if (roleScope !== 'regional' && row.officeName !== activeOffice?.name) return false
@@ -246,7 +248,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       if (summaryEmployeeFilter !== 'all' && row.employeeId !== summaryEmployeeFilter) return false
       return true
     })
-  }, [activeOffice?.name, attendance, dailySummaryRecords, firebaseEnabled, offices, persons, roleScope, summaryDate, summaryEmployeeFilter, summaryOfficeFilter])
+  }, [activeOffice?.name, dailySummaryRecords, firebaseEnabled, offices, roleScope, summaryEmployeeFilter, summaryOfficeFilter])
 
   const filteredPersons = useMemo(() => {
     const query = employeeQuery.trim().toLowerCase()
@@ -270,7 +272,22 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
   useEffect(() => {
     const office = offices.find(item => item.id === selectedOfficeId) || null
-    setDraftOffice(office ? structuredClone(office) : null)
+    const nextDraft = office ? structuredClone(office) : null
+    const currentDraft = draftOfficeRef.current
+
+    if (!currentDraft || currentDraft.id !== office?.id) {
+      setDraftOffice(nextDraft)
+      setOfficeDraftWarning('')
+      return
+    }
+
+    if (areOfficeDraftsEqual(currentDraft, office)) {
+      setDraftOffice(nextDraft)
+      setOfficeDraftWarning('')
+      return
+    }
+
+    setOfficeDraftWarning('Background updates were detected. Your unsaved office edits were kept.')
   }, [offices, selectedOfficeId])
 
   function updateDraft(path, value) {
@@ -337,6 +354,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
     try {
       const result = await saveOfficeConfig(draftOffice)
+      setOfficeDraftWarning('')
       setStatus(result.mode === 'firebase' ? 'Saved through protected server route' : 'Saved locally')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Failed to save office configuration')
@@ -503,8 +521,8 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       )}
       contentClassName="px-4 py-5 sm:px-6 lg:px-8"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-9.2rem)]">
-        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-5 shadow-glow backdrop-blur xl:grid-cols-[1.2fr_.8fr]">
+      <div className="page-frame flex flex-col gap-4 xl:min-h-[calc(100dvh-10.8rem)]">
+        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-5 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,420px)]">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
@@ -583,7 +601,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
           </motion.aside>
         </section>
 
-        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
           <motion.aside
             animate={{ opacity: 1, y: 0 }}
             className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
@@ -661,6 +679,12 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
             {activePanel === 'office' && activeOffice ? (
               <div className="grid max-h-[62vh] gap-5 overflow-auto pr-1 md:grid-cols-2">
+                {officeDraftWarning ? (
+                  <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    {officeDraftWarning}
+                  </div>
+                ) : null}
+
                 <div className="md:col-span-2">
                   <Field label="Office map location">
                     <OfficeLocationPicker
@@ -949,6 +973,12 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
           <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="min-h-0 overflow-auto">
+              {!firebaseEnabled ? (
+                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Attendance summary requires Firebase-backed server records. Client-derived summary fallback has been disabled.
+                </div>
+              ) : null}
+
               <table className="min-w-full border-separate border-spacing-y-3 text-left">
                 <thead className="sticky top-0 bg-white/95 backdrop-blur">
                   <tr className="text-xs uppercase tracking-[0.16em] text-muted">
@@ -968,7 +998,9 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                   {summaryRows.length === 0 ? (
                     <tr>
                       <td className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted" colSpan={10}>
-                        No attendance summary rows for the selected date yet.
+                        {firebaseEnabled
+                          ? 'No attendance summary rows for the selected date yet.'
+                          : 'Attendance summary is unavailable without Firebase.'}
                       </td>
                     </tr>
                   ) : (

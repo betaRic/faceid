@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
-import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, revalidateAdminSession } from '../../../lib/admin-auth'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '../../../lib/admin-auth'
 import { listAdminProfiles } from '../../../lib/admin-directory'
 import { writeAuditLog } from '../../../lib/audit-log'
 
@@ -23,12 +23,20 @@ function validateBody(body) {
 
 export async function GET(request) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!isRegionalAdminSession(session)) {
-    return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
   }
 
   try {
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+    if (!isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+    }
+
     const admins = await listAdminProfiles(db)
     return NextResponse.json({ ok: true, admins })
   } catch (error) {
@@ -41,8 +49,8 @@ export async function GET(request) {
 
 export async function POST(request) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!isRegionalAdminSession(session)) {
-    return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
   }
 
   const body = normalizeBody(await request.json().catch(() => null))
@@ -53,9 +61,12 @@ export async function POST(request) {
 
   try {
     const db = getAdminDb()
-    const stillActive = await revalidateAdminSession(db, session)
-    if (!stillActive) {
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+    if (!isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
     const existing = await db.collection('admins').where('email', '==', body.email).limit(1).get()
@@ -74,9 +85,9 @@ export async function POST(request) {
     })
 
     await writeAuditLog(db, {
-      actorRole: session.role,
-      actorScope: session.scope,
-      actorOfficeId: session.officeId,
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
       action: 'admin_create',
       targetType: 'admin',
       targetId: record.id,

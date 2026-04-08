@@ -5,6 +5,7 @@ import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
+  resolveAdminSession,
 } from '../../../../lib/admin-auth'
 import { writeAuditLog } from '../../../../lib/audit-log'
 import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '../../../../lib/biometric-index'
@@ -38,13 +39,18 @@ export async function PUT(request, { params }) {
 
   try {
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     const existing = await db.collection('persons').doc(params.personId).get()
     if (!existing.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
 
     const existingData = existing.data()
-    if (!adminSessionAllowsOffice(session, existingData.officeId) || !adminSessionAllowsOffice(session, body.officeId)) {
+    if (!adminSessionAllowsOffice(resolvedSession, existingData.officeId) || !adminSessionAllowsOffice(resolvedSession, body.officeId)) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot update that employee.' }, { status: 403 })
     }
 
@@ -59,9 +65,9 @@ export async function PUT(request, { params }) {
     await syncPersonBiometricIndex(db, params.personId, nextPerson)
 
     await writeAuditLog(db, {
-      actorRole: session.role,
-      actorScope: session.scope,
-      actorOfficeId: session.officeId,
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
       action: 'person_update',
       targetType: 'person',
       targetId: params.personId,
@@ -91,21 +97,26 @@ export async function DELETE(request, { params }) {
 
   try {
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     const existing = await db.collection('persons').doc(params.personId).get()
     if (!existing.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
 
-    if (!adminSessionAllowsOffice(session, existing.data().officeId)) {
+    if (!adminSessionAllowsOffice(resolvedSession, existing.data().officeId)) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot delete that employee.' }, { status: 403 })
     }
 
     await db.collection('persons').doc(params.personId).delete()
     await deletePersonBiometricIndex(db, params.personId)
     await writeAuditLog(db, {
-      actorRole: session.role,
-      actorScope: session.scope,
-      actorOfficeId: session.officeId,
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
       action: 'person_delete',
       targetType: 'person',
       targetId: params.personId,

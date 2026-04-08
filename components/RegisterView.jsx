@@ -373,12 +373,12 @@ export default function RegisterView({
         </div>
       ) : null}
 
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-9.5rem)]">
+      <div className="page-frame flex flex-col gap-4 xl:min-h-[calc(100dvh-10.75rem)]">
         <motion.section
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1fr)_260px]"
+          className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]"
         >
           <div className="min-w-0">
             <BrandMark />
@@ -428,7 +428,7 @@ export default function RegisterView({
           </div>
         </motion.section>
 
-        <div className={`grid min-h-0 flex-1 gap-4 ${showRoster ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
+        <div className={`grid min-h-0 flex-1 gap-4 ${showRoster ? 'xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,360px)]' : ''}`}>
           <motion.section
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}

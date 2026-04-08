@@ -25,8 +25,8 @@ export default function WorkforceAttendanceSuite({ initialData }) {
 
   return (
     <AppShell contentClassName="px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-8.8rem)]">
-        <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="page-frame flex flex-col gap-4 xl:min-h-[calc(100dvh-10.4rem)]">
+        <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
@@ -85,7 +85,7 @@ export default function WorkforceAttendanceSuite({ initialData }) {
           ))}
         </section>
 
-        <section className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[240px_minmax(0,1fr)]">
+        <section className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
           <motion.aside
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}

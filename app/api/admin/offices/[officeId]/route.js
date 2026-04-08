@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../../../lib/firebase-admin'
-import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName, revalidateAdminSession } from '../../../../../lib/admin-auth'
+import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName, resolveAdminSession } from '../../../../../lib/admin-auth'
 import { writeAuditLog } from '../../../../../lib/audit-log'
 
 function normalizeOfficePayload(officeId, payload) {
@@ -62,10 +62,6 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!adminSessionAllowsOffice(session, params.officeId)) {
-    return NextResponse.json({ ok: false, message: 'This admin session cannot edit that office.' }, { status: 403 })
-  }
-
   const body = await request.json().catch(() => null)
   const office = normalizeOfficePayload(params.officeId, body?.office)
   const validationError = validateOffice(office)
@@ -76,9 +72,12 @@ export async function PUT(request, { params }) {
 
   try {
     const db = getAdminDb()
-    const stillActive = await revalidateAdminSession(db, session)
-    if (!stillActive) {
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+    if (!adminSessionAllowsOffice(resolvedSession, params.officeId)) {
+      return NextResponse.json({ ok: false, message: 'This admin session cannot edit that office.' }, { status: 403 })
     }
 
     await db.collection('offices').doc(office.id).set({
@@ -87,9 +86,9 @@ export async function PUT(request, { params }) {
     }, { merge: true })
 
     await writeAuditLog(db, {
-      actorRole: session.role,
-      actorScope: session.scope,
-      actorOfficeId: session.officeId,
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
       action: 'office_update',
       targetType: 'office',
       targetId: office.id,

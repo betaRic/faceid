@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '../../../lib/firebase-admin'
 import { REGION12_OFFICES } from '../../../lib/offices'
-import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue } from '../../../lib/admin-auth'
+import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '../../../lib/admin-auth'
 
 function normalizeOffice(office) {
   return {
@@ -25,15 +25,24 @@ function normalizeOffice(office) {
 }
 
 export async function GET(request) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required to load offices.' }, { status: 401 })
+  }
+
   try {
-    const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     const snapshot = await db.collection('offices').orderBy('name').get()
     const offices = snapshot.empty
       ? REGION12_OFFICES.map(normalizeOffice)
       : snapshot.docs.map(record => normalizeOffice({ id: record.id, ...record.data() }))
 
-    return NextResponse.json({ ok: true, offices: offices.filter(office => adminSessionAllowsOffice(session, office.id)) })
+    return NextResponse.json({ ok: true, offices: offices.filter(office => adminSessionAllowsOffice(resolvedSession, office.id)) })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to load offices.' },

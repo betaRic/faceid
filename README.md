@@ -248,6 +248,7 @@ Notes:
 - set `ADMIN_ALLOWED_EMAILS` to a comma-separated list of Google emails allowed to bootstrap the first regional admin
 - use `ADMIN_ALLOWED_EMAILS` only to bootstrap the first regional admin
 - use Firestore `admins` records for all ongoing per-user admin access in a shared deployment
+- `NEXT_PUBLIC_ALLOW_LOCAL_BIOMETRIC_FALLBACK=true` is an opt-in development flag only; leave it unset for normal use
 
 ## Admin Auth Model
 
@@ -306,6 +307,7 @@ Before deploying:
 Production note:
 - this app must not silently fall back to browser local storage in production
 - if Firebase client env vars are incomplete, kiosk/registration now block instead of pretending to work
+- biometric local fallback is now disabled by default even in development unless explicitly enabled for isolated test data
 
 Biometric index note:
 - the attendance matcher now uses a derived `biometric_index` collection for bucketed candidate narrowing before exact distance checks
@@ -335,6 +337,8 @@ Before calling the system trusted, test:
 - liveness is heuristic only
 - biometric accuracy still depends heavily on enrollment quality and real device conditions
 - this project avoids frame streaming to the server on purpose
+- descriptors are still stored server-side in reusable form
+- attendance still trusts the client-submitted descriptor and GPS input
 
 ## Design Direction
 
