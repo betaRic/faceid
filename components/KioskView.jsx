@@ -9,6 +9,8 @@ import {
   CONFIRMED_HOLD_MS,
   UNKNOWN_DEBOUNCE_MS,
   DETECTION_MAX_DIMENSION,
+  KIOSK_ATTEMPT_COOLDOWN_MS,
+  KIOSK_FACE_LOSS_GRACE_MS,
 } from '../lib/config'
 import BrandMark from './BrandMark'
 import { useAudioCue } from '../hooks/useAudioCue'
@@ -181,11 +183,17 @@ export default function KioskView({
   const previousStateRef = useRef('idle')
   const cachedPositionRef = useRef(null)
   const gpsRefreshPendingRef = useRef(false)
+  const attemptCooldownUntilRef = useRef(0)
+  const faceLossTimerRef = useRef(null)
 
   const stopLoop = useCallback(() => {
     if (scanRef.current) {
       window.clearInterval(scanRef.current)
       scanRef.current = null
+    }
+    if (faceLossTimerRef.current) {
+      window.clearTimeout(faceLossTimerRef.current)
+      faceLossTimerRef.current = null
     }
   }, [])
 
@@ -275,17 +283,25 @@ export default function KioskView({
       const primaryDetection = await detectSingleDescriptor(canvas)
 
       if (!primaryDetection) {
-        if (!confirmedTimer.current) {
-          window.clearTimeout(unknownTimer.current)
-          unknownTimer.current = null
-          setKioskState('idle')
-          setCurrentMatch(null)
-          confirmRef.current = 0
-          camera.clearOverlay()
+        if (!confirmedTimer.current && !faceLossTimerRef.current) {
+          faceLossTimerRef.current = window.setTimeout(() => {
+            window.clearTimeout(unknownTimer.current)
+            unknownTimer.current = null
+            setKioskState('idle')
+            setCurrentMatch(null)
+            confirmRef.current = 0
+            camera.clearOverlay()
+            faceLossTimerRef.current = null
+          }, KIOSK_FACE_LOSS_GRACE_MS)
         }
 
         busyRef.current = false
         return
+      }
+
+      if (faceLossTimerRef.current) {
+        window.clearTimeout(faceLossTimerRef.current)
+        faceLossTimerRef.current = null
       }
 
       window.clearTimeout(unknownTimer.current)
@@ -296,8 +312,9 @@ export default function KioskView({
 
       if (!confirmedTimer.current) setKioskState('scanning')
 
-      if (confirmRef.current >= CONFIRM_FRAMES) {
+      if (confirmRef.current >= CONFIRM_FRAMES && Date.now() >= attemptCooldownUntilRef.current) {
         const now = Date.now()
+        attemptCooldownUntilRef.current = now + KIOSK_ATTEMPT_COOLDOWN_MS
         const coordinates = getCachedPositionCoordinates(cachedPositionRef)
 
         const result = await onLogAttendance({
@@ -340,6 +357,8 @@ export default function KioskView({
         }, CONFIRMED_HOLD_MS)
       }
     } catch (error) {
+      attemptCooldownUntilRef.current = Date.now() + KIOSK_ATTEMPT_COOLDOWN_MS
+      confirmRef.current = 0
       const decisionCode = error.decisionCode || ''
       const safeDecision = getSafeDecisionMessage(decisionCode)
 

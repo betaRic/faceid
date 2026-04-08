@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { detectSingleDescriptor } from '../lib/face-api'
-import { DETECTION_MAX_DIMENSION, FACE_COLORS, PREVIEW_MAX_DIMENSION } from '../lib/config'
+import { DETECTION_MAX_DIMENSION, FACE_COLORS, PREVIEW_MAX_DIMENSION, REGISTRATION_SCAN_INTERVAL_MS } from '../lib/config'
 import BrandMark from './BrandMark'
 import { useAudioCue } from '../hooks/useAudioCue'
 import AppShell from './AppShell'
@@ -11,7 +11,7 @@ import AppShell from './AppShell'
 const MIN_SAMPLES = 3
 
 const STEPS = [
-  { id: 'capture', number: '1', title: 'Capture face', description: 'Use automatic face capture with liveness confirmation.' },
+  { id: 'capture', number: '1', title: 'Capture face', description: 'Align your face, then capture manually.' },
   { id: 'review', number: '2', title: 'Review photo', description: 'Retake the image if the preview is unclear.' },
   { id: 'details', number: '3', title: 'Employee details', description: 'Enter employee ID, name, and assigned office.' },
   { id: 'complete', number: '4', title: 'Enrollment saved', description: 'Continue with another sample or a new employee.' },
@@ -46,7 +46,6 @@ export default function RegisterView({
   const autoRef = useRef(null)
   const nameRef = useRef(null)
   const busyRef = useRef(false)
-  const previewUrlRef = useRef(null)
 
   const selectedOffice = offices.find(office => office.id === officeId) || null
   const existingPerson = useMemo(
@@ -59,10 +58,6 @@ export default function RegisterView({
     setToast(message)
     window.setTimeout(() => setToast(null), duration)
   }, [])
-
-  useEffect(() => {
-    previewUrlRef.current = previewUrl
-  }, [previewUrl])
 
   const stopDetect = useCallback(() => {
     if (autoRef.current) {
@@ -161,10 +156,10 @@ export default function RegisterView({
   const startDetect = useCallback(() => {
     stopDetect()
     setStep('capture')
-    setStatusMsg('Align face with the camera or press capture.')
+    setStatusMsg('Align face with the camera, then press capture.')
 
     autoRef.current = window.setInterval(async () => {
-      if (busyRef.current || !camera.camOn || previewUrlRef.current || !modelsReady) return
+      if (busyRef.current || !camera.camOn || previewUrl || !modelsReady) return
 
       busyRef.current = true
       try {
@@ -181,16 +176,14 @@ export default function RegisterView({
           return
         }
 
-        stopDetect()
-        setStatusMsg('Capturing face...')
-        await captureFace()
+        setStatusMsg('Face ready. Press capture when still.')
       } catch {
         setStatusMsg('Camera scan interrupted')
       } finally {
         busyRef.current = false
       }
-    }, 500)
-  }, [camera, captureFace, drawBox, modelsReady, stopDetect])
+    }, REGISTRATION_SCAN_INTERVAL_MS)
+  }, [camera, drawBox, modelsReady, previewUrl, stopDetect])
 
   useEffect(() => {
     camera.start().then(() => startDetect())
@@ -226,7 +219,7 @@ export default function RegisterView({
     }
 
     if (!pendingDesc) {
-      showToast('Automatic face capture is required')
+      showToast('Capture a face first')
       return
     }
 
@@ -269,32 +262,35 @@ export default function RegisterView({
     )
   }, [employeeId, name, officeId, onEnrollPerson, pendingDesc, persons, playAudioCue, selectedOffice, showToast])
 
-  const handleRetake = useCallback(() => {
+  const resetForCapture = useCallback(async () => {
     setPendingDesc(null)
     setPreviewUrl(null)
     setFaceFound(false)
     setLastSavedSummary(null)
+    camera.clearOverlay()
+    try {
+      await camera.start()
+    } catch {
+      setStatusMsg('Camera unavailable')
+      return
+    }
     startDetect()
-  }, [startDetect])
+  }, [camera, startDetect])
+
+  const handleRetake = useCallback(() => {
+    resetForCapture()
+  }, [resetForCapture])
 
   const handleNewPerson = useCallback(() => {
     setName('')
     setEmployeeId('')
     setOfficeId(offices[0]?.id || '')
-    setPendingDesc(null)
-    setPreviewUrl(null)
-    setFaceFound(false)
-    setLastSavedSummary(null)
-    startDetect()
-  }, [offices, startDetect])
+    resetForCapture()
+  }, [offices, resetForCapture])
 
   const handleAddAnotherSample = useCallback(() => {
-    setPendingDesc(null)
-    setPreviewUrl(null)
-    setFaceFound(false)
-    setLastSavedSummary(null)
-    startDetect()
-  }, [startDetect])
+    resetForCapture()
+  }, [resetForCapture])
 
   const handleDelete = useCallback(async (id, personName) => {
     if (!window.confirm(`Remove ${personName}?`)) return
@@ -430,10 +426,10 @@ export default function RegisterView({
                       <button
                         className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={!faceFound || !camera.camOn || !modelsReady}
-                        onClick={() => {
+                        onClick={async () => {
                           stopDetect()
                           setStatusMsg('Capturing face...')
-                          captureFace()
+                          await captureFace()
                         }}
                         type="button"
                       >
@@ -446,7 +442,7 @@ export default function RegisterView({
                 <div className="grid content-start gap-3">
                   <InfoCard
                     title="Camera"
-                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Keep the face centered.'}
+                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Manual capture only. Keep the face centered, then press capture.'}
                     tone={!modelsReady ? 'warn' : 'default'}
                   />
                   <InfoCard

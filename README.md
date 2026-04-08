@@ -42,7 +42,6 @@ Main entry page for:
 
 Shared camera attendance mode with:
 - local live face detection
-- local liveness prompt
 - one final descriptor submission to the server
 - server-side identity decision
 - server-side GPS / WFH / employee status validation
@@ -61,7 +60,6 @@ Features:
 - employee ID required
 - duplicate employee ID blocking
 - duplicate face blocking
-- weak capture rejection
 - roster drawer for existing employees
 
 ### 4. Admin
@@ -95,7 +93,6 @@ The system is intentionally kept lean.
 The client is responsible for:
 - camera preview
 - live face detection
-- liveness prompt
 - capture guidance
 - wizard flow and kiosk UX
 
@@ -113,15 +110,12 @@ The server is responsible for:
 
 ### Important Trust Boundary
 
-The kiosk no longer streams frames to the server.
-
-Instead:
+Current attendance flow:
 1. the client detects a face locally
-2. the client passes the liveness step locally
-3. the client sends one final descriptor for attendance
-4. the server matches the identity and decides whether attendance is accepted
+2. the client sends one final descriptor for attendance
+3. the server matches identity and decides whether attendance is accepted
 
-This avoids the old overcomplicated streaming approach that caused stuck kiosks and unstable behavior.
+This is operationally simpler, but it is not a hardened biometric trust model because descriptors still come from the client.
 
 ## Biometric Status
 
@@ -139,8 +133,7 @@ What is already improved:
 
 What is still true:
 - live detection still happens on the client
-- liveness is heuristic, not enterprise anti-spoof
-- real trust still depends on field testing with actual employees and devices
+- attendance still relies on client-generated descriptors
 
 ## Project Structure
 
@@ -334,9 +327,7 @@ Before calling the system trusted, test:
 ## Known Limitations
 
 - `@vladmandic/face-api` still emits a Next.js build warning about dynamic `require`
-- liveness is heuristic only
 - biometric accuracy still depends heavily on enrollment quality and real device conditions
-- this project avoids frame streaming to the server on purpose
 - descriptors are still stored server-side in reusable form
 - attendance still trusts the client-submitted descriptor and GPS input
 
