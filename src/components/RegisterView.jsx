@@ -2,18 +2,23 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { detectSingleDescriptor } from '../localFaceApi'
 import { FACE_COLORS } from '../config'
 
+const MIN_SAMPLES = 3  // recommended minimum per person
+
 export default function RegisterView({ camera, persons, setPersons, modelsReady, onBack }) {
-  const [name, setName]                   = useState('')
-  const [previewUrl, setPreviewUrl]       = useState(null)
-  const [pendingDesc, setPendingDesc]     = useState(null)
-  const [faceFound, setFaceFound]         = useState(false)
-  const [statusMsg, setStatusMsg]         = useState('Initializing camera…')
-  const [toast, setToast]                 = useState(null)
+  const [name, setName]               = useState('')
+  const [previewUrl, setPreviewUrl]   = useState(null)
+  const [pendingDesc, setPendingDesc] = useState(null)
+  const [sessionSamples, setSessionSamples] = useState(0) // samples added this session for current name
+  const [faceFound, setFaceFound]     = useState(false)
+  const [statusMsg, setStatusMsg]     = useState('Starting camera…')
+  const [toast, setToast]             = useState(null)
   const autoRef  = useRef(null)
   const nameRef  = useRef(null)
   const busyRef  = useRef(false)
 
-  const showToast = msg => { setToast(msg); setTimeout(() => setToast(null), 3500) }
+  const showToast = (msg, duration = 3500) => {
+    setToast(msg); setTimeout(() => setToast(null), duration)
+  }
 
   useEffect(() => {
     camera.start().then(() => startDetect())
@@ -54,7 +59,7 @@ export default function RegisterView({ camera, persons, setPersons, modelsReady,
         drawBox(result || null)
         setStatusMsg(result ? 'Face detected — click CAPTURE' : 'Scanning for face…')
       } catch {}
-    }, 600)
+    }, 400)
   }
   const stopDetect = () => { clearInterval(autoRef.current); autoRef.current = null }
 
@@ -72,7 +77,7 @@ export default function RegisterView({ camera, persons, setPersons, modelsReady,
       setPendingDesc(result.descriptor)
       setPreviewUrl(canvas.toDataURL('image/jpeg', 0.85))
       camera.clearOverlay()
-      setStatusMsg('Face captured — enter name below')
+      setStatusMsg('Face captured — enter name and click ENROLL')
       setTimeout(() => nameRef.current?.focus(), 100)
     } catch (e) { showToast('Error: ' + e.message); startDetect() }
     busyRef.current = false
@@ -83,20 +88,30 @@ export default function RegisterView({ camera, persons, setPersons, modelsReady,
     if (!pendingDesc) { showToast('Capture a face first'); return }
     const trimmed = name.trim()
     const existing = persons.find(p => p.name.toLowerCase() === trimmed.toLowerCase())
-    let updated
+    let updated, newCount
     if (existing) {
       updated = persons.map(p =>
         p.name.toLowerCase() === trimmed.toLowerCase()
           ? { ...p, descriptors: [...p.descriptors, pendingDesc] }
           : p
       )
-      showToast(`New sample added to ${existing.name}`)
+      newCount = existing.descriptors.length + 1
     } else {
       updated = [...persons, { id: Date.now().toString(), name: trimmed, descriptors: [pendingDesc] }]
-      showToast(`${trimmed} enrolled!`)
+      newCount = 1
     }
     setPersons(updated)
-    setName(''); setPendingDesc(null); setPreviewUrl(null); setFaceFound(false)
+    setSessionSamples(s => s + 1)
+
+    const remaining = MIN_SAMPLES - newCount
+    if (remaining > 0) {
+      showToast(`Sample ${newCount} saved! Add ${remaining} more for best accuracy.`)
+    } else {
+      showToast(`✓ ${trimmed} enrolled with ${newCount} sample${newCount !== 1 ? 's' : ''}!`, 4000)
+    }
+
+    setPendingDesc(null); setPreviewUrl(null); setFaceFound(false)
+    // Keep the name so the user can easily add more samples
     startDetect()
   }
 
@@ -105,11 +120,23 @@ export default function RegisterView({ camera, persons, setPersons, modelsReady,
     startDetect()
   }
 
+  const handleNewPerson = () => {
+    setName(''); setPendingDesc(null); setPreviewUrl(null)
+    setFaceFound(false); setSessionSamples(0)
+    startDetect()
+    nameRef.current?.focus()
+  }
+
   const handleDelete = (id, pName) => {
     if (!window.confirm(`Remove ${pName}?`)) return
     setPersons(persons.filter(p => p.id !== id))
     showToast(`${pName} removed`)
   }
+
+  const existingPerson = persons.find(p => p.name.toLowerCase() === name.trim().toLowerCase())
+  const existingSamples = existingPerson?.descriptors.length ?? 0
+  const totalAfterEnroll = existingSamples + (pendingDesc ? 1 : 0)
+  const needsMoreSamples = totalAfterEnroll < MIN_SAMPLES
 
   return (
     <div className="reg-root">
@@ -148,7 +175,22 @@ export default function RegisterView({ camera, persons, setPersons, modelsReady,
 
           <div className="reg-status-bar">{statusMsg}</div>
 
-          {!modelsReady && <div className="info-warn">⏳ Loading recognition models…</div>}
+          {!modelsReady && (
+            <div className="info-warn">⏳ Loading recognition models…</div>
+          )}
+
+          {/* Step guide */}
+          <div className="reg-steps">
+            <div className={`reg-step ${!previewUrl && camera.camOn ? 'step-active' : previewUrl ? 'step-done' : ''}`}>
+              <span className="step-num">1</span> Face camera, click CAPTURE
+            </div>
+            <div className={`reg-step ${previewUrl && !name.trim() ? 'step-active' : name.trim() && previewUrl ? 'step-done' : ''}`}>
+              <span className="step-num">2</span> Enter employee name
+            </div>
+            <div className={`reg-step ${name.trim() && previewUrl ? 'step-active' : ''}`}>
+              <span className="step-num">3</span> Click ENROLL (repeat for {MIN_SAMPLES}+ samples)
+            </div>
+          </div>
 
           {!previewUrl ? (
             <button className="btn-big-capture" onClick={handleCapture} disabled={!faceFound || !modelsReady}>
@@ -178,12 +220,34 @@ export default function RegisterView({ camera, persons, setPersons, modelsReady,
               type="text"
               placeholder="Enter full name"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => { setName(e.target.value); setSessionSamples(0) }}
               onKeyDown={e => e.key === 'Enter' && handleRegister()}
             />
+
+            {name.trim() && existingPerson && (
+              <div className="sample-status">
+                <div className="sample-bar-bg">
+                  <div
+                    className="sample-bar"
+                    style={{ width: Math.min(100, (existingSamples / MIN_SAMPLES) * 100) + '%',
+                             background: existingSamples >= MIN_SAMPLES ? 'var(--green)' : 'var(--yellow)' }}
+                  />
+                </div>
+                <span className="sample-label">
+                  {existingSamples} / {MIN_SAMPLES} samples
+                  {existingSamples >= MIN_SAMPLES ? '  ✓ Good accuracy' : '  — add more for better accuracy'}
+                </span>
+              </div>
+            )}
+
             <button className="btn-register" onClick={handleRegister} disabled={!pendingDesc || !name.trim()}>
               ⊕  ENROLL EMPLOYEE
             </button>
+            {name.trim() && existingPerson && (
+              <button className="btn-new-person" onClick={handleNewPerson}>
+                + NEW PERSON
+              </button>
+            )}
           </div>
 
           <div className="reg-card reg-list-card">
@@ -193,12 +257,20 @@ export default function RegisterView({ camera, persons, setPersons, modelsReady,
               : <div className="reg-scroll">
                   {persons.map((p, i) => (
                     <div key={p.id} className="person-row">
-                      <div className="person-avatar" style={{ color: FACE_COLORS[i % FACE_COLORS.length], borderColor: FACE_COLORS[i % FACE_COLORS.length] }}>
+                      <div className="person-avatar" style={{
+                        color: FACE_COLORS[i % FACE_COLORS.length],
+                        borderColor: FACE_COLORS[i % FACE_COLORS.length]
+                      }}>
                         {p.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="person-info">
                         <span className="person-name">{p.name}</span>
-                        <span className="person-samples">{p.descriptors.length} sample{p.descriptors.length !== 1 ? 's' : ''}</span>
+                        <span className="person-samples" style={{
+                          color: p.descriptors.length >= MIN_SAMPLES ? 'var(--green2)' : 'var(--yellow)'
+                        }}>
+                          {p.descriptors.length} sample{p.descriptors.length !== 1 ? 's' : ''}
+                          {p.descriptors.length >= MIN_SAMPLES ? ' ✓' : ` — need ${MIN_SAMPLES - p.descriptors.length} more`}
+                        </span>
                       </div>
                       <button className="btn-del" onClick={() => handleDelete(p.id, p.name)}>✕</button>
                     </div>

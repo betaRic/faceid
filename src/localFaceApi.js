@@ -1,32 +1,24 @@
 /**
- * localFaceApi.js
- * Uses @vladmandic/face-api (face-api.js) for local face recognition.
- * No server approval required — runs entirely in the browser.
- *
- * Models used:
- *  - ssdMobilenetv1      : face detection
- *  - faceLandmark68Net   : landmark detection
- *  - faceRecognitionNet  : 128-d face descriptor
+ * localFaceApi.js  —  single source of truth for face-api + storage helpers
+ * Delete src/components/localFaceApi.js after applying this file.
  */
-
 import * as faceapi from '@vladmandic/face-api'
-import { STORAGE_KEY } from './config'
+import { STORAGE_KEY, ATTENDANCE_KEY, DISTANCE_THRESHOLD } from './config'
 
 let modelsLoaded = false
 
 export async function loadModels(onProgress) {
   if (modelsLoaded) return
-  onProgress?.('Loading face detection model…')
+  onProgress?.('Loading detection model…')
   await faceapi.nets.ssdMobilenetv1.loadFromUri('/models')
   onProgress?.('Loading landmark model…')
   await faceapi.nets.faceLandmark68Net.loadFromUri('/models')
   onProgress?.('Loading recognition model…')
   await faceapi.nets.faceRecognitionNet.loadFromUri('/models')
   modelsLoaded = true
-  onProgress?.('Models ready')
+  onProgress?.('Ready')
 }
 
-// Detect all faces + descriptors from a canvas/video element
 export async function detectWithDescriptors(input) {
   return faceapi
     .detectAllFaces(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
@@ -34,7 +26,6 @@ export async function detectWithDescriptors(input) {
     .withFaceDescriptors()
 }
 
-// Detect a single face descriptor from a canvas/video element
 export async function detectSingleDescriptor(input) {
   const result = await faceapi
     .detectSingleFace(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
@@ -43,46 +34,45 @@ export async function detectSingleDescriptor(input) {
   return result || null
 }
 
-// ─── Persistence (localStorage) ───────────────────────────────────────────────
-
+// ── Persons ──────────────────────────────────────────────────────────────────
 export function loadRegisteredPersons() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
-    const parsed = JSON.parse(raw)
-    // Restore Float32Array descriptors from plain arrays
-    return parsed.map(p => ({
+    return JSON.parse(raw).map(p => ({
       ...p,
       descriptors: p.descriptors.map(d => new Float32Array(d)),
     }))
-  } catch {
-    return []
-  }
+  } catch { return [] }
 }
 
 export function saveRegisteredPersons(persons) {
-  const serializable = persons.map(p => ({
-    ...p,
-    descriptors: p.descriptors.map(d => Array.from(d)),
-  }))
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(
+    persons.map(p => ({ ...p, descriptors: p.descriptors.map(d => Array.from(d)) }))
+  ))
 }
 
-// ─── Matching ─────────────────────────────────────────────────────────────────
+// ── Attendance ────────────────────────────────────────────────────────────────
+export function loadAttendance() {
+  try { return JSON.parse(localStorage.getItem(ATTENDANCE_KEY) || '[]') } catch { return [] }
+}
 
-const DISTANCE_THRESHOLD = 0.5  // lower = stricter match
+export function saveAttendance(log) {
+  localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(log.slice(-500)))
+}
 
+// ── Matching ──────────────────────────────────────────────────────────────────
 export function buildMatcher(persons) {
-  if (persons.length === 0) return null
-  const labeled = persons.map(
-    p => new faceapi.LabeledFaceDescriptors(p.name, p.descriptors)
+  if (!persons.length) return null
+  return new faceapi.FaceMatcher(
+    persons.map(p => new faceapi.LabeledFaceDescriptors(p.name, p.descriptors)),
+    DISTANCE_THRESHOLD
   )
-  return new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD)
 }
 
 export function matchDescriptor(matcher, descriptor) {
-  if (!matcher) return null
+  if (!matcher) return { identified: false }
   const best = matcher.findBestMatch(descriptor)
-  if (best.label === 'unknown') return { name: 'Unknown', distance: best.distance, identified: false }
-  return { name: best.label, distance: best.distance, confidence: 1 - best.distance, identified: true }
+  if (best.label === 'unknown') return { identified: false, distance: best.distance }
+  return { identified: true, name: best.label, distance: best.distance, confidence: 1 - best.distance }
 }
