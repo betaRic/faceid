@@ -32,7 +32,6 @@ export default function WorkforceAttendanceSuite({ initialData }) {
           </p>
 
           <div className="hero-actions">
-            <a className="primary-action" href="#questions">Required clarifications</a>
             <a className="secondary-action" href="/api/system/blueprint">Server data sample</a>
             <a className="secondary-action" href="/attendance">Open live prototype</a>
           </div>
@@ -189,14 +188,6 @@ export default function WorkforceAttendanceSuite({ initialData }) {
         ) : null}
       </section>
 
-      <section className="questions-panel" id="questions">
-        <PanelTitle title="Questions That Will Define The Real Build" subtitle="I need these from you before full implementation" />
-        <ol className="question-list">
-          {initialData.nextQuestions.map(question => (
-            <li key={question}>{question}</li>
-          ))}
-        </ol>
-      </section>
     </main>
   )
 }

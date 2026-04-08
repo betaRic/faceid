@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { useEffect, useMemo, useState } from 'react'
 import { buildAttendanceSummary } from '../lib/attendance-summary'
@@ -8,6 +9,10 @@ import { subscribeToAttendance, subscribeToPersons, updatePersonRecord } from '.
 import { firebaseEnabled } from '../lib/firebase'
 import { saveOfficeConfig, subscribeToOfficeConfigs } from '../lib/office-admin-store'
 import BrandMark from './BrandMark'
+
+const OfficeLocationPicker = dynamic(() => import('./OfficeLocationPicker'), {
+  ssr: false,
+})
 
 const dayOptions = [
   { value: 1, label: 'Mon' },
@@ -150,6 +155,31 @@ export default function AdminDashboard() {
 
       return next
     })
+  }
+
+  async function handleUseMyLocation() {
+    if (!navigator.geolocation) {
+      setStatus('Location services are not available on this device')
+      return
+    }
+
+    setStatus('Getting current location...')
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        updateDraft('gps.latitude', Number(position.coords.latitude.toFixed(6)))
+        updateDraft('gps.longitude', Number(position.coords.longitude.toFixed(6)))
+        setStatus('Office location updated from current device location')
+      },
+      error => {
+        setStatus(error.message || 'Unable to get current location')
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      },
+    )
   }
 
   async function handleSaveOffice() {
@@ -363,6 +393,32 @@ export default function AdminDashboard() {
 
             {activeOffice ? (
               <div className="grid gap-5 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <Field label="Office map location">
+                    <OfficeLocationPicker
+                      latitude={activeOffice.gps.latitude}
+                      longitude={activeOffice.gps.longitude}
+                      onChange={({ latitude, longitude }) => {
+                        updateDraft('gps.latitude', latitude)
+                        updateDraft('gps.longitude', longitude)
+                      }}
+                      radiusMeters={activeOffice.gps.radiusMeters}
+                    />
+                  </Field>
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                    <button
+                      className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                      onClick={handleUseMyLocation}
+                      type="button"
+                    >
+                      Use my location
+                    </button>
+                    <div className="rounded-full bg-brand/8 px-4 py-3 text-sm text-brand-dark">
+                      Click on the map to place the office pin and adjust the geofence.
+                    </div>
+                  </div>
+                </div>
+
                 <Field label="Office name">
                   <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('name', event.target.value)} value={activeOffice.name} />
                 </Field>
