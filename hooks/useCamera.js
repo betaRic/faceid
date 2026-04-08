@@ -7,6 +7,7 @@ export function useCamera() {
   const canvasRef = useRef(null)
   const overlayRef = useRef(null)
   const streamRef = useRef(null)
+  const startPromiseRef = useRef(null)
 
   const [camOn, setCamOn] = useState(false)
   const [camError, setCamError] = useState(null)
@@ -17,28 +18,59 @@ export function useCamera() {
   }, [])
 
   const start = useCallback(async () => {
+    if (startPromiseRef.current) return startPromiseRef.current
+
+    if (streamRef.current && videoRef.current?.srcObject === streamRef.current) {
+      setCamError(null)
+      setCamOn(true)
+      return streamRef.current
+    }
+
     setCamError(null)
 
-    try {
-      const stream = await requestPreferredCameraStream()
+    startPromiseRef.current = (async () => {
+      try {
+        const stream = await requestPreferredCameraStream()
 
-      streamRef.current = stream
+        streamRef.current = stream
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
+        if (videoRef.current) {
+          if (videoRef.current.srcObject !== stream) {
+            videoRef.current.srcObject = stream
+          }
+
+          if (videoRef.current.paused) {
+            await videoRef.current.play()
+          }
+        }
+
+        setCamOn(true)
+        return stream
+      } catch (error) {
+        const message = error?.message || 'Unable to access camera'
+        const interrupted = message.toLowerCase().includes('interrupted by a new load request')
+        setCamError(interrupted ? 'Camera restarted. Retrying...' : message)
+        setCamOn(false)
+        throw error
+      } finally {
+        startPromiseRef.current = null
       }
+    })()
 
-      setCamOn(true)
-    } catch (error) {
-      setCamError(error.message)
-      setCamOn(false)
-    }
+    return startPromiseRef.current
   }, [])
 
   const stop = useCallback(() => {
     if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop())
     streamRef.current = null
+    startPromiseRef.current = null
+
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.srcObject = null
+      videoRef.current.load()
+    }
+
     setCamOn(false)
     clearOverlay()
   }, [clearOverlay])
