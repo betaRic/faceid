@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
 import { REGION12_OFFICES, calculateDistanceMeters, isOfficeWfhDay } from '../../../lib/offices'
-import { AMBIGUOUS_MATCH_MARGIN, DISTANCE_THRESHOLD } from '../../../lib/config'
+import { AMBIGUOUS_MATCH_MARGIN, COOLDOWN_MS, DISTANCE_THRESHOLD } from '../../../lib/config'
+import { deriveDailyAttendanceRecord } from '../../../lib/daily-attendance'
+import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
+import { euclideanDistance, matchBiometricIndexCandidates, queryBiometricIndexCandidates } from '../../../lib/biometric-index'
 
 function normalizeEntry(body) {
   return {
@@ -45,37 +48,135 @@ async function getOffice(db, officeId) {
   return REGION12_OFFICES.find(office => office.id === officeId) || null
 }
 
-async function getPersonByEmployeeId(db, employeeId) {
-  const snapshot = await db
-    .collection('persons')
-    .where('employeeId', '==', employeeId)
-    .limit(1)
-    .get()
-
-  if (snapshot.empty) return null
-
-  const record = snapshot.docs[0]
-  return { id: record.id, ...record.data() }
+async function getAllOffices(db) {
+  const snapshot = await db.collection('offices').get()
+  if (snapshot.empty) return REGION12_OFFICES
+  return snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
 }
 
-async function getAllActivePersons(db) {
+async function getPersonsForOfficeIds(db, officeIds) {
+  if (!officeIds.length) return []
+
+  const uniqueOfficeIds = Array.from(new Set(officeIds.filter(Boolean)))
+  const chunks = []
+
+  for (let index = 0; index < uniqueOfficeIds.length; index += 10) {
+    chunks.push(uniqueOfficeIds.slice(index, index + 10))
+  }
+
+  const snapshots = await Promise.all(chunks.map(chunk => (
+    db
+      .collection('persons')
+      .where('active', '==', true)
+      .where('officeId', 'in', chunk)
+      .get()
+  )))
+
+  const deduped = new Map()
+  snapshots.forEach(snapshot => {
+    snapshot.docs.forEach(record => {
+      deduped.set(record.id, { id: record.id, ...record.data() })
+    })
+  })
+
+  return Array.from(deduped.values())
+}
+
+function getCandidateOfficeIds(offices, entry) {
+  const now = new Date(entry.timestamp)
+  const wfhOfficeIds = offices
+    .filter(office => isOfficeWfhDay(office, now))
+    .map(office => office.id)
+
+  if (!Number.isFinite(entry.latitude) || !Number.isFinite(entry.longitude)) {
+    return wfhOfficeIds
+  }
+
+  const onsiteOfficeIds = offices
+    .filter(office => {
+      if (!Number.isFinite(office?.gps?.latitude) || !Number.isFinite(office?.gps?.longitude) || !Number.isFinite(office?.gps?.radiusMeters)) {
+        return false
+      }
+
+      const distanceMeters = calculateDistanceMeters(
+        { latitude: entry.latitude, longitude: entry.longitude },
+        office.gps,
+      )
+
+      return distanceMeters <= office.gps.radiusMeters
+    })
+    .map(office => office.id)
+
+  return Array.from(new Set([...onsiteOfficeIds, ...wfhOfficeIds]))
+}
+
+async function getCandidateAttendanceContext(db, entry) {
+  const offices = await getAllOffices(db)
+  const candidateOfficeIds = getCandidateOfficeIds(offices, entry)
+
+  return {
+    offices,
+    candidateOfficeIds,
+  }
+}
+
+async function getAttendanceLogsForDate(db, employeeId, date) {
   const snapshot = await db
-    .collection('persons')
-    .where('active', '!=', false)
+    .collection('attendance')
+    .where('employeeId', '==', employeeId)
+    .where('date', '==', date)
+    .orderBy('timestamp', 'asc')
     .get()
 
   return snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
 }
 
-function euclideanDistance(left, right) {
-  let total = 0
+function buildAttendanceDocId(employeeId, timestamp) {
+  return `${employeeId}_${timestamp}`
+}
 
-  for (let index = 0; index < left.length; index += 1) {
-    const diff = left[index] - right[index]
-    total += diff * diff
-  }
+async function writeAttendanceAtomically(db, entry) {
+  const attendanceRef = db.collection('attendance').doc(buildAttendanceDocId(entry.employeeId, entry.timestamp))
+  const employeeLockRef = db.collection('attendance_locks').doc(entry.employeeId)
 
-  return Math.sqrt(total)
+  return db.runTransaction(async transaction => {
+    await transaction.get(employeeLockRef)
+
+    const recentQuery = db
+      .collection('attendance')
+      .where('employeeId', '==', entry.employeeId)
+      .where('timestamp', '>=', entry.timestamp - COOLDOWN_MS)
+      .orderBy('timestamp', 'desc')
+      .limit(1)
+
+    const recentSnapshot = await transaction.get(recentQuery)
+    if (!recentSnapshot.empty) {
+      return {
+        ok: false,
+        duplicate: true,
+        entry: {
+          id: recentSnapshot.docs[0].id,
+          ...recentSnapshot.docs[0].data(),
+        },
+      }
+    }
+
+    transaction.set(attendanceRef, {
+      ...entry,
+      descriptor: FieldValue.delete(),
+      createdAt: FieldValue.serverTimestamp(),
+    }, { merge: false })
+
+    transaction.set(employeeLockRef, {
+      updatedAt: FieldValue.serverTimestamp(),
+      lastAttendanceTimestamp: entry.timestamp,
+    }, { merge: true })
+
+    return {
+      ok: true,
+      attendanceId: attendanceRef.id,
+    }
+  })
 }
 
 function matchPersonFromDescriptor(persons, descriptor) {
@@ -91,13 +192,14 @@ function matchPersonFromDescriptor(persons, descriptor) {
   const second = scored[1] || null
 
   if (!best || best.distance > DISTANCE_THRESHOLD) {
-    return { ok: false, message: 'No reliable face match was found.' }
+    return { ok: false, decisionCode: 'blocked_no_reliable_match', message: 'No reliable face match was found.' }
   }
 
   const margin = second ? second.distance - best.distance : 1
   if (second && margin < AMBIGUOUS_MATCH_MARGIN) {
     return {
       ok: false,
+      decisionCode: 'blocked_ambiguous_match',
       message: `Face match is too close between ${best.person.name} and ${second.person.name}.`,
     }
   }
@@ -110,6 +212,26 @@ function matchPersonFromDescriptor(persons, descriptor) {
   }
 }
 
+async function resolveMatchedPerson(db, matchResult) {
+  if (!matchResult.ok) return matchResult
+
+  if (matchResult.person) {
+    return matchResult
+  }
+
+  const record = await db.collection('persons').doc(matchResult.personId).get()
+  if (!record.exists) {
+    return { ok: false, decisionCode: 'blocked_no_reliable_match', message: 'Matched employee record no longer exists.' }
+  }
+
+  return {
+    ok: true,
+    person: { id: record.id, ...record.data() },
+    distance: matchResult.distance,
+    confidence: matchResult.confidence,
+  }
+}
+
 export async function POST(request) {
   const entry = normalizeEntry(await request.json().catch(() => null))
   const validationError = validateEntry(entry)
@@ -119,28 +241,71 @@ export async function POST(request) {
 
   try {
     const db = getAdminDb()
-    const personMatch = entry.employeeId
-      ? await getPersonByEmployeeId(db, entry.employeeId).then(person => person ? ({
-          ok: true,
-          person,
-          distance: null,
-          confidence: entry.confidence || null,
-        }) : { ok: false, message: 'Employee record was not found.' })
-      : matchPersonFromDescriptor(await getAllActivePersons(db), entry.descriptor)
+    const ip = getRequestIp(request)
+    const ipLimit = await enforceRateLimit(db, {
+      key: `attendance-ip:${ip}`,
+      limit: 120,
+      windowMs: 60 * 1000,
+    })
+
+    if (!ipLimit.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many attendance requests from this device or network. Slow down and try again.', decisionCode: 'blocked_rate_limited' },
+        { status: 429 },
+      )
+    }
+
+    const { candidateOfficeIds } = await getCandidateAttendanceContext(db, entry)
+
+    if (candidateOfficeIds.length === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'No candidate office matched the current attendance context.',
+          decisionCode: 'blocked_no_candidate_office',
+        },
+        { status: 404 },
+      )
+    }
+
+    const indexedCandidates = await queryBiometricIndexCandidates(db, candidateOfficeIds, entry.descriptor)
+    let personMatch = indexedCandidates.length > 0
+      ? matchBiometricIndexCandidates(indexedCandidates, entry.descriptor, DISTANCE_THRESHOLD, AMBIGUOUS_MATCH_MARGIN)
+      : null
+
+    if (indexedCandidates.length > 0) {
+      personMatch = await resolveMatchedPerson(db, personMatch)
+    } else {
+      const candidatePersons = await getPersonsForOfficeIds(db, candidateOfficeIds)
+      personMatch = matchPersonFromDescriptor(candidatePersons, entry.descriptor)
+    }
 
     if (!personMatch.ok) {
-      return NextResponse.json({ ok: false, message: personMatch.message }, { status: 403 })
+      return NextResponse.json(
+        { ok: false, message: personMatch.message, decisionCode: personMatch.decisionCode || 'blocked_no_reliable_match' },
+        { status: 403 },
+      )
     }
 
     const person = personMatch.person
     if (person.active === false) {
-      return NextResponse.json({ ok: false, message: 'Employee account is inactive.' }, { status: 403 })
+      return NextResponse.json(
+        { ok: false, message: 'Employee account is inactive.', decisionCode: 'blocked_inactive' },
+        { status: 403 },
+      )
     }
 
     const office = await getOffice(db, person.officeId)
 
     if (!office) {
-      return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 404 })
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Assigned office was not found.',
+          decisionCode: 'blocked_missing_office_config',
+        },
+        { status: 404 },
+      )
     }
 
     entry.name = person.name
@@ -148,13 +313,18 @@ export async function POST(request) {
     entry.officeId = person.officeId
     entry.officeName = person.officeName
     entry.confidence = personMatch.confidence ?? entry.confidence
+    entry.id = buildAttendanceDocId(entry.employeeId, entry.timestamp)
 
     if (isOfficeWfhDay(office)) {
       entry.attendanceMode = 'WFH'
       entry.geofenceStatus = 'WFH office day'
+      entry.decisionCode = 'accepted_wfh'
     } else {
       if (!Number.isFinite(entry.latitude) || !Number.isFinite(entry.longitude)) {
-        return NextResponse.json({ ok: false, message: 'GPS coordinates are required for on-site attendance.' }, { status: 400 })
+        return NextResponse.json(
+          { ok: false, message: 'GPS coordinates are required for on-site attendance.', decisionCode: 'blocked_missing_gps' },
+          { status: 400 },
+        )
       }
 
       const distanceMeters = calculateDistanceMeters(
@@ -163,18 +333,42 @@ export async function POST(request) {
       )
 
       if (distanceMeters > office.gps.radiusMeters) {
-        return NextResponse.json({ ok: false, message: `Outside ${office.name} geofence.` }, { status: 403 })
+        return NextResponse.json(
+          { ok: false, message: `Outside ${office.name} geofence.`, decisionCode: 'blocked_geofence' },
+          { status: 403 },
+        )
       }
 
       entry.attendanceMode = 'On-site'
       entry.geofenceStatus = `Inside office radius (${Math.round(distanceMeters)}m)`
+      entry.decisionCode = 'accepted_onsite'
     }
 
-    await db.collection('attendance').doc(entry.id).set({
-      ...entry,
-      descriptor: FieldValue.delete(),
-      createdAt: FieldValue.serverTimestamp(),
-    }, { merge: false })
+    const writeResult = await writeAttendanceAtomically(db, entry)
+    if (!writeResult.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Attendance already recorded recently.',
+          decisionCode: 'blocked_recent_duplicate',
+          entry: writeResult.entry,
+        },
+        { status: 409 },
+      )
+    }
+
+    const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.date)
+    const dailyRecord = deriveDailyAttendanceRecord({
+      logs: dailyLogs,
+      person,
+      office,
+      targetDate: entry.date,
+    })
+
+    await db.collection('attendance_daily').doc(`${entry.employeeId}_${entry.date}`).set({
+      ...dailyRecord,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
 
     return NextResponse.json({
       ok: true,

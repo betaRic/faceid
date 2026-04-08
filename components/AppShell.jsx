@@ -15,21 +15,21 @@ export default function AppShell({ children, actions = null, navItems = defaultN
   const pathname = usePathname()
 
   return (
-    <div className="min-h-screen bg-hero-wash">
-      <header className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+    <div className="flex min-h-screen flex-col bg-hero-wash">
+      <header className="sticky top-0 z-40 border-b border-black/5 bg-white/82 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-2.5 sm:px-6 lg:px-8">
           <Link className="min-w-0" href="/">
             <BrandMark compact />
           </Link>
 
-          <nav className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <nav className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             {navItems.map(item => {
               const active = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href))
 
               return (
                 <Link
                   key={item.href}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  className={`rounded-full px-3.5 py-2 text-sm font-semibold transition ${
                     active
                       ? 'bg-brand text-white'
                       : 'border border-black/8 bg-white/80 text-ink hover:bg-stone-50'
@@ -42,16 +42,16 @@ export default function AppShell({ children, actions = null, navItems = defaultN
             })}
           </nav>
 
-          {actions ? <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
+          {actions ? <div className="ml-auto flex flex-wrap items-center gap-1.5">{actions}</div> : null}
         </div>
       </header>
 
-      <div className={contentClassName}>{children}</div>
+      <main className={`flex-1 ${contentClassName}`}>{children}</main>
 
       <footer className="border-t border-black/5 bg-white/75">
-        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-4 text-sm text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <p>Mobile-first attendance pilot for DILG Region XII.</p>
-          <p>Minimal UI, server-validated writes, GPS and biometric workflow.</p>
+        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-2 text-[11px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <p>FaceAttend for DILG Region XII.</p>
+          <p>Minimal workspace, server-validated writes, GPS and biometric workflow.</p>
         </div>
       </footer>
     </div>

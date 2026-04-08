@@ -1,7 +1,7 @@
 import dynamic from 'next/dynamic'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { getAdminSessionCookieName, verifyAdminSessionCookieValue } from '../../lib/admin-auth'
+import { getAdminSessionCookieName, parseAdminSessionCookieValue } from '../../lib/admin-auth'
 
 const AdminDashboard = dynamic(() => import('../../components/AdminDashboard'), {
   ssr: false,
@@ -10,10 +10,11 @@ const AdminDashboard = dynamic(() => import('../../components/AdminDashboard'), 
 export default function AdminPage() {
   const cookieStore = cookies()
   const session = cookieStore.get(getAdminSessionCookieName())?.value
+  const adminSession = parseAdminSessionCookieValue(session)
 
-  if (!verifyAdminSessionCookieValue(session)) {
+  if (!adminSession) {
     redirect('/admin/login')
   }
 
-  return <AdminDashboard />
+  return <AdminDashboard initialOfficeId={adminSession.officeId} initialRoleScope={adminSession.scope} />
 }

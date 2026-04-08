@@ -238,15 +238,54 @@ NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=
 Server secrets:
 
 ```env
-ADMIN_PIN=
-ADMIN_PIN_HASH=
 ADMIN_SESSION_SECRET=
 FIREBASE_SERVICE_ACCOUNT_JSON=
+ADMIN_ALLOWED_EMAILS=
 ```
 
 Notes:
-- use `ADMIN_PIN_HASH` in production if possible
 - `FIREBASE_SERVICE_ACCOUNT_JSON` should be stored as a secret, not as a file in the repo
+- set `ADMIN_ALLOWED_EMAILS` to a comma-separated list of Google emails allowed to bootstrap the first regional admin
+- use `ADMIN_ALLOWED_EMAILS` only to bootstrap the first regional admin
+- use Firestore `admins` records for all ongoing per-user admin access in a shared deployment
+
+## Admin Auth Model
+
+The correct model on a shared Vercel deployment is:
+- Google login identifies the person
+- Firestore `admins` records decide whether that person is a regional admin or office admin
+- users do not choose their office at login
+- regional admins can change another admin's office or elevate them to regional access inside the app
+
+Bootstrap flow:
+1. set `ADMIN_ALLOWED_EMAILS=ericjanlonario.jr@gmail.com` in Vercel
+2. sign in with Google on `/admin/login`
+3. if the `admins` collection is empty, the first allowed email is auto-created as a regional admin
+4. after that, admin access comes from Firestore `admins` records, not from the env list
+
+`admins` collection example:
+
+```json
+{
+  "email": "ericjanlonario.jr@gmail.com",
+  "displayName": "Eric Jan Lonario Jr.",
+  "scope": "regional",
+  "officeId": "",
+  "active": true
+}
+```
+
+Office admin example:
+
+```json
+{
+  "email": "office.admin@example.com",
+  "displayName": "Office Admin",
+  "scope": "office",
+  "officeId": "south-cotabato-provincial-office",
+  "active": true
+}
+```
 
 ## Deployment
 
@@ -255,12 +294,28 @@ Primary deployment target:
 
 Before deploying:
 1. set all required environment variables in Vercel
-2. redeploy
-3. test `/admin/login`
-4. test `/admin`
-5. test `/registration`
-6. test `/kiosk`
-7. test `/api/system/status`
+2. deploy the Firestore rules from `firestore.rules`
+3. deploy the Firestore indexes from `firestore.indexes.json`
+4. redeploy
+5. test `/admin/login`
+6. test `/admin`
+7. test `/registration`
+8. test `/kiosk`
+9. test `/api/system/status`
+
+Production note:
+- this app must not silently fall back to browser local storage in production
+- if Firebase client env vars are incomplete, kiosk/registration now block instead of pretending to work
+
+Biometric index note:
+- the attendance matcher now uses a derived `biometric_index` collection for bucketed candidate narrowing before exact distance checks
+- after deploying this upgrade against an existing Firebase project, run:
+
+```bash
+npm run backfill:biometric-index
+```
+
+- deploy updated Firestore indexes again after this change
 
 ## Operational Testing
 

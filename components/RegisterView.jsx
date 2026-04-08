@@ -3,11 +3,19 @@
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { detectSingleDescriptor } from '../lib/face-api'
-import { FACE_COLORS } from '../lib/config'
-import { analyzeLiveness, isLivenessChallengePassed, pickLivenessChallenge } from '../lib/liveness'
+import { DETECTION_MAX_DIMENSION, FACE_COLORS, PREVIEW_MAX_DIMENSION } from '../lib/config'
+import {
+  analyzeLiveness,
+  createLivenessTracker,
+  hasLivenessTrackerPassed,
+  isLivenessChallengePassed,
+  pickLivenessChallenge,
+  updateLivenessTracker,
+} from '../lib/liveness'
 import { evaluateDetectionQuality } from '../lib/biometric-quality'
 import BrandMark from './BrandMark'
 import { useAudioCue } from '../hooks/useAudioCue'
+import AppShell from './AppShell'
 
 const MIN_SAMPLES = 3
 
@@ -37,7 +45,7 @@ export default function RegisterView({
   const [faceFound, setFaceFound] = useState(false)
   const [statusMsg, setStatusMsg] = useState('Starting camera...')
   const [toast, setToast] = useState(null)
-  const [livenessChallenge, setLivenessChallenge] = useState(() => pickLivenessChallenge())
+  const [livenessChallenge, setLivenessChallenge] = useState(() => pickLivenessChallenge('any'))
   const [livenessPassed, setLivenessPassed] = useState(false)
   const [step, setStep] = useState('capture')
   const [lastSavedSummary, setLastSavedSummary] = useState(null)
@@ -47,13 +55,14 @@ export default function RegisterView({
   const autoRef = useRef(null)
   const nameRef = useRef(null)
   const busyRef = useRef(false)
+  const livenessTrackerRef = useRef(createLivenessTracker())
 
   const selectedOffice = offices.find(office => office.id === officeId) || null
   const existingPerson = useMemo(
     () => persons.find(person => person.employeeId === employeeId.trim()),
     [employeeId, persons],
   )
-  const existingSamples = existingPerson?.descriptors.length ?? 0
+  const existingSamples = existingPerson?.sampleCount ?? 0
 
   const showToast = useCallback((message, duration = 3500) => {
     setToast(message)
@@ -68,11 +77,16 @@ export default function RegisterView({
   }, [])
 
   const resetLiveness = useCallback(() => {
-    setLivenessChallenge(pickLivenessChallenge())
+    livenessTrackerRef.current = createLivenessTracker()
+    setLivenessChallenge(pickLivenessChallenge('any'))
     setLivenessPassed(false)
   }, [])
 
-  const drawBox = useCallback(det => {
+  const wait = useCallback(duration => new Promise(resolve => {
+    window.setTimeout(resolve, duration)
+  }), [])
+
+  const drawBox = useCallback((det, sourceWidth, sourceHeight) => {
     const video = camera.videoRef.current
     const overlay = camera.overlayRef.current
 
@@ -80,6 +94,8 @@ export default function RegisterView({
 
     const width = video.videoWidth || 640
     const height = video.videoHeight || 480
+    const scaleX = sourceWidth ? width / sourceWidth : 1
+    const scaleY = sourceHeight ? height / sourceHeight : 1
     overlay.width = width
     overlay.height = height
 
@@ -88,17 +104,21 @@ export default function RegisterView({
 
     if (!det) return
 
-    const { x, y, width: boxWidth, height: boxHeight } = det.detection.box
+    const { x, y, width: rawWidth, height: rawHeight } = det.detection.box
+    const boxX = x * scaleX
+    const boxY = y * scaleY
+    const boxWidth = rawWidth * scaleX
+    const boxHeight = rawHeight * scaleY
     const corner = Math.min(boxWidth, boxHeight) * 0.2
 
     ctx.strokeStyle = '#22c55e'
     ctx.lineWidth = 3
 
     ;[
-      [[x, y + corner], [x, y], [x + corner, y]],
-      [[x + boxWidth - corner, y], [x + boxWidth, y], [x + boxWidth, y + corner]],
-      [[x + boxWidth, y + boxHeight - corner], [x + boxWidth, y + boxHeight], [x + boxWidth - corner, y + boxHeight]],
-      [[x + corner, y + boxHeight], [x, y + boxHeight], [x, y + boxHeight - corner]],
+      [[boxX, boxY + corner], [boxX, boxY], [boxX + corner, boxY]],
+      [[boxX + boxWidth - corner, boxY], [boxX + boxWidth, boxY], [boxX + boxWidth, boxY + corner]],
+      [[boxX + boxWidth, boxY + boxHeight - corner], [boxX + boxWidth, boxY + boxHeight], [boxX + boxWidth - corner, boxY + boxHeight]],
+      [[boxX + corner, boxY + boxHeight], [boxX, boxY + boxHeight], [boxX, boxY + boxHeight - corner]],
     ].forEach(points => {
       ctx.beginPath()
       points.forEach(([px, py], index) => {
@@ -109,16 +129,40 @@ export default function RegisterView({
     })
   }, [camera])
 
-  const captureFace = useCallback(async result => {
-    const canvas = camera.captureImageData()
-    const faceResult = result || await detectSingleDescriptor(canvas)
+  const captureFace = useCallback(async () => {
+    let bestCapture = null
 
-    if (!faceResult) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const canvas = camera.captureImageData({
+        maxWidth: PREVIEW_MAX_DIMENSION,
+        maxHeight: PREVIEW_MAX_DIMENSION,
+      })
+      const faceResult = await detectSingleDescriptor(canvas)
+
+      if (faceResult) {
+        const quality = evaluateDetectionQuality(faceResult, canvas.width, canvas.height, canvas)
+        const previewUrl = canvas.toDataURL('image/jpeg', 0.85)
+
+        if (!bestCapture || quality.score > bestCapture.quality.score) {
+          bestCapture = {
+            faceResult,
+            quality,
+            previewUrl,
+          }
+        }
+
+        if (quality.ok) break
+      }
+
+      if (attempt < 2) await wait(120)
+    }
+
+    if (!bestCapture) {
       showToast('No face detected. Reposition and try again.')
       return
     }
 
-    const quality = evaluateDetectionQuality(faceResult, canvas.width, canvas.height)
+    const { faceResult, quality, previewUrl } = bestCapture
     if (!quality.ok) {
       setStatusMsg(quality.reason)
       showToast(quality.reason)
@@ -126,12 +170,12 @@ export default function RegisterView({
     }
 
     setPendingDesc(faceResult.descriptor)
-    setPreviewUrl(canvas.toDataURL('image/jpeg', 0.85))
+    setPreviewUrl(previewUrl)
     camera.clearOverlay()
     setStatusMsg('Face captured. Review the preview before continuing.')
     playAudioCue('notify')
     setStep('review')
-  }, [camera, playAudioCue, showToast])
+  }, [camera, playAudioCue, showToast, wait])
 
   const startDetect = useCallback(() => {
     stopDetect()
@@ -143,10 +187,13 @@ export default function RegisterView({
       if (busyRef.current || !camera.camOn || previewUrl || !modelsReady) return
 
       try {
-        const canvas = camera.captureImageData()
+        const canvas = camera.captureImageData({
+          maxWidth: DETECTION_MAX_DIMENSION,
+          maxHeight: DETECTION_MAX_DIMENSION,
+        })
         const result = await detectSingleDescriptor(canvas)
         setFaceFound(Boolean(result))
-        drawBox(result || null)
+        drawBox(result || null, canvas.width, canvas.height)
 
         if (!result) {
           setLivenessPassed(false)
@@ -154,14 +201,16 @@ export default function RegisterView({
           return
         }
 
-        const quality = evaluateDetectionQuality(result, canvas.width, canvas.height)
+        const quality = evaluateDetectionQuality(result, canvas.width, canvas.height, canvas)
         if (!quality.ok) {
           setStatusMsg(quality.reason)
           return
         }
 
         const liveness = analyzeLiveness(result)
+        livenessTrackerRef.current = updateLivenessTracker(livenessTrackerRef.current, liveness)
         const passedChallenge = isLivenessChallengePassed(livenessChallenge.id, liveness)
+          || hasLivenessTrackerPassed(livenessChallenge.id, livenessTrackerRef.current)
 
         if (!livenessPassed && passedChallenge) {
           setLivenessPassed(true)
@@ -175,7 +224,7 @@ export default function RegisterView({
 
         busyRef.current = true
         stopDetect()
-        await captureFace(result)
+        await captureFace()
         busyRef.current = false
       } catch {
         setStatusMsg('Camera scan interrupted')
@@ -223,7 +272,7 @@ export default function RegisterView({
 
     const trimmed = name.trim()
     const existing = persons.find(person => person.employeeId === employeeId.trim())
-    const sampleCount = (existing?.descriptors.length ?? 0) + 1
+    const sampleCount = (existing?.sampleCount ?? 0) + 1
 
     try {
       await onEnrollPerson(
@@ -300,43 +349,61 @@ export default function RegisterView({
   const stepIndex = STEPS.findIndex(item => item.id === step)
 
   return (
-    <main className="min-h-screen bg-hero-wash px-4 py-6 sm:px-6 lg:px-8">
+    <AppShell
+      actions={(
+        <>
+          <button
+            className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            onClick={() => setShowRoster(current => !current)}
+            type="button"
+          >
+            {showRoster ? 'Hide roster' : 'Show roster'}
+          </button>
+          <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm">
+            {persons.length} enrolled
+          </div>
+        </>
+      )}
+      contentClassName="px-4 py-4 sm:px-6 lg:px-8"
+    >
       {toast ? (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-brand-dark px-5 py-3 text-sm font-medium text-white shadow-xl">
           {toast}
         </div>
       ) : null}
 
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-9.5rem)]">
         <motion.section
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="flex flex-wrap items-center gap-4 rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+          className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1fr)_260px]"
         >
-          <button
-            className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-            onClick={onBack}
-            type="button"
-          >
-            Back to kiosk
-          </button>
           <div className="min-w-0">
             <BrandMark />
-            <h1 className="mt-2 font-display text-3xl text-ink">Employee Enrollment Wizard</h1>
-            <p className="mt-1 text-sm text-muted">Capture first, review second, then save employee details.</p>
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            <button
-              className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-              onClick={() => setShowRoster(current => !current)}
-              type="button"
-            >
-              {showRoster ? 'Hide roster' : 'Show roster'}
-            </button>
-            <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm">
-              {persons.length} enrolled
+            <h1 className="mt-2 font-display text-2xl text-ink sm:text-3xl">Employee Enrollment Wizard</h1>
+            <p className="mt-1 text-sm leading-7 text-muted">Capture, review, and save without leaving the workflow or forcing long scrolling.</p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                onClick={onBack}
+                type="button"
+              >
+                Back to kiosk
+              </button>
+              <button
+                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                onClick={() => setShowRoster(current => !current)}
+                type="button"
+              >
+                {showRoster ? 'Hide roster' : 'Show roster'}
+              </button>
             </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <CompactMetric label="Current step" value={STEPS[stepIndex]?.title} detail={statusMsg} />
+            <CompactMetric label="Roster" value={`${persons.length} enrolled`} detail={dataStatus} />
           </div>
         </motion.section>
 
@@ -344,9 +411,9 @@ export default function RegisterView({
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.38, ease: 'easeOut', delay: 0.05 }}
-          className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+          className="rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
         >
-          <div className="grid gap-3 lg:grid-cols-4">
+          <div className="grid gap-2 lg:grid-cols-4">
             {STEPS.map((item, index) => (
               <WizardStep
                 key={item.id}
@@ -360,27 +427,27 @@ export default function RegisterView({
           </div>
         </motion.section>
 
-        <div className={`grid gap-6 ${showRoster ? 'xl:grid-cols-[minmax(0,1fr)_360px]' : ''}`}>
+        <div className={`grid min-h-0 flex-1 gap-4 ${showRoster ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
           <motion.section
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
-            className="flex min-w-0 flex-col gap-4 rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+            className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3">
               <div>
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Current step</span>
-                <h2 className="mt-2 font-display text-3xl text-ink">{STEPS[stepIndex]?.title}</h2>
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Enrollment workspace</span>
+                <h2 className="mt-1 font-display text-2xl text-ink">{STEPS[stepIndex]?.title}</h2>
               </div>
-              <div className="rounded-full bg-brand/10 px-4 py-2 text-sm font-semibold text-brand-dark">
+              <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm">
                 {statusMsg}
               </div>
             </div>
 
             {step === 'capture' ? (
-              <section className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_320px]">
-                <div className="overflow-hidden rounded-[1.9rem] border border-black/5 bg-black shadow-glow">
-                  <div className="relative aspect-[4/5] min-h-[420px] sm:aspect-video xl:aspect-[4/3]">
+              <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1.1fr)_300px]">
+                <div className="min-h-0 overflow-hidden rounded-[1.6rem] border border-black/5 bg-black shadow-glow">
+                  <div className="relative h-full min-h-[320px] xl:min-h-[460px]">
                     <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
                     <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
                     <canvas ref={camera.overlayRef} className="absolute inset-0 h-full w-full" />
@@ -409,7 +476,7 @@ export default function RegisterView({
                   </div>
                 </div>
 
-                <div className="grid gap-4">
+                <div className="grid content-start gap-3">
                   <InfoCard
                     title="How this works"
                     text="The wizard waits for a detected face and a simple liveness action, then captures automatically. No manual photo button is needed."
@@ -429,18 +496,18 @@ export default function RegisterView({
             ) : null}
 
             {step === 'review' ? (
-              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="overflow-hidden rounded-[1.75rem] border border-black/5 bg-stone-100">
+              <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="min-h-0 overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-100">
                   {previewUrl ? (
-                    <img alt="Captured preview" className="h-full min-h-[420px] w-full object-cover" src={previewUrl} />
+                    <img alt="Captured preview" className="h-full min-h-[320px] w-full object-cover xl:min-h-[460px]" src={previewUrl} />
                   ) : (
-                    <div className="flex min-h-[420px] items-center justify-center px-6 text-center text-sm text-muted">
+                    <div className="flex min-h-[320px] items-center justify-center px-6 text-center text-sm text-muted xl:min-h-[460px]">
                       No preview available yet.
                     </div>
                   )}
                 </div>
 
-                <div className="grid gap-4">
+                <div className="grid content-start gap-3">
                   <InfoCard
                     title="Review"
                     text="Check if the face is clear, centered, and usable. If it looks weak, retake before saving details."
@@ -466,8 +533,8 @@ export default function RegisterView({
             ) : null}
 
             {step === 'details' ? (
-              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-                <div className="grid gap-4 rounded-[1.75rem] border border-black/5 bg-stone-50 p-5">
+              <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid content-start gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
                   <Field label="Full name">
                     <input
                       ref={nameRef}
@@ -523,7 +590,7 @@ export default function RegisterView({
                   </div>
                 </div>
 
-                <div className="grid gap-4">
+                <div className="grid content-start gap-3">
                   <section className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-white">
                     {previewUrl ? (
                       <img alt="Preview" className="h-auto w-full object-cover" src={previewUrl} />
@@ -550,8 +617,8 @@ export default function RegisterView({
             ) : null}
 
             {step === 'complete' ? (
-              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="rounded-[1.75rem] border border-emerald-200 bg-emerald-50 p-6">
+              <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50 p-5">
                   <span className="inline-flex rounded-full bg-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
                     Enrollment saved
                   </span>
@@ -564,7 +631,7 @@ export default function RegisterView({
                   </div>
                 </div>
 
-                <div className="grid gap-3">
+                <div className="grid content-start gap-3">
                   <button
                     className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
                     onClick={handleAddAnotherSample}
@@ -589,7 +656,7 @@ export default function RegisterView({
               animate={{ opacity: 1, x: 0 }}
               initial={{ opacity: 0, x: 20 }}
               transition={{ duration: 0.35, ease: 'easeOut', delay: 0.1 }}
-              className="flex min-h-0 flex-col rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+              className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
             >
               <div className="mb-4 flex items-center justify-between gap-4">
                 <h2 className="font-display text-2xl text-ink">Enrolled employees</h2>
@@ -620,8 +687,8 @@ export default function RegisterView({
                         <div className="truncate text-sm font-semibold text-ink">{person.name}</div>
                         <div className="truncate text-xs uppercase tracking-[0.12em] text-muted">{person.employeeId} • {person.officeName}</div>
                         <div className="text-xs text-muted">
-                          <span style={{ color: person.descriptors.length >= MIN_SAMPLES ? '#15803d' : '#d97706' }}>
-                            {person.descriptors.length} sample{person.descriptors.length !== 1 ? 's' : ''}
+                          <span style={{ color: (person.sampleCount ?? 0) >= MIN_SAMPLES ? '#15803d' : '#d97706' }}>
+                            {person.sampleCount ?? 0} sample{(person.sampleCount ?? 0) !== 1 ? 's' : ''}
                           </span>
                         </div>
                       </div>
@@ -641,7 +708,7 @@ export default function RegisterView({
           ) : null}
         </div>
       </div>
-    </main>
+    </AppShell>
   )
 }
 
@@ -656,9 +723,9 @@ function Field({ label, children }) {
 
 function WizardStep({ active, complete, number, title, description }) {
   return (
-    <div className={`rounded-[1.35rem] border px-4 py-4 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-brand/30 bg-brand/8' : 'border-black/5 bg-stone-50'}`}>
+    <div className={`rounded-[1.1rem] border px-3 py-3 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-brand/30 bg-brand/8' : 'border-black/5 bg-stone-50'}`}>
       <div className="flex items-center gap-3">
-        <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-brand text-white' : 'bg-white text-muted'}`}>
+        <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-brand text-white' : 'bg-white text-muted'}`}>
           {number}
         </span>
         <div>
@@ -680,5 +747,15 @@ function InfoCard({ title, text, tone = 'default' }) {
       <h3 className="text-sm font-semibold uppercase tracking-[0.14em]">{title}</h3>
       <p className="mt-2 text-sm leading-7">{text}</p>
     </section>
+  )
+}
+
+function CompactMetric({ label, value, detail }) {
+  return (
+    <div className="rounded-[1.2rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/90 to-accent/10 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-ink">{value}</div>
+      <div className="mt-1 text-xs text-muted">{detail}</div>
+    </div>
   )
 }

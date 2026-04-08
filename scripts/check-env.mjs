@@ -13,8 +13,7 @@ const requiredServerKeys = [
 ]
 
 const optionalKeys = [
-  'ADMIN_PIN_HASH',
-  'ADMIN_PIN',
+  'ADMIN_ALLOWED_EMAILS',
 ]
 
 function hasValue(key) {
@@ -23,11 +22,6 @@ function hasValue(key) {
 
 const missingPublic = requiredPublicKeys.filter(key => !hasValue(key))
 const missingServer = requiredServerKeys.filter(key => !hasValue(key))
-const hasAdminAuthSecret = hasValue('ADMIN_PIN_HASH') || hasValue('ADMIN_PIN')
-
-if (!hasAdminAuthSecret) {
-  missingServer.push('ADMIN_PIN_HASH or ADMIN_PIN')
-}
 
 const lines = []
 
@@ -35,7 +29,7 @@ lines.push('Environment check')
 lines.push(`Public Firebase vars: ${missingPublic.length === 0 ? 'ok' : `missing ${missingPublic.join(', ')}`}`)
 lines.push(`Server vars: ${missingServer.length === 0 ? 'ok' : `missing ${missingServer.join(', ')}`}`)
 lines.push(`Optional vars present: ${optionalKeys.filter(hasValue).join(', ') || 'none'}`)
-lines.push('Warning: biometric descriptors are still delivered to clients for matching. This is suitable for pilot deployment, not a fully hardened biometric deployment.')
+lines.push('Warning: face detection and liveness still run on the client. This is suitable for controlled rollout, not a fully hardened biometric deployment.')
 
 console.log(lines.join('\n'))
 

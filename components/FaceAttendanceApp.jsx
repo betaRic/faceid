@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import KioskView from './KioskView'
 import RegisterView from './RegisterView'
 import { useCamera } from '../hooks/useCamera'
-import { firebaseEnabled } from '../lib/firebase'
+import { firebaseEnabled, productionFirebaseRequired } from '../lib/firebase'
 import { loadModels } from '../lib/face-api'
 import { REGION12_OFFICES } from '../lib/offices'
 import {
@@ -98,6 +98,23 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
   useEffect(() => {
     setPage(initialPage)
   }, [initialPage])
+
+  if (productionFirebaseRequired && !firebaseEnabled) {
+    return (
+      <div className="min-h-screen bg-hero-wash px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-red-200 bg-white/90 p-6 shadow-glow backdrop-blur">
+          <h1 className="font-display text-3xl text-ink">Deployment blocked</h1>
+          <p className="text-sm leading-7 text-muted">
+            Firebase client environment variables are incomplete. Production is not allowed to fall back to browser
+            storage because that would create fake attendance data on one device instead of the real system.
+          </p>
+          <div className="rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-warn">
+            Fix the Vercel Firebase environment variables before using this deployment.
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="app-shell">

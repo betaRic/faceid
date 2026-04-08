@@ -1,11 +1,15 @@
 'use client'
 
+import Link from 'next/link'
+import { motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
+import AppShell from './AppShell'
+import BrandMark from './BrandMark'
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'offices', label: 'Offices' },
-  { id: 'policy', label: 'Policy Engine' },
+  { id: 'policy', label: 'Policy' },
   { id: 'mobile', label: 'Mobile UX' },
 ]
 
@@ -20,193 +24,265 @@ export default function WorkforceAttendanceSuite({ initialData }) {
   }, [initialData.offices])
 
   return (
-    <main className="suite-shell">
-      <section className="hero-panel">
-        <div className="hero-copy">
-          <span className="eyebrow">DILG Region XII</span>
-          <h1>Office-based attendance with GPS, WFH rules, and mobile-first workflows.</h1>
-          <p>
-            Yes, this system is doable. The correct structure is an office-aware attendance platform where employees
-            are assigned to one office, GPS validation follows that office, and admins manage WFH and work schedules at
-            the office level with exception handling when needed.
-          </p>
+    <AppShell contentClassName="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-8.8rem)]">
+        <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1fr)_340px]">
+          <motion.div
+            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 18 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            className="min-w-0"
+          >
+            <BrandMark />
+            <h1 className="mt-3 max-w-4xl font-display text-3xl leading-tight text-ink sm:text-4xl">
+              Office-based attendance with GPS, WFH rules, and mobile-first workflows.
+            </h1>
+            <p className="mt-2 max-w-4xl text-sm leading-7 text-muted">
+              This page should behave like a compact strategy workspace, not a scrolling concept deck. The model is
+              simple: one employee, one office, server-side attendance decisions, and office-aware policy control.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                className="inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                href="/attendance"
+              >
+                Open live prototype
+              </Link>
+              <Link
+                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                href="/api/system/blueprint"
+              >
+                Open server data
+              </Link>
+            </div>
+          </motion.div>
 
-          <div className="hero-actions">
-            <a className="secondary-action" href="/api/system/blueprint">Server data sample</a>
-            <a className="secondary-action" href="/attendance">Open live prototype</a>
-          </div>
-        </div>
+          <motion.aside
+            animate={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0, x: 18 }}
+            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.06 }}
+            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1"
+          >
+            <MetricCard label="Office Records" value={initialData.totals.offices} detail="Region, provincial, and HUC" />
+            <MetricCard label="Employees Modeled" value={initialData.totals.employees} detail="Assigned per office" />
+            <MetricCard label="GPS Sites" value={initialData.totals.gpsEnabledOffices} detail="Each with its own radius" />
+            <MetricCard label="Role Layers" value={initialData.roles.length} detail="Regional, office admin, employee" />
+          </motion.aside>
+        </section>
 
-        <div className="hero-stats">
-          <MetricCard label="Office Records" value={initialData.totals.offices} detail="Region, provincial, and HUC" />
-          <MetricCard label="Employees Modeled" value={initialData.totals.employees} detail="Assigned per office" />
-          <MetricCard label="GPS Sites" value={initialData.totals.gpsEnabledOffices} detail="Each with its own radius" />
-          <MetricCard label="Role Layers" value={initialData.roles.length} detail="Regional, office admin, employee" />
-        </div>
-      </section>
-
-      <section className="feature-grid">
-        {initialData.featureCards.map(card => (
-          <article key={card.title} className="feature-card">
-            <h2>{card.title}</h2>
-            <p>{card.body}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="workspace-panel">
-        <div className="tab-row" role="tablist" aria-label="System detail tabs">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              className={`tab-button ${activeTab === tab.id ? 'tab-active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-              role="tab"
-              type="button"
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {initialData.featureCards.map((card, index) => (
+            <motion.article
+              key={card.title}
+              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 18 }}
+              transition={{ duration: 0.3, ease: 'easeOut', delay: 0.04 * index }}
+              className="rounded-[1.35rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/92 to-accent/10 p-4 shadow-glow"
             >
-              {tab.label}
-            </button>
+              <h2 className="font-display text-2xl leading-tight text-ink">{card.title}</h2>
+              <p className="mt-2 text-sm leading-7 text-muted">{card.body}</p>
+            </motion.article>
           ))}
-        </div>
+        </section>
 
-        {activeTab === 'overview' ? (
-          <div className="detail-grid">
-            <section className="panel-card">
-              <PanelTitle title="Coverage" subtitle={initialData.organization.name} />
-              <p className="panel-copy">{initialData.organization.coverage}</p>
-              <div className="chips">
-                {Object.entries(officeBreakdown).map(([type, count]) => (
-                  <span key={type} className="chip">
-                    {type}: {count}
-                  </span>
-                ))}
-              </div>
-            </section>
+        <section className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[240px_minmax(0,1fr)]">
+          <motion.aside
+            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 18 }}
+            transition={{ duration: 0.35, ease: 'easeOut', delay: 0.08 }}
+            className="rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
+          >
+            <div className="grid gap-3">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  className={`rounded-2xl border p-4 text-left text-sm font-semibold transition ${
+                    activeTab === tab.id
+                      ? 'border-brand/30 bg-brand/10 text-brand-dark'
+                      : 'border-black/5 bg-stone-50 text-ink hover:bg-white'
+                  }`}
+                  onClick={() => setActiveTab(tab.id)}
+                  type="button"
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </motion.aside>
 
-            <section className="panel-card">
-              <PanelTitle title="Server And Client Split" subtitle="Recommended production architecture" />
-              <div className="flow-stack">
-                {initialData.buildFlow.map(flow => (
-                  <article key={flow.title} className="flow-card">
-                    <span className="flow-stage">{flow.stage}</span>
-                    <h3>{flow.title}</h3>
-                    <ul>
-                      {flow.points.map(point => (
-                        <li key={point}>{point}</li>
-                      ))}
-                    </ul>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </div>
-        ) : null}
-
-        {activeTab === 'offices' ? (
-          <div className="office-list">
-            {initialData.offices.map(office => (
-              <article key={office.id} className="office-card">
-                <div className="office-head">
-                  <div>
-                    <span className="office-type">{office.officeType}</span>
-                    <h3>{office.name}</h3>
+          <motion.section
+            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 18 }}
+            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
+            className="min-h-0 rounded-[1.5rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+          >
+            {activeTab === 'overview' ? (
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-2">
+                <section className="rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
+                  <PanelTitle title="Coverage" subtitle={initialData.organization.name} />
+                  <p className="mt-3 text-sm leading-7 text-muted">{initialData.organization.coverage}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {Object.entries(officeBreakdown).map(([type, count]) => (
+                      <span key={type} className="rounded-full bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-brand-dark">
+                        {type}: {count}
+                      </span>
+                    ))}
                   </div>
-                  <span className="employee-count">{office.employees} employees</span>
-                </div>
-                <p className="office-location">{office.location}</p>
-                <div className="office-meta">
-                  <span>GPS radius: {office.gps.radiusMeters} m</span>
-                  <span>{office.workPolicy.schedule}</span>
-                  <span>{office.workPolicy.wfhMode}</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : null}
+                </section>
 
-        {activeTab === 'policy' ? (
-          <div className="detail-grid">
-            <section className="panel-card">
-              <PanelTitle title="Admin Controls" subtitle="Per-office policy management" />
-              <ul className="bullet-list">
-                <li>Assign each employee to a single office record by default.</li>
-                <li>Set normal working days, work hours, grace period, and GPS radius per office.</li>
-                <li>Enable WFH by recurring day, custom date, or hourly window such as morning-only WFH.</li>
-                <li>Allow exception paths for field work, travel, and approved off-site attendance.</li>
-                <li>Keep audit logs whenever an admin changes office policy or attendance status.</li>
-              </ul>
-            </section>
-
-            <section className="panel-card">
-              <PanelTitle title="Role Design" subtitle="Access should follow office scope" />
-              <div className="role-stack">
-                {initialData.roles.map(role => (
-                  <article key={role.id} className="role-card">
-                    <h3>{role.title}</h3>
-                    <p>{role.scope}</p>
-                  </article>
-                ))}
+                <section className="min-h-0 rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
+                  <PanelTitle title="Server And Client Split" subtitle="Recommended production architecture" />
+                  <div className="mt-4 grid max-h-[52vh] gap-3 overflow-auto pr-1">
+                    {initialData.buildFlow.map(flow => (
+                      <article key={flow.title} className="rounded-[1.2rem] border border-black/5 bg-white p-4">
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{flow.stage}</span>
+                        <h3 className="mt-2 text-base font-semibold text-ink">{flow.title}</h3>
+                        <div className="mt-3 grid gap-2">
+                          {flow.points.map(point => (
+                            <div key={point} className="rounded-xl bg-stone-50 px-3 py-2 text-sm text-muted">
+                              {point}
+                            </div>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
               </div>
-            </section>
-          </div>
-        ) : null}
+            ) : null}
 
-        {activeTab === 'mobile' ? (
-          <div className="detail-grid">
-            <section className="panel-card">
-              <PanelTitle title="Employee Mobile Cards" subtitle="Primary day-to-day view" />
-              <div className="employee-stack">
-                {initialData.sampleEmployees.map(employee => (
-                  <article key={employee.id} className="employee-card">
-                    <div className="employee-top">
+            {activeTab === 'offices' ? (
+              <div className="grid max-h-[62vh] gap-3 overflow-auto pr-1">
+                {initialData.offices.map(office => (
+                  <article key={office.id} className="rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <h3>{employee.name}</h3>
-                        <p>{employee.office}</p>
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{office.officeType}</span>
+                        <h3 className="mt-2 font-display text-2xl text-ink">{office.name}</h3>
                       </div>
-                      <span className="status-pill">{employee.status}</span>
+                      <span className="rounded-full bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink">
+                        {office.employees} employees
+                      </span>
                     </div>
-                    <div className="employee-bottom">
-                      <span>{employee.shift}</span>
-                      <span>{employee.todayRule}</span>
+                    <p className="mt-2 text-sm leading-7 text-muted">{office.location}</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                        GPS radius: {office.gps.radiusMeters} m
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                        {office.workPolicy.schedule}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                        {office.workPolicy.wfhMode}
+                      </span>
                     </div>
                   </article>
                 ))}
               </div>
-            </section>
+            ) : null}
 
-            <section className="panel-card">
-              <PanelTitle title="UX Direction" subtitle="Fast, responsive, mobile first" />
-              <ul className="bullet-list">
-                <li>Loading shell before camera, GPS, and employee data are ready.</li>
-                <li>Idle state with clear next action: clock in, clock out, or check today status.</li>
-                <li>Animated confirmation after successful attendance with friendly feedback.</li>
-                <li>Compact reusable components for cards, schedule chips, and approval banners.</li>
-                <li>Framer Motion is appropriate for restrained page transitions and status changes.</li>
-              </ul>
-            </section>
-          </div>
-        ) : null}
-      </section>
+            {activeTab === 'policy' ? (
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-2">
+                <section className="rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
+                  <PanelTitle title="Admin Controls" subtitle="Per-office policy management" />
+                  <div className="mt-4 grid gap-2">
+                    {[
+                      'Assign each employee to a single office record by default.',
+                      'Set normal working days, work hours, grace period, and GPS radius per office.',
+                      'Enable WFH by recurring day, custom date, or hourly window such as morning-only WFH.',
+                      'Allow exception paths for field work, travel, and approved off-site attendance.',
+                      'Keep audit logs whenever an admin changes office policy or attendance status.',
+                    ].map(item => (
+                      <div key={item} className="rounded-xl bg-white px-3 py-3 text-sm leading-7 text-muted">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </section>
 
-    </main>
+                <section className="rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
+                  <PanelTitle title="Role Design" subtitle="Access should follow office scope" />
+                  <div className="mt-4 grid gap-3">
+                    {initialData.roles.map(role => (
+                      <article key={role.id} className="rounded-[1.2rem] border border-black/5 bg-white p-4">
+                        <h3 className="text-base font-semibold text-ink">{role.title}</h3>
+                        <p className="mt-2 text-sm leading-7 text-muted">{role.scope}</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            ) : null}
+
+            {activeTab === 'mobile' ? (
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-2">
+                <section className="min-h-0 rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
+                  <PanelTitle title="Employee Mobile Cards" subtitle="Primary day-to-day view" />
+                  <div className="mt-4 grid max-h-[52vh] gap-3 overflow-auto pr-1">
+                    {initialData.sampleEmployees.map(employee => (
+                      <article key={employee.id} className="rounded-[1.2rem] border border-black/5 bg-white p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-base font-semibold text-ink">{employee.name}</h3>
+                            <p className="mt-1 text-sm text-muted">{employee.office}</p>
+                          </div>
+                          <span className="rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-brand-dark">
+                            {employee.status}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <span className="rounded-full bg-stone-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                            {employee.shift}
+                          </span>
+                          <span className="rounded-full bg-stone-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                            {employee.todayRule}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-[1.35rem] border border-black/5 bg-stone-50 p-4">
+                  <PanelTitle title="UX Direction" subtitle="Fast, responsive, mobile first" />
+                  <div className="mt-4 grid gap-2">
+                    {[
+                      'Loading shell before camera, GPS, and employee data are ready.',
+                      'Idle state with clear next action: clock in, clock out, or check today status.',
+                      'Animated confirmation after successful attendance with friendly feedback.',
+                      'Compact reusable components for cards, schedule chips, and approval banners.',
+                      'Framer Motion is appropriate for restrained page transitions and status changes.',
+                    ].map(item => (
+                      <div key={item} className="rounded-xl bg-white px-3 py-3 text-sm leading-7 text-muted">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            ) : null}
+          </motion.section>
+        </section>
+      </div>
+    </AppShell>
   )
 }
 
 function MetricCard({ label, value, detail }) {
   return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <p>{detail}</p>
+    <article className="rounded-[1.2rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/90 to-accent/10 p-4">
+      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{label}</span>
+      <strong className="mt-2 block font-display text-3xl text-ink">{value}</strong>
+      <p className="mt-1 text-sm text-muted">{detail}</p>
     </article>
   )
 }
 
 function PanelTitle({ title, subtitle }) {
   return (
-    <header className="panel-title">
-      <span>{title}</span>
-      <h2>{subtitle}</h2>
+    <header>
+      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{title}</span>
+      <h2 className="mt-2 font-display text-2xl text-ink">{subtitle}</h2>
     </header>
   )
 }

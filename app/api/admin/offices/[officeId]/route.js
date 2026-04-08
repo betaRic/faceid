@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../../../lib/firebase-admin'
-import { verifyAdminSessionCookieValue, getAdminSessionCookieName } from '../../../../../lib/admin-auth'
+import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName } from '../../../../../lib/admin-auth'
+import { writeAuditLog } from '../../../../../lib/audit-log'
 
 function normalizeOfficePayload(officeId, payload) {
   return {
@@ -56,9 +57,13 @@ function validateOffice(office) {
 }
 
 export async function PUT(request, { params }) {
-  const session = request.cookies.get(getAdminSessionCookieName())?.value
-  if (!verifyAdminSessionCookieValue(session)) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
     return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
+  }
+
+  if (!adminSessionAllowsOffice(session, params.officeId)) {
+    return NextResponse.json({ ok: false, message: 'This admin session cannot edit that office.' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => null)
@@ -75,6 +80,22 @@ export async function PUT(request, { params }) {
       ...office,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
+
+    await writeAuditLog(db, {
+      actorRole: session.role,
+      actorScope: session.scope,
+      actorOfficeId: session.officeId,
+      action: 'office_update',
+      targetType: 'office',
+      targetId: office.id,
+      officeId: office.id,
+      summary: `Updated office configuration for ${office.name}`,
+      metadata: {
+        officeType: office.officeType,
+        location: office.location,
+        radiusMeters: office.gps.radiusMeters,
+      },
+    })
 
     return NextResponse.json({ ok: true, office })
   } catch (error) {

@@ -2,10 +2,13 @@ import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
 import {
+  adminSessionAllowsOffice,
   getAdminSessionCookieName,
-  verifyAdminSessionCookieValue,
+  parseAdminSessionCookieValue,
 } from '../../../lib/admin-auth'
 import { DUPLICATE_FACE_THRESHOLD } from '../../../lib/config'
+import { writeAuditLog } from '../../../lib/audit-log'
+import { syncPersonBiometricIndex } from '../../../lib/biometric-index'
 
 function safeArray(value) {
   return Array.isArray(value) ? value : []
@@ -62,9 +65,39 @@ function validateBody(body) {
   return null
 }
 
+export async function GET(request) {
+  try {
+    const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+    const db = getAdminDb()
+    const snapshot = await db.collection('persons').orderBy('nameLower').get()
+    const persons = snapshot.docs.map(record => {
+      const data = record.data()
+      const descriptors = safeArray(data.descriptors)
+
+      return {
+        id: record.id,
+        name: data.name || '',
+        employeeId: data.employeeId || '',
+        nameLower: data.nameLower || String(data.name || '').toLowerCase(),
+        officeId: data.officeId || '',
+        officeName: data.officeName || 'Unassigned',
+        active: data.active !== false,
+        sampleCount: descriptors.length,
+      }
+    }).filter(person => adminSessionAllowsOffice(session, person.officeId))
+
+    return NextResponse.json({ ok: true, persons })
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Failed to load employees.' },
+      { status: 500 },
+    )
+  }
+}
+
 export async function POST(request) {
-  const session = request.cookies.get(getAdminSessionCookieName())?.value
-  if (!verifyAdminSessionCookieValue(session)) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required for registration.' }, { status: 401 })
   }
 
@@ -72,6 +105,10 @@ export async function POST(request) {
   const validationError = validateBody(body)
   if (validationError) {
     return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
+  }
+
+  if (!adminSessionAllowsOffice(session, body.officeId)) {
+    return NextResponse.json({ ok: false, message: 'This admin session cannot register employees for that office.' }, { status: 403 })
   }
 
   try {
@@ -102,18 +139,51 @@ export async function POST(request) {
     }
 
     if (existing) {
-      await db.collection('persons').doc(existing.id).set(
-        {
-          ...payload,
-          descriptors: [...safeArray(existing.descriptors), body.descriptor],
+      const nextPerson = {
+        ...existing,
+        ...payload,
+        descriptors: [...safeArray(existing.descriptors), body.descriptor],
+      }
+
+      await db.collection('persons').doc(existing.id).set(nextPerson, { merge: true })
+      await syncPersonBiometricIndex(db, existing.id, nextPerson)
+
+      await writeAuditLog(db, {
+        actorRole: session.role,
+        actorScope: session.scope,
+        actorOfficeId: session.officeId,
+        action: 'person_sample_add',
+        targetType: 'person',
+        targetId: existing.id,
+        officeId: body.officeId,
+        summary: `Added enrollment sample for ${body.name}`,
+        metadata: {
+          employeeId: body.employeeId,
+          officeName: body.officeName,
         },
-        { merge: true },
-      )
+      })
     } else {
-      await db.collection('persons').add({
+      const nextPerson = {
         ...payload,
         descriptors: [body.descriptor],
         createdAt: FieldValue.serverTimestamp(),
+      }
+      const record = await db.collection('persons').add(nextPerson)
+      await syncPersonBiometricIndex(db, record.id, nextPerson)
+
+      await writeAuditLog(db, {
+        actorRole: session.role,
+        actorScope: session.scope,
+        actorOfficeId: session.officeId,
+        action: 'person_create',
+        targetType: 'person',
+        targetId: record.id,
+        officeId: body.officeId,
+        summary: `Created employee record for ${body.name}`,
+        metadata: {
+          employeeId: body.employeeId,
+          officeName: body.officeName,
+        },
       })
     }
 

@@ -2,19 +2,26 @@
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { buildMatcher, detectWithDescriptors, matchDescriptor } from '../lib/face-api'
+import { detectWithDescriptors } from '../lib/face-api'
 import {
-  CONFIDENCE_MIN,
   CONFIRM_FRAMES,
   SCAN_INTERVAL_MS,
-  COOLDOWN_MS,
   CONFIRMED_HOLD_MS,
   UNKNOWN_DEBOUNCE_MS,
+  DETECTION_MAX_DIMENSION,
 } from '../lib/config'
-import { analyzeLiveness, isLivenessChallengePassed, pickLivenessChallenge } from '../lib/liveness'
+import {
+  analyzeLiveness,
+  createLivenessTracker,
+  hasLivenessTrackerPassed,
+  isLivenessChallengePassed,
+  pickLivenessChallenge,
+  updateLivenessTracker,
+} from '../lib/liveness'
 import { evaluateDetectionQuality } from '../lib/biometric-quality'
 import BrandMark from './BrandMark'
 import { useAudioCue } from '../hooks/useAudioCue'
+import AppShell from './AppShell'
 
 const pad = value => String(value).padStart(2, '0')
 
@@ -33,8 +40,11 @@ function formatDate(timestamp) {
   })
 }
 
-function drawBracketBox(ctx, box, color, label, confidence) {
-  const { x, y, width, height } = box
+function drawBracketBox(ctx, box, color, label, confidence, scaleX = 1, scaleY = 1) {
+  const x = box.x * scaleX
+  const y = box.y * scaleY
+  const width = box.width * scaleX
+  const height = box.height * scaleY
   const corner = Math.min(width, height) * 0.18
 
   ctx.strokeStyle = color
@@ -84,7 +94,6 @@ function getCurrentPosition() {
 export default function KioskView({
   camera,
   persons,
-  offices,
   modelsReady,
   modelStatus,
   attendance,
@@ -99,19 +108,18 @@ export default function KioskView({
   const [kioskState, setKioskState] = useState('idle')
   const [currentMatch, setCurrentMatch] = useState(null)
   const [flashKey, setFlashKey] = useState(0)
-  const [livenessChallenge, setLivenessChallenge] = useState(() => pickLivenessChallenge())
+  const [livenessChallenge, setLivenessChallenge] = useState(() => pickLivenessChallenge('any'))
   const [livenessPassed, setLivenessPassed] = useState(false)
+  const [lastMeaningfulFailure, setLastMeaningfulFailure] = useState('')
   const playAudioCue = useAudioCue()
 
   const scanRef = useRef(null)
   const busyRef = useRef(false)
-  const matcherRef = useRef(null)
-  const confirmRef = useRef({ name: null, count: 0 })
-  const cooldownRef = useRef({})
+  const confirmRef = useRef(0)
   const confirmedTimer = useRef(null)
   const unknownTimer = useRef(null)
-  const smoothConfidenceRef = useRef({})
   const previousStateRef = useRef('idle')
+  const livenessTrackerRef = useRef(createLivenessTracker())
 
   const stopLoop = useCallback(() => {
     if (scanRef.current) {
@@ -121,7 +129,8 @@ export default function KioskView({
   }, [])
 
   const resetLiveness = useCallback(() => {
-    setLivenessChallenge(pickLivenessChallenge())
+    livenessTrackerRef.current = createLivenessTracker()
+    setLivenessChallenge(pickLivenessChallenge('any'))
     setLivenessPassed(false)
   }, [])
 
@@ -137,12 +146,7 @@ export default function KioskView({
     return () => window.clearInterval(interval)
   }, [])
 
-  useEffect(() => {
-    const activePersons = persons.filter(person => person.active !== false)
-    matcherRef.current = activePersons.length > 0 ? buildMatcher(activePersons) : null
-  }, [persons])
-
-  const drawOverlay = useCallback((detections, matched) => {
+  const drawOverlay = useCallback((detections, sourceWidth, sourceHeight) => {
     const video = camera.videoRef.current
     const overlay = camera.overlayRef.current
 
@@ -150,6 +154,8 @@ export default function KioskView({
 
     const width = video.videoWidth || 640
     const height = video.videoHeight || 480
+    const scaleX = sourceWidth ? width / sourceWidth : 1
+    const scaleY = sourceHeight ? height / sourceHeight : 1
     overlay.width = width
     overlay.height = height
 
@@ -160,11 +166,7 @@ export default function KioskView({
       const box = detection.detection?.box
       if (!box) return
 
-      const match = matched?.[index]
-      const identified = match?.identified && match.confidence >= CONFIDENCE_MIN
-      const color = identified ? '#22c55e' : '#ef4444'
-      const label = identified ? match.name : 'UNKNOWN'
-      drawBracketBox(ctx, box, color, label, identified ? match.confidence : null)
+      drawBracketBox(ctx, box, '#22c55e', 'FACE READY', null, scaleX, scaleY)
     })
   }, [camera])
 
@@ -174,7 +176,10 @@ export default function KioskView({
     busyRef.current = true
 
     try {
-      const canvas = camera.captureImageData()
+      const canvas = camera.captureImageData({
+        maxWidth: DETECTION_MAX_DIMENSION,
+        maxHeight: DETECTION_MAX_DIMENSION,
+      })
       const detections = await detectWithDescriptors(canvas)
 
       if (detections.length === 0) {
@@ -183,7 +188,7 @@ export default function KioskView({
           unknownTimer.current = null
           setKioskState('idle')
           setCurrentMatch(null)
-          confirmRef.current = { name: null, count: 0 }
+          confirmRef.current = 0
           camera.clearOverlay()
           resetLiveness()
         }
@@ -196,9 +201,10 @@ export default function KioskView({
       unknownTimer.current = null
 
       const primaryDetection = detections[0]
-      const primaryQuality = evaluateDetectionQuality(primaryDetection, canvas.width, canvas.height)
+      const primaryQuality = evaluateDetectionQuality(primaryDetection, canvas.width, canvas.height, canvas)
       if (!primaryQuality.ok) {
         setKioskState('idle')
+        setLastMeaningfulFailure(primaryQuality.reason)
         setCurrentMatch({
           name: 'Face quality too weak',
           confidence: 0,
@@ -209,7 +215,9 @@ export default function KioskView({
       }
 
       const liveness = analyzeLiveness(primaryDetection)
+      livenessTrackerRef.current = updateLivenessTracker(livenessTrackerRef.current, liveness)
       const passedChallenge = isLivenessChallengePassed(livenessChallenge.id, liveness)
+        || hasLivenessTrackerPassed(livenessChallenge.id, livenessTrackerRef.current)
 
       if (!livenessPassed && passedChallenge) {
         setLivenessPassed(true)
@@ -226,120 +234,52 @@ export default function KioskView({
         return
       }
 
-      let bestMatch = null
-      const matched = await Promise.all(detections.map(async detection => {
-        const quality = evaluateDetectionQuality(detection, canvas.width, canvas.height)
-        if (!quality.ok) return { identified: false, distance: null }
-        const match = await matchDescriptor(matcherRef.current, detection.descriptor)
-        if (match?.identified && match.confidence >= CONFIDENCE_MIN) {
-          if (!bestMatch || match.confidence > bestMatch.confidence) bestMatch = match
-        }
-        return match
-      }))
-
-      drawOverlay(detections, matched)
-
-      if (!bestMatch) {
-        const ambiguousMatch = matched.find(match => match?.ambiguous)
-        if (ambiguousMatch) {
-          setKioskState('blocked')
-          setCurrentMatch({
-            name: 'Ambiguous match',
-            confidence: ambiguousMatch.confidence || 0,
-            detail: `Too close to ${ambiguousMatch.name} and ${ambiguousMatch.runnerUpName}. Rescan in better lighting.`,
-          })
-          busyRef.current = false
-          return
-        }
-
-        if (!confirmedTimer.current && !unknownTimer.current) {
-          unknownTimer.current = window.setTimeout(() => {
-            setKioskState('unknown')
-            setCurrentMatch(null)
-            confirmRef.current = { name: null, count: 0 }
-            unknownTimer.current = null
-          }, UNKNOWN_DEBOUNCE_MS)
-        }
-
-        busyRef.current = false
-        return
-      }
-
-      const matchedPerson = persons.find(
-        person => (person.employeeId || person.id) === bestMatch.key && person.active !== false,
-      )
-      if (!matchedPerson) {
-        setKioskState('blocked')
-        setCurrentMatch({
-          name: bestMatch.name,
-          confidence: bestMatch.confidence,
-          detail: 'Employee record is inactive or missing',
-        })
-        busyRef.current = false
-        return
-      }
-
-      const previous = smoothConfidenceRef.current[bestMatch.name] ?? bestMatch.confidence
-      const smoothed = previous * 0.6 + bestMatch.confidence * 0.4
-      smoothConfidenceRef.current[bestMatch.name] = smoothed
-
-      if (confirmRef.current.name === bestMatch.name) confirmRef.current.count += 1
-      else confirmRef.current = { name: bestMatch.name, count: 1 }
+      drawOverlay(detections, canvas.width, canvas.height)
+      confirmRef.current += 1
 
       if (!confirmedTimer.current) setKioskState('scanning')
 
-      if (confirmRef.current.count >= CONFIRM_FRAMES) {
-        const name = bestMatch.name
+      if (confirmRef.current >= CONFIRM_FRAMES) {
         const now = Date.now()
-        const lastLog = cooldownRef.current[name] || 0
+        const position = await getCurrentPosition().catch(() => null)
+        const coordinates = position
+          ? {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            }
+          : null
 
-        if (now - lastLog > COOLDOWN_MS) {
-          const position = await getCurrentPosition().catch(() => null)
-          const coordinates = position
-            ? {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-              }
-            : null
+        const result = await onLogAttendance({
+          id: `${now}`,
+          name: '',
+          employeeId: '',
+          officeId: '',
+          officeName: '',
+          attendanceMode: '',
+          geofenceStatus: '',
+          confidence: 0,
+          timestamp: now,
+          date: new Date(now).toLocaleDateString('en-PH'),
+          time: formatTime(now),
+          latitude: coordinates?.latitude ?? null,
+          longitude: coordinates?.longitude ?? null,
+          descriptor: Array.from(primaryDetection.descriptor),
+        })
 
-          cooldownRef.current[name] = now
-
-          const result = await onLogAttendance({
-            id: `${now}_${name}`,
-            name,
-            employeeId: '',
-            officeId: '',
-            officeName: '',
-            attendanceMode: '',
-            geofenceStatus: '',
-            confidence: smoothed,
-            timestamp: now,
-            date: new Date(now).toLocaleDateString('en-PH'),
-            time: formatTime(now),
-            latitude: coordinates?.latitude ?? null,
-            longitude: coordinates?.longitude ?? null,
-            descriptor: Array.from(primaryDetection.descriptor),
-          })
-
-          const acceptedEntry = result.entry || {
-            name,
-            officeName: matchedPerson.officeName,
-            attendanceMode: matchedPerson.attendanceMode,
-            geofenceStatus: matchedPerson.geofenceStatus,
-            confidence: smoothed,
-          }
-
+        const acceptedEntry = result.entry
+        if (acceptedEntry) {
+          setLastMeaningfulFailure('')
           setFlashKey(value => value + 1)
           setCurrentMatch({
             name: acceptedEntry.name,
-            confidence: acceptedEntry.confidence ?? smoothed,
+            confidence: acceptedEntry.confidence ?? 0,
             officeName: acceptedEntry.officeName,
             detail: `${acceptedEntry.attendanceMode} • ${acceptedEntry.geofenceStatus}`,
           })
+          setKioskState('confirmed')
         }
 
-        setKioskState('confirmed')
-        confirmRef.current = { name: null, count: 0 }
+        confirmRef.current = 0
         resetLiveness()
 
         window.clearTimeout(confirmedTimer.current)
@@ -350,17 +290,44 @@ export default function KioskView({
         }, CONFIRMED_HOLD_MS)
       }
     } catch (error) {
-      setKioskState('blocked')
-      setCurrentMatch({
-        name: 'Attendance blocked',
-        confidence: 0,
-        detail: error.message || 'Location permission is required for on-site attendance',
-      })
+      const decisionCode = error.decisionCode || ''
+      if (decisionCode === 'blocked_no_reliable_match' || decisionCode === 'blocked_ambiguous_match') {
+        if (!confirmedTimer.current && !unknownTimer.current) {
+          unknownTimer.current = window.setTimeout(() => {
+            setKioskState(decisionCode === 'blocked_ambiguous_match' ? 'blocked' : 'unknown')
+            setLastMeaningfulFailure(error.message || 'Face could not be matched reliably.')
+            setCurrentMatch({
+              name: decisionCode === 'blocked_ambiguous_match' ? 'Ambiguous match' : 'Not recognized',
+              confidence: 0,
+              detail: error.message || 'Face could not be matched reliably.',
+            })
+            confirmRef.current = 0
+            unknownTimer.current = null
+          }, UNKNOWN_DEBOUNCE_MS)
+        }
+      } else if (decisionCode === 'blocked_recent_duplicate') {
+        setKioskState('blocked')
+        setLastMeaningfulFailure(error.message || 'Attendance already recorded recently.')
+        setCurrentMatch({
+          name: error.entry?.name || 'Attendance already recorded',
+          confidence: error.entry?.confidence ?? 0,
+          officeName: error.entry?.officeName,
+          detail: error.message || 'Attendance already recorded recently.',
+        })
+      } else {
+        setKioskState('blocked')
+        setLastMeaningfulFailure(error.message || 'Attendance is blocked right now.')
+        setCurrentMatch({
+          name: 'Attendance blocked',
+          confidence: 0,
+          detail: error.message || 'Location permission is required for on-site attendance',
+        })
+      }
       resetLiveness()
     }
 
     busyRef.current = false
-  }, [camera, drawOverlay, livenessChallenge.id, livenessPassed, modelsReady, onLogAttendance, persons, resetLiveness])
+  }, [camera, drawOverlay, livenessChallenge.id, livenessPassed, modelsReady, onLogAttendance, resetLiveness])
 
   const startLoop = useCallback(() => {
     if (scanRef.current) return
@@ -397,18 +364,72 @@ export default function KioskView({
   const isUnknown = kioskState === 'unknown'
   const isBlocked = kioskState === 'blocked'
   const isLiveness = kioskState === 'liveness'
+  const locationAvailable = typeof navigator !== 'undefined' && Boolean(navigator.geolocation)
 
   return (
-    <main className="min-h-screen bg-hero-wash px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[minmax(0,1.25fr)_380px]">
+    <AppShell
+      actions={(
+        <>
+          <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm">
+            {todayLogCount} logs today
+          </div>
+          <button
+            className="inline-flex items-center justify-center rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
+            onClick={onGoRegister}
+            type="button"
+          >
+            Open registration
+          </button>
+        </>
+      )}
+      contentClassName="px-4 py-4 sm:px-6 lg:px-8"
+    >
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-8.8rem)]">
+        <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1.15fr)_360px]">
+          <div className="min-w-0">
+            <BrandMark />
+            <h1 className="mt-2 font-display text-3xl leading-tight text-ink sm:text-4xl">Shared kiosk attendance workspace.</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
+              Fast scan, minimal motion, blunt operator feedback. This page should work like a kiosk, not like a brochure.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+            <QuickInfoCard label="Clock" value={clock} detail={dateStr} />
+            <QuickInfoCard label="Liveness" value={livenessPassed ? 'Passed' : 'Required'} detail={livenessPassed ? 'Ready to accept scan' : livenessChallenge.label} />
+            <QuickInfoCard label="Storage" value={firebaseEnabledLabel(dataStatus)} detail={dataStatus} />
+          </div>
+        </section>
+
+        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_380px]">
         <motion.section
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="flex min-w-0 flex-col gap-4"
+          className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
         >
-          <div className="overflow-hidden rounded-[1.9rem] border border-black/5 bg-black shadow-glow">
-            <div className="relative aspect-[4/5] min-h-[420px] sm:aspect-video xl:aspect-[4/3]">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Kiosk workspace</span>
+              <h2 className="mt-1 font-display text-2xl text-ink">Live capture</h2>
+            </div>
+            <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm">
+              {isConfirmed
+                ? 'Attendance logged'
+                : isUnknown
+                  ? 'Not recognized'
+                  : isBlocked
+                    ? 'Blocked'
+                    : isLiveness
+                      ? livenessChallenge.label
+                      : kioskState === 'scanning'
+                        ? 'Scanning face'
+                        : 'Please face the camera'}
+            </div>
+          </div>
+
+          <div className="min-h-0 overflow-hidden rounded-[1.6rem] border border-black/5 bg-black shadow-glow">
+            <div className="relative h-full min-h-[360px] xl:min-h-[520px]">
               <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
               <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
               <canvas ref={camera.overlayRef} className="absolute inset-0 h-full w-full" />
@@ -425,37 +446,20 @@ export default function KioskView({
 
               <div className="absolute inset-x-0 bottom-5 z-10 flex justify-center px-4">
                 <span className={`rounded-full px-4 py-2 text-sm font-semibold backdrop-blur ${isConfirmed ? 'bg-emerald-400/20 text-emerald-100' : isUnknown || isBlocked ? 'bg-red-500/20 text-red-100' : kioskState === 'scanning' || isLiveness ? 'bg-brand/25 text-white' : 'bg-white/15 text-stone-100'}`}>
-                  {isConfirmed
-                    ? 'Attendance logged'
-                    : isUnknown
-                      ? 'Not recognized'
-                      : isBlocked
-                        ? 'Attendance blocked'
-                        : isLiveness
-                          ? livenessChallenge.label
-                        : kioskState === 'scanning'
-                          ? 'Scanning face'
-                          : 'Please face the camera'}
+                  {isBlocked ? 'Attendance blocked' : isUnknown ? 'Not recognized' : isConfirmed ? 'Accepted' : isLiveness ? livenessChallenge.label : 'Capture in progress'}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 rounded-[1.6rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur">
+          <div className="flex flex-wrap items-center gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
             <StatusDot ok={modelsReady} />
             <StatusItem label="AI engine" value={modelStatus} />
             <StatusItem label="Storage" value={dataStatus} />
             <StatusItem label="Enrolled" value={`${persons.length}`} />
             <StatusItem label="Today" value={`${todayLogCount} logs`} />
-            <div className="ml-auto">
-              <button
-                className="inline-flex items-center justify-center rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
-                onClick={onGoRegister}
-                type="button"
-              >
-                Open registration
-              </button>
-            </div>
+            <StatusItem label="Camera" value={camera.camOn ? 'Ready' : 'Offline'} />
+            <StatusItem label="Location" value={locationAvailable ? 'Available' : 'Unavailable'} />
           </div>
         </motion.section>
 
@@ -463,30 +467,20 @@ export default function KioskView({
           animate={{ opacity: 1, x: 0 }}
           initial={{ opacity: 0, x: 20 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
-          className="flex min-w-0 flex-col gap-4"
+          className="flex min-h-0 min-w-0 flex-col gap-4"
         >
-          <section className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
-            <BrandMark compact />
-            <h1 className="mt-4 font-display text-3xl leading-tight text-ink">GPS Face Attendance</h1>
-            <p className="mt-2 text-sm leading-7 text-muted">Shared office scanning for assigned employees only.</p>
-
-            <div className="mt-6 rounded-[1.5rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white to-accent/10 p-5 text-center">
-              <div className="font-display text-5xl leading-none text-ink">{clock}</div>
-              <div className="mt-2 text-sm text-muted">{dateStr}</div>
-              <div className={`mt-4 inline-flex rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${livenessPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-white/80 text-brand-dark'}`}>
-                {livenessPassed ? 'Liveness passed' : livenessChallenge.label}
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
+          <section className="rounded-[1.5rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
             <div className="flex items-center justify-between gap-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Recognition</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Decision context</span>
               <span className="text-sm font-semibold text-ink">{modelsReady ? 'Ready' : 'Loading models'}</span>
             </div>
             <div className="mt-3 flex items-center justify-between gap-4">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Policy</span>
               <span className="text-sm font-semibold text-ink">One office per employee</span>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Last failure</span>
+              <span className="text-right text-sm font-semibold text-ink">{lastMeaningfulFailure || 'None'}</span>
             </div>
             {errorMessage ? <div className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm text-warn">{errorMessage}</div> : null}
             <p className="mt-4 text-sm leading-7 text-muted">
@@ -495,7 +489,7 @@ export default function KioskView({
             </p>
           </section>
 
-          <section className={`rounded-[1.75rem] border p-5 shadow-glow backdrop-blur ${isConfirmed ? 'border-emerald-500/25 bg-emerald-50/85' : isUnknown || isBlocked ? 'border-red-500/20 bg-red-50/85' : 'border-black/5 bg-white/80'}`}>
+          <section className={`rounded-[1.5rem] border p-5 shadow-glow backdrop-blur ${isConfirmed ? 'border-emerald-500/25 bg-emerald-50/85' : isUnknown || isBlocked ? 'border-red-500/20 bg-red-50/85' : 'border-black/5 bg-white/80'}`}>
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
               {isBlocked ? 'Attendance blocked' : isUnknown ? 'Unrecognized' : currentMatch ? 'Employee identified' : 'Awaiting scan'}
             </span>
@@ -519,7 +513,7 @@ export default function KioskView({
             )}
           </section>
 
-          <section className="flex min-h-0 flex-1 flex-col rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
+          <section className="flex min-h-0 flex-1 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur">
             <div className="mb-4 flex items-center justify-between gap-4">
               <h2 className="font-display text-2xl text-ink">Today's attendance</h2>
               <span className="rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
@@ -549,7 +543,8 @@ export default function KioskView({
           </section>
         </motion.aside>
       </div>
-    </main>
+      </div>
+    </AppShell>
   )
 }
 
@@ -564,4 +559,20 @@ function StatusItem({ label, value }) {
       <span className="text-sm font-semibold text-ink">{value}</span>
     </div>
   )
+}
+
+function QuickInfoCard({ label, value, detail }) {
+  return (
+    <div className="rounded-[1.2rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/90 to-accent/10 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{label}</div>
+      <div className="mt-2 font-display text-2xl text-ink">{value}</div>
+      <div className="mt-1 text-sm text-muted">{detail}</div>
+    </div>
+  )
+}
+
+function firebaseEnabledLabel(status) {
+  if (status.toLowerCase().includes('firebase')) return 'Firebase'
+  if (status.toLowerCase().includes('local')) return 'Local'
+  return 'Storage'
 }

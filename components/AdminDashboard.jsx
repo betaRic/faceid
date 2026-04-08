@@ -29,15 +29,63 @@ const panelTabs = [
   { id: 'office', label: 'Office Setup' },
   { id: 'employees', label: 'Employees' },
   { id: 'summary', label: 'Summary' },
+  { id: 'admins', label: 'Admins' },
 ]
 
-export default function AdminDashboard() {
+function getOfficeSetupItems(office) {
+  if (!office) return []
+
+  return [
+    {
+      label: 'GPS pin',
+      ok: Number.isFinite(office.gps?.latitude) && Number.isFinite(office.gps?.longitude),
+    },
+    {
+      label: 'Radius',
+      ok: Number.isFinite(office.gps?.radiusMeters) && office.gps.radiusMeters > 0,
+    },
+    {
+      label: 'Schedule',
+      ok: Boolean(office.workPolicy?.schedule && office.workPolicy?.morningIn && office.workPolicy?.afternoonOut),
+    },
+    {
+      label: 'Working days',
+      ok: Array.isArray(office.workPolicy?.workingDays) && office.workPolicy.workingDays.length > 0,
+    },
+    {
+      label: 'WFH rule',
+      ok: Array.isArray(office.workPolicy?.wfhDays),
+    },
+  ]
+}
+
+function getScopeLabel(roleScope) {
+  return roleScope === 'office' ? 'Office admin' : 'Regional admin'
+}
+
+function formatDecisionLabel(code) {
+  const normalized = String(code || '').trim()
+  if (!normalized) return 'Unknown'
+
+  return normalized
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function getDecisionTone(code) {
+  if (String(code || '').startsWith('accepted_')) return 'ok'
+  if (code === 'blocked_recent_duplicate') return 'warn'
+  return 'bad'
+}
+
+export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '' }) {
   const todayIso = new Date().toISOString().slice(0, 10)
-  const [roleScope, setRoleScope] = useState('regional')
-  const [selectedOfficeId, setSelectedOfficeId] = useState('')
+  const [roleScope, setRoleScope] = useState(initialRoleScope)
+  const [selectedOfficeId, setSelectedOfficeId] = useState(initialOfficeId)
   const [offices, setOffices] = useState([])
   const [persons, setPersons] = useState([])
   const [attendance, setAttendance] = useState([])
+  const [dailySummaryRecords, setDailySummaryRecords] = useState([])
   const [draftOffice, setDraftOffice] = useState(null)
   const [status, setStatus] = useState(firebaseEnabled ? 'Connected to Firebase' : 'Using local storage fallback')
   const [summaryDate, setSummaryDate] = useState(new Date().toLocaleDateString('en-PH'))
@@ -47,12 +95,19 @@ export default function AdminDashboard() {
   const [summaryOfficeFilter, setSummaryOfficeFilter] = useState('all')
   const [summaryEmployeeFilter, setSummaryEmployeeFilter] = useState('all')
   const [activePanel, setActivePanel] = useState('office')
+  const [admins, setAdmins] = useState([])
+  const [adminEmail, setAdminEmail] = useState('')
+  const [adminDisplayName, setAdminDisplayName] = useState('')
+  const [adminScope, setAdminScope] = useState('office')
+  const [adminOfficeId, setAdminOfficeId] = useState('')
 
   useEffect(() => {
     const unsubscribe = subscribeToOfficeConfigs(
       nextOffices => {
         setOffices(nextOffices)
-        if (!selectedOfficeId && nextOffices[0]) setSelectedOfficeId(nextOffices[0].id)
+        if (!selectedOfficeId && nextOffices[0]) {
+          setSelectedOfficeId(initialOfficeId || nextOffices[0].id)
+        }
       },
       error => {
         setStatus(error.message || 'Failed to load office configuration')
@@ -60,7 +115,11 @@ export default function AdminDashboard() {
     )
 
     return unsubscribe
-  }, [selectedOfficeId])
+  }, [initialOfficeId, selectedOfficeId])
+
+  useEffect(() => {
+    setRoleScope(initialRoleScope)
+  }, [initialRoleScope])
 
   useEffect(() => {
     const unsubscribePersons = subscribeToPersons(setPersons, () => {})
@@ -72,6 +131,31 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  useEffect(() => {
+    if (roleScope !== 'regional') {
+      setAdmins([])
+      return
+    }
+
+    let active = true
+
+    const load = async () => {
+      try {
+        const response = await fetch('/api/admins', { cache: 'no-store' })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) throw new Error(payload?.message || 'Failed to load admin records')
+        if (active) setAdmins(payload?.admins || [])
+      } catch (error) {
+        if (active) setStatus(error instanceof Error ? error.message : 'Failed to load admin records')
+      }
+    }
+
+    load()
+    return () => {
+      active = false
+    }
+  }, [roleScope, status])
+
   const visibleOffices = useMemo(() => {
     if (roleScope === 'regional') return offices
     return offices.filter(office => office.id === selectedOfficeId)
@@ -82,13 +166,76 @@ export default function AdminDashboard() {
     return offices.find(office => office.id === selectedOfficeId) || null
   }, [draftOffice, offices, selectedOfficeId])
 
-  const summaryRows = useMemo(() => {
-    const baseRows = buildAttendanceSummary({
-      attendance,
-      persons,
-      offices,
-      targetDate: summaryDate,
+  const officeSetupItems = useMemo(() => getOfficeSetupItems(activeOffice), [activeOffice])
+  const officeSetupScore = useMemo(
+    () => officeSetupItems.filter(item => item.ok).length,
+    [officeSetupItems],
+  )
+
+  const visibleAttendance = useMemo(() => (
+    attendance.filter(entry => (roleScope === 'regional' ? true : entry.officeId === selectedOfficeId))
+  ), [attendance, roleScope, selectedOfficeId])
+
+  const decisionStats = useMemo(() => {
+    const counters = new Map()
+
+    visibleAttendance.forEach(entry => {
+      const code = String(entry.decisionCode || '').trim()
+      if (!code) return
+      counters.set(code, (counters.get(code) || 0) + 1)
     })
+
+    return Array.from(counters.entries())
+      .map(([code, count]) => ({ code, count, tone: getDecisionTone(code) }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 6)
+  }, [visibleAttendance])
+
+  const acceptedCount = useMemo(
+    () => visibleAttendance.filter(entry => String(entry.decisionCode || '').startsWith('accepted_')).length,
+    [visibleAttendance],
+  )
+
+  const blockedCount = useMemo(
+    () => visibleAttendance.filter(entry => String(entry.decisionCode || '').startsWith('blocked_')).length,
+    [visibleAttendance],
+  )
+
+  useEffect(() => {
+    if (!firebaseEnabled) {
+      setDailySummaryRecords([])
+      return
+    }
+
+    let active = true
+
+    const load = async () => {
+      try {
+        const params = new URLSearchParams({ date: summaryDate })
+        const response = await fetch(`/api/attendance/daily?${params.toString()}`, { cache: 'no-store' })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) throw new Error(payload?.message || 'Failed to load daily attendance summary')
+        if (active) setDailySummaryRecords(payload?.records || [])
+      } catch (error) {
+        if (active) setStatus(error instanceof Error ? error.message : 'Failed to load daily attendance summary')
+      }
+    }
+
+    load()
+    return () => {
+      active = false
+    }
+  }, [summaryDate])
+
+  const summaryRows = useMemo(() => {
+    const baseRows = firebaseEnabled
+      ? dailySummaryRecords
+      : buildAttendanceSummary({
+          attendance,
+          persons,
+          offices,
+          targetDate: summaryDate,
+        })
 
     return baseRows.filter(row => {
       if (roleScope !== 'regional' && row.officeName !== activeOffice?.name) return false
@@ -99,7 +246,7 @@ export default function AdminDashboard() {
       if (summaryEmployeeFilter !== 'all' && row.employeeId !== summaryEmployeeFilter) return false
       return true
     })
-  }, [activeOffice?.name, attendance, offices, persons, roleScope, summaryDate, summaryEmployeeFilter, summaryOfficeFilter])
+  }, [activeOffice?.name, attendance, dailySummaryRecords, firebaseEnabled, offices, persons, roleScope, summaryDate, summaryEmployeeFilter, summaryOfficeFilter])
 
   const filteredPersons = useMemo(() => {
     const query = employeeQuery.trim().toLowerCase()
@@ -215,6 +362,84 @@ export default function AdminDashboard() {
     }
   }
 
+  async function refreshAdmins() {
+    if (roleScope !== 'regional') return
+    const response = await fetch('/api/admins', { cache: 'no-store' })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(payload?.message || 'Failed to load admin records')
+    setAdmins(payload?.admins || [])
+  }
+
+  async function handleCreateAdmin() {
+    setStatus('Creating admin record...')
+
+    try {
+      const response = await fetch('/api/admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: adminEmail,
+          displayName: adminDisplayName,
+          scope: adminScope,
+          officeId: adminScope === 'office' ? adminOfficeId : '',
+          active: true,
+        }),
+      })
+
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.message || 'Failed to create admin record')
+
+      setAdminEmail('')
+      setAdminDisplayName('')
+      setAdminScope('office')
+      setAdminOfficeId('')
+      await refreshAdmins()
+      setStatus('Admin record created')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to create admin record')
+    }
+  }
+
+  async function handleUpdateAdmin(admin, updates) {
+    setStatus('Updating admin record...')
+
+    try {
+      const response = await fetch(`/api/admins/${admin.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: updates.email ?? admin.email,
+          displayName: updates.displayName ?? admin.displayName,
+          scope: updates.scope ?? admin.scope,
+          officeId: (updates.scope ?? admin.scope) === 'office' ? (updates.officeId ?? admin.officeId) : '',
+          active: updates.active ?? admin.active,
+        }),
+      })
+
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.message || 'Failed to update admin record')
+
+      await refreshAdmins()
+      setStatus('Admin record updated')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to update admin record')
+    }
+  }
+
+  async function handleDeleteAdmin(admin) {
+    setStatus('Deleting admin record...')
+
+    try {
+      const response = await fetch(`/api/admins/${admin.id}`, { method: 'DELETE' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.message || 'Failed to delete admin record')
+      await refreshAdmins()
+      setStatus('Admin record deleted')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to delete admin record')
+    }
+  }
+
   function exportSummaryCsv() {
     if (summaryRows.length === 0) {
       setStatus('No summary rows to export')
@@ -278,22 +503,22 @@ export default function AdminDashboard() {
       )}
       contentClassName="px-4 py-5 sm:px-6 lg:px-8"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <section className="grid gap-5 rounded-[2rem] border border-black/5 bg-white/70 p-6 shadow-glow backdrop-blur xl:grid-cols-[1.2fr_.8fr] xl:p-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100vh-9.2rem)]">
+        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-5 shadow-glow backdrop-blur xl:grid-cols-[1.2fr_.8fr]">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
             <BrandMark />
-            <h1 className="mt-4 font-display text-3xl leading-tight text-ink sm:text-4xl">
+            <h1 className="mt-3 font-display text-3xl leading-tight text-ink sm:text-4xl">
               Admin workspace for offices, employees, and attendance reports.
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-muted sm:text-base">
-              This screen should stay compact. Office setup, employee control, and summary reporting are separated so
-              admin users can switch tasks instead of scrolling through one long page.
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted sm:text-base">
+              Compact by design. Office setup, employee control, and summary reporting are separated so admins can work
+              without long vertical scrolling.
             </p>
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-4 flex flex-wrap gap-3">
               <Link
                 className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white"
                 href="/"
@@ -311,7 +536,7 @@ export default function AdminDashboard() {
 
           <motion.aside
             animate={{ opacity: 1, x: 0 }}
-            className="grid gap-4 rounded-[1.75rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/80 to-accent/10 p-6"
+            className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/80 to-accent/10 p-5 sm:grid-cols-3 xl:grid-cols-1"
             initial={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.45, ease: 'easeOut', delay: 0.08 }}
           >
@@ -321,29 +546,47 @@ export default function AdminDashboard() {
               <p className="mt-1 text-sm leading-7 text-muted">{status}</p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              {panelTabs.map(panel => (
-                <button
-                  key={panel.id}
-                  className={`rounded-2xl border p-4 text-left text-sm transition ${
-                    activePanel === panel.id
-                      ? 'border-brand/30 bg-brand/10 text-brand-dark'
-                      : 'border-black/5 bg-white/75 text-muted hover:bg-white'
-                  }`}
-                  onClick={() => setActivePanel(panel.id)}
-                  type="button"
-                >
-                  {panel.label}
-                </button>
-              ))}
+            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Office setup</span>
+              <p className="mt-2 text-lg font-semibold text-ink">
+                {activeOffice ? `${officeSetupScore}/${officeSetupItems.length} ready` : 'Select an office'}
+              </p>
+              {activeOffice ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {officeSetupItems.map(item => (
+                    <span
+                      key={item.label}
+                      className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
+                        item.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Admin scope</span>
+              <p className="mt-2 text-lg font-semibold text-ink">{getScopeLabel(roleScope)}</p>
+              <p className="mt-1 text-sm leading-7 text-muted">
+                {roleScope === 'office' ? 'Server-locked to one office.' : 'Can manage every office and admin record.'}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Attendance health</span>
+              <p className="mt-2 text-lg font-semibold text-ink">{acceptedCount} accepted / {blockedCount} blocked</p>
+              <p className="mt-1 text-sm leading-7 text-muted">Recent server decisions for the current admin scope.</p>
             </div>
           </motion.aside>
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
           <motion.aside
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-[1.75rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+            className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
           >
@@ -353,18 +596,14 @@ export default function AdminDashboard() {
             </header>
 
             <div className="space-y-4">
-              <select
-                className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
-                onChange={event => setRoleScope(event.target.value)}
-                value={roleScope}
-              >
-                <option value="regional">Regional admin</option>
-                <option value="office">Office admin</option>
-              </select>
+              <div className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-ink">
+                {getScopeLabel(roleScope)}
+              </div>
 
               <select
                 className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
                 onChange={event => setSelectedOfficeId(event.target.value)}
+                disabled={roleScope === 'office'}
                 value={selectedOfficeId}
               >
                 {offices.map(office => (
@@ -372,7 +611,24 @@ export default function AdminDashboard() {
                 ))}
               </select>
 
-              <div className="grid gap-3">
+              <div className="grid gap-2">
+                {panelTabs.map(panel => (
+                  <button
+                    key={`side-panel-${panel.id}`}
+                    className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                      activePanel === panel.id
+                        ? 'border-brand/30 bg-brand/10 text-brand-dark'
+                        : 'border-black/5 bg-stone-50 text-ink hover:bg-white'
+                    }`}
+                    onClick={() => setActivePanel(panel.id)}
+                    type="button"
+                  >
+                    {panel.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid min-h-0 gap-3 overflow-auto pr-1">
                 {visibleOffices.map(office => (
                   <button
                     key={office.id}
@@ -391,7 +647,7 @@ export default function AdminDashboard() {
 
           <motion.section
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-[1.75rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+            className="min-h-0 rounded-[1.5rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut', delay: 0.06 }}
           >
@@ -399,28 +655,12 @@ export default function AdminDashboard() {
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Workspace</span>
               <h2 className="mt-2 font-display text-3xl text-ink">{activeOffice?.name || 'Select an office'}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-7 text-muted">
-                Regional admins should be able to edit all offices. Office admins should only edit their own office.
+                Regional admins can manage all offices. Office admins stay limited by the server, not by interface theater.
               </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {panelTabs.map(panel => (
-                  <button
-                    key={`panel-${panel.id}`}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      activePanel === panel.id
-                        ? 'bg-brand text-white'
-                        : 'border border-black/10 bg-white text-ink hover:bg-stone-50'
-                    }`}
-                    onClick={() => setActivePanel(panel.id)}
-                    type="button"
-                  >
-                    {panel.label}
-                  </button>
-                ))}
-              </div>
             </header>
 
             {activePanel === 'office' && activeOffice ? (
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid max-h-[62vh] gap-5 overflow-auto pr-1 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <Field label="Office map location">
                     <OfficeLocationPicker
@@ -541,7 +781,7 @@ export default function AdminDashboard() {
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}
-          className={`${activePanel === 'employees' ? 'block' : 'hidden'} rounded-[1.75rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
+          className={`${activePanel === 'employees' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
         >
@@ -550,7 +790,7 @@ export default function AdminDashboard() {
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Employees</span>
               <h2 className="mt-2 font-display text-3xl text-ink">Transfer and account control</h2>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
-                This is where employee assignment should be managed. Registration captures the face. Admin manages the employee record.
+                Registration captures the face. This screen controls office assignment and account status.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -583,7 +823,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="mt-6 grid max-h-[60vh] gap-4 overflow-auto pr-1">
+          <div className="mt-6 grid max-h-[62vh] gap-4 overflow-auto pr-1">
             {filteredPersons.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted">
                 No employees match the current filters.
@@ -600,7 +840,7 @@ export default function AdminDashboard() {
                     </div>
                     <div className="mt-1 text-xs uppercase tracking-[0.12em] text-muted">{person.employeeId}</div>
                     <div className="mt-2 text-sm text-muted">
-                      {person.officeName} • {person.descriptors.length} sample{person.descriptors.length !== 1 ? 's' : ''}
+                      {person.officeName} • {person.sampleCount ?? 0} sample{(person.sampleCount ?? 0) !== 1 ? 's' : ''}
                     </div>
                   </div>
 
@@ -646,7 +886,7 @@ export default function AdminDashboard() {
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}
-          className={`${activePanel === 'summary' ? 'block' : 'hidden'} rounded-[1.75rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
+          className={`${activePanel === 'summary' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.12 }}
         >
@@ -655,7 +895,7 @@ export default function AdminDashboard() {
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Attendance summary</span>
               <h2 className="mt-2 font-display text-3xl text-ink">Daily AM/PM reporting</h2>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
-                This report derives AM IN, AM OUT, PM IN, PM OUT, late, undertime, and working hours from the raw attendance logs for the selected date.
+                Daily record output for the selected date, with AM/PM segments and totals already derived on the server.
               </p>
             </div>
             <div className="grid w-full gap-3 sm:max-w-4xl sm:grid-cols-4">
@@ -708,55 +948,224 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="mt-6 max-h-[62vh] overflow-auto">
-            <table className="min-w-full border-separate border-spacing-y-3 text-left">
-              <thead className="sticky top-0 bg-white/95 backdrop-blur">
-                <tr className="text-xs uppercase tracking-[0.16em] text-muted">
-                  <th className="px-3 py-2">Employee</th>
-                  <th className="px-3 py-2">Office</th>
-                  <th className="px-3 py-2">AM In</th>
-                  <th className="px-3 py-2">AM Out</th>
-                  <th className="px-3 py-2">PM In</th>
-                  <th className="px-3 py-2">PM Out</th>
-                  <th className="px-3 py-2">Late</th>
-                  <th className="px-3 py-2">Undertime</th>
-                  <th className="px-3 py-2">Working Hours</th>
-                  <th className="px-3 py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summaryRows.length === 0 ? (
-                  <tr>
-                    <td className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted" colSpan={10}>
-                      No attendance summary rows for the selected date yet.
-                    </td>
+          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-h-0 overflow-auto">
+              <table className="min-w-full border-separate border-spacing-y-3 text-left">
+                <thead className="sticky top-0 bg-white/95 backdrop-blur">
+                  <tr className="text-xs uppercase tracking-[0.16em] text-muted">
+                    <th className="px-3 py-2">Employee</th>
+                    <th className="px-3 py-2">Office</th>
+                    <th className="px-3 py-2">AM In</th>
+                    <th className="px-3 py-2">AM Out</th>
+                    <th className="px-3 py-2">PM In</th>
+                    <th className="px-3 py-2">PM Out</th>
+                    <th className="px-3 py-2">Late</th>
+                    <th className="px-3 py-2">Undertime</th>
+                    <th className="px-3 py-2">Working Hours</th>
+                    <th className="px-3 py-2">Status</th>
                   </tr>
-                ) : (
-                  summaryRows.map(row => (
-                    <tr key={`${row.employeeId}-${row.name}`} className="rounded-2xl bg-stone-50 text-sm text-ink">
-                      <td className="rounded-l-2xl px-3 py-4">
-                        <div className="font-semibold">{row.name}</div>
-                        <div className="text-xs uppercase tracking-[0.12em] text-muted">{row.employeeId}</div>
-                      </td>
-                      <td className="px-3 py-4 text-muted">{row.officeName}</td>
-                      <td className="px-3 py-4">{row.amIn}</td>
-                      <td className="px-3 py-4">{row.amOut}</td>
-                      <td className="px-3 py-4">{row.pmIn}</td>
-                      <td className="px-3 py-4">{row.pmOut}</td>
-                      <td className="px-3 py-4">{row.lateMinutes} min</td>
-                      <td className="px-3 py-4">{row.undertimeMinutes} min</td>
-                      <td className="px-3 py-4">{row.workingHours}</td>
-                      <td className="rounded-r-2xl px-3 py-4">
-                        <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${row.status === 'Complete' ? 'bg-emerald-100 text-emerald-800' : row.status === 'Late' ? 'bg-amber-100 text-amber-800' : row.status === 'Undertime' ? 'bg-red-100 text-red-700' : 'bg-stone-200 text-stone-700'}`}>
-                          {row.status}
-                        </span>
+                </thead>
+                <tbody>
+                  {summaryRows.length === 0 ? (
+                    <tr>
+                      <td className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted" colSpan={10}>
+                        No attendance summary rows for the selected date yet.
                       </td>
                     </tr>
+                  ) : (
+                    summaryRows.map(row => (
+                      <tr key={`${row.employeeId}-${row.name}`} className="rounded-2xl bg-stone-50 text-sm text-ink">
+                        <td className="rounded-l-2xl px-3 py-4">
+                          <div className="font-semibold">{row.name}</div>
+                          <div className="text-xs uppercase tracking-[0.12em] text-muted">{row.employeeId}</div>
+                        </td>
+                        <td className="px-3 py-4 text-muted">{row.officeName}</td>
+                        <td className="px-3 py-4">{row.amIn}</td>
+                        <td className="px-3 py-4">{row.amOut}</td>
+                        <td className="px-3 py-4">{row.pmIn}</td>
+                        <td className="px-3 py-4">{row.pmOut}</td>
+                        <td className="px-3 py-4">{row.lateMinutes} min</td>
+                        <td className="px-3 py-4">{row.undertimeMinutes} min</td>
+                        <td className="px-3 py-4">{row.workingHours}</td>
+                        <td className="rounded-r-2xl px-3 py-4">
+                          <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${row.status === 'Complete' ? 'bg-emerald-100 text-emerald-800' : row.status === 'Late' ? 'bg-amber-100 text-amber-800' : row.status === 'Undertime' ? 'bg-red-100 text-red-700' : 'bg-stone-200 text-stone-700'}`}>
+                            {row.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <aside className="rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Decision codes</span>
+              <h3 className="mt-2 font-display text-2xl text-ink">Recent failure pattern</h3>
+              <p className="mt-2 text-sm leading-7 text-muted">
+                This is the quickest way to see what the dry run is struggling with.
+              </p>
+
+              <div className="mt-4 grid gap-3">
+                {decisionStats.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-black/10 bg-white px-4 py-8 text-center text-sm text-muted">
+                    No recent decision codes available yet.
+                  </div>
+                ) : (
+                  decisionStats.map(item => (
+                    <div key={item.code} className="flex items-center justify-between gap-3 rounded-2xl border border-black/5 bg-white px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-ink">{formatDecisionLabel(item.code)}</div>
+                        <div className="text-xs uppercase tracking-[0.12em] text-muted">{item.code}</div>
+                      </div>
+                      <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
+                        item.tone === 'ok'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : item.tone === 'warn'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-red-100 text-red-700'
+                      }`}>
+                        {item.count}
+                      </span>
+                    </div>
                   ))
                 )}
-              </tbody>
-            </table>
+              </div>
+            </aside>
           </div>
+        </motion.section>
+
+        <motion.section
+          animate={{ opacity: 1, y: 0 }}
+          className={`${activePanel === 'admins' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
+          initial={{ opacity: 0, y: 18 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.14 }}
+        >
+          {roleScope !== 'regional' ? (
+            <div className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted">
+              Only regional admins can manage other admin accounts.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Admin management</span>
+                  <h2 className="mt-2 font-display text-3xl text-ink">Regional and office admins</h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
+                    Regional admins assign office scope, promote, demote, disable, or remove admin access.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_220px]">
+                <input
+                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                  onChange={event => setAdminEmail(event.target.value)}
+                  placeholder="Admin email"
+                  type="email"
+                  value={adminEmail}
+                />
+                <input
+                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                  onChange={event => setAdminDisplayName(event.target.value)}
+                  placeholder="Display name"
+                  type="text"
+                  value={adminDisplayName}
+                />
+                <select
+                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                  onChange={event => setAdminScope(event.target.value)}
+                  value={adminScope}
+                >
+                  <option value="office">Office admin</option>
+                  <option value="regional">Regional admin</option>
+                </select>
+                <select
+                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                  disabled={adminScope !== 'office'}
+                  onChange={event => setAdminOfficeId(event.target.value)}
+                  value={adminOfficeId}
+                >
+                  <option value="">Select office</option>
+                  {offices.map(office => (
+                    <option key={`admin-office-create-${office.id}`} value={office.id}>{office.name}</option>
+                  ))}
+                </select>
+                <div className="lg:col-span-4">
+                  <button
+                    className="inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                    onClick={handleCreateAdmin}
+                    type="button"
+                  >
+                    Add admin
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-6 grid max-h-[56vh] gap-4 overflow-auto pr-1">
+                {admins.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted">
+                    No admin records yet.
+                  </div>
+                ) : (
+                  admins.map(admin => (
+                    <div key={admin.id} className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 lg:grid-cols-[minmax(0,1fr)_220px_220px_140px] lg:items-center">
+                      <div className="min-w-0">
+                        <div className="truncate text-base font-semibold text-ink">{admin.displayName || admin.email}</div>
+                        <div className="truncate text-sm text-muted">{admin.email}</div>
+                      </div>
+                      <select
+                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                        onChange={event => {
+                          const nextScope = event.target.value
+                          handleUpdateAdmin(admin, {
+                            scope: nextScope,
+                            officeId: nextScope === 'office' ? (admin.officeId || offices[0]?.id || '') : '',
+                          })
+                        }}
+                        value={admin.scope}
+                      >
+                        <option value="office">Office admin</option>
+                        <option value="regional">Regional admin</option>
+                      </select>
+                      <select
+                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                        disabled={admin.scope !== 'office'}
+                        onChange={event => handleUpdateAdmin(admin, { officeId: event.target.value })}
+                        value={admin.scope === 'office' ? admin.officeId : ''}
+                      >
+                        <option value="">Select office</option>
+                        {offices.map(office => (
+                          <option key={`admin-office-${admin.id}-${office.id}`} value={office.id}>{office.name}</option>
+                        ))}
+                      </select>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+                            admin.active
+                              ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                              : 'border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                          }`}
+                          onClick={() => handleUpdateAdmin(admin, { active: !admin.active })}
+                          type="button"
+                        >
+                          {admin.active ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-ink transition hover:bg-stone-100"
+                          onClick={() => handleDeleteAdmin(admin)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+            </>
+          )}
         </motion.section>
       </div>
     </AppShell>

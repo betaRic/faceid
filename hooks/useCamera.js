@@ -75,12 +75,17 @@ export function useCamera() {
     clearOverlay()
   }, [clearOverlay])
 
-  const captureImageData = useCallback(() => {
+  const captureImageData = useCallback((options = {}) => {
     const video = videoRef.current
     const canvas = canvasRef.current
+    const sourceWidth = video.videoWidth || 640
+    const sourceHeight = video.videoHeight || 480
+    const maxWidth = options.maxWidth || sourceWidth
+    const maxHeight = options.maxHeight || sourceHeight
+    const scale = Math.min(1, maxWidth / sourceWidth, maxHeight / sourceHeight)
 
-    canvas.width = video.videoWidth || 640
-    canvas.height = video.videoHeight || 480
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale))
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale))
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
     return canvas
   }, [])
@@ -106,17 +111,17 @@ async function requestPreferredCameraStream() {
       audio: false,
       video: {
         facingMode: 'user',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        frameRate: { ideal: 30, max: 30 },
+        width: { ideal: 960 },
+        height: { ideal: 540 },
+        frameRate: { ideal: 24, max: 24 },
       },
     },
     {
       audio: false,
       video: {
         facingMode: 'user',
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        width: { ideal: 640 },
+        height: { ideal: 480 },
       },
     },
     {

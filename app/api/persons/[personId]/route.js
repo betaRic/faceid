@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../../lib/firebase-admin'
 import {
+  adminSessionAllowsOffice,
   getAdminSessionCookieName,
-  verifyAdminSessionCookieValue,
+  parseAdminSessionCookieValue,
 } from '../../../../lib/admin-auth'
+import { writeAuditLog } from '../../../../lib/audit-log'
+import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '../../../../lib/biometric-index'
 
 function normalizeBody(body) {
   return {
@@ -22,8 +25,8 @@ function validateBody(body) {
 }
 
 export async function PUT(request, { params }) {
-  const session = request.cookies.get(getAdminSessionCookieName())?.value
-  if (!verifyAdminSessionCookieValue(session)) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required to update employees.' }, { status: 401 })
   }
 
@@ -35,11 +38,41 @@ export async function PUT(request, { params }) {
 
   try {
     const db = getAdminDb()
-    await db.collection('persons').doc(params.personId).set({
+    const existing = await db.collection('persons').doc(params.personId).get()
+    if (!existing.exists) {
+      return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
+    }
+
+    const existingData = existing.data()
+    if (!adminSessionAllowsOffice(session, existingData.officeId) || !adminSessionAllowsOffice(session, body.officeId)) {
+      return NextResponse.json({ ok: false, message: 'This admin session cannot update that employee.' }, { status: 403 })
+    }
+
+    const nextPerson = {
+      ...existingData,
       ...body,
       nameLower: body.name.toLowerCase(),
       updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
+    }
+
+    await db.collection('persons').doc(params.personId).set(nextPerson, { merge: true })
+    await syncPersonBiometricIndex(db, params.personId, nextPerson)
+
+    await writeAuditLog(db, {
+      actorRole: session.role,
+      actorScope: session.scope,
+      actorOfficeId: session.officeId,
+      action: 'person_update',
+      targetType: 'person',
+      targetId: params.personId,
+      officeId: body.officeId,
+      summary: `Updated employee record for ${body.name}`,
+      metadata: {
+        employeeId: existingData.employeeId || '',
+        officeName: body.officeName,
+        active: body.active,
+      },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (error) {
@@ -51,14 +84,38 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const session = request.cookies.get(getAdminSessionCookieName())?.value
-  if (!verifyAdminSessionCookieValue(session)) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required to delete employees.' }, { status: 401 })
   }
 
   try {
     const db = getAdminDb()
+    const existing = await db.collection('persons').doc(params.personId).get()
+    if (!existing.exists) {
+      return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
+    }
+
+    if (!adminSessionAllowsOffice(session, existing.data().officeId)) {
+      return NextResponse.json({ ok: false, message: 'This admin session cannot delete that employee.' }, { status: 403 })
+    }
+
     await db.collection('persons').doc(params.personId).delete()
+    await deletePersonBiometricIndex(db, params.personId)
+    await writeAuditLog(db, {
+      actorRole: session.role,
+      actorScope: session.scope,
+      actorOfficeId: session.officeId,
+      action: 'person_delete',
+      targetType: 'person',
+      targetId: params.personId,
+      officeId: existing.data().officeId || '',
+      summary: `Deleted employee record for ${existing.data().name || params.personId}`,
+      metadata: {
+        employeeId: existing.data().employeeId || '',
+        officeName: existing.data().officeName || '',
+      },
+    })
     return NextResponse.json({ ok: true })
   } catch (error) {
     return NextResponse.json(

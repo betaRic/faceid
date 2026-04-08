@@ -34,9 +34,9 @@ const entryCards = [
 
 export default function PlatformNavigator() {
   return (
-    <AppShell contentClassName="px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <section className="grid gap-4 rounded-[1.9rem] border border-black/5 bg-white/78 p-5 shadow-glow backdrop-blur lg:grid-cols-[minmax(0,1fr)_340px]">
+    <AppShell contentClassName="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4">
+        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/78 p-4 shadow-glow backdrop-blur lg:grid-cols-[minmax(0,1fr)_320px]">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             className="min-w-0"
@@ -46,15 +46,14 @@ export default function PlatformNavigator() {
             <div className="inline-flex rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
               Main Navigation
             </div>
-            <h1 className="mt-4 max-w-3xl font-display text-3xl leading-tight text-ink sm:text-4xl lg:text-5xl">
+            <h1 className="mt-3 max-w-3xl font-display text-3xl leading-tight text-ink sm:text-4xl">
               Fast access to kiosk, registration, admin, and system reference.
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-muted sm:text-base">
-              This home screen is intentionally compact. Staff should reach the right module immediately without reading
-              through a long landing page.
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted sm:text-base">
+              Compact by default. Staff should reach the right module immediately without reading a landing page.
             </p>
 
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-4 flex flex-wrap gap-3">
               <Link
                 className="inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
                 href="/kiosk"
@@ -72,7 +71,7 @@ export default function PlatformNavigator() {
 
           <motion.aside
             animate={{ opacity: 1, x: 0 }}
-            className="grid gap-3 rounded-[1.6rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/90 to-accent/10 p-5"
+            className="grid gap-3 rounded-[1.4rem] border border-black/5 bg-gradient-to-br from-brand/10 via-white/90 to-accent/10 p-4"
             initial={{ opacity: 0, x: 24 }}
             transition={{ duration: 0.45, ease: 'easeOut', delay: 0.06 }}
           >
@@ -82,7 +81,7 @@ export default function PlatformNavigator() {
           </motion.aside>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {entryCards.map((card, index) => (
             <motion.div
               key={card.title}
@@ -91,7 +90,7 @@ export default function PlatformNavigator() {
               transition={{ duration: 0.35, ease: 'easeOut', delay: 0.05 * index }}
             >
               <Link
-                className={`group flex min-h-[190px] flex-col justify-between rounded-[1.6rem] border border-black/5 bg-gradient-to-br ${card.tone} p-5 shadow-glow transition duration-200 hover:-translate-y-1 hover:shadow-2xl`}
+                className={`group flex min-h-[168px] flex-col justify-between rounded-[1.35rem] border border-black/5 bg-gradient-to-br ${card.tone} p-4 shadow-glow transition duration-200 hover:-translate-y-1 hover:shadow-2xl`}
                 href={card.href}
               >
                 <div>
@@ -117,9 +116,9 @@ export default function PlatformNavigator() {
 
 function QuickStat({ label, value }) {
   return (
-    <div className="rounded-2xl border border-black/5 bg-white/78 p-4">
+    <div className="rounded-[1.1rem] border border-black/5 bg-white/78 p-4">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">{label}</div>
-      <div className="mt-2 font-display text-2xl text-ink">{value}</div>
+      <div className="mt-1.5 font-display text-2xl text-ink">{value}</div>
     </div>
   )
 }
