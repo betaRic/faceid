@@ -8,6 +8,7 @@ import { buildAttendanceSummary } from '../lib/attendance-summary'
 import { subscribeToAttendance, subscribeToPersons, updatePersonRecord } from '../lib/data-store'
 import { firebaseEnabled } from '../lib/firebase'
 import { saveOfficeConfig, subscribeToOfficeConfigs } from '../lib/office-admin-store'
+import AppShell from './AppShell'
 import BrandMark from './BrandMark'
 
 const OfficeLocationPicker = dynamic(() => import('./OfficeLocationPicker'), {
@@ -24,11 +25,10 @@ const dayOptions = [
   { value: 0, label: 'Sun' },
 ]
 
-const moduleCards = [
-  'Offices and GPS',
-  'Schedules and WFH',
-  'Employees',
-  'Attendance Summary',
+const panelTabs = [
+  { id: 'office', label: 'Office Setup' },
+  { id: 'employees', label: 'Employees' },
+  { id: 'summary', label: 'Summary' },
 ]
 
 export default function AdminDashboard() {
@@ -46,6 +46,7 @@ export default function AdminDashboard() {
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState('all')
   const [summaryOfficeFilter, setSummaryOfficeFilter] = useState('all')
   const [summaryEmployeeFilter, setSummaryEmployeeFilter] = useState('all')
+  const [activePanel, setActivePanel] = useState('office')
 
   useEffect(() => {
     const unsubscribe = subscribeToOfficeConfigs(
@@ -265,8 +266,19 @@ export default function AdminDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-hero-wash px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+    <AppShell
+      actions={(
+        <button
+          className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+          onClick={handleLogout}
+          type="button"
+        >
+          Logout
+        </button>
+      )}
+      contentClassName="px-4 py-5 sm:px-6 lg:px-8"
+    >
+      <div className="mx-auto flex max-w-7xl flex-col gap-5">
         <section className="grid gap-5 rounded-[2rem] border border-black/5 bg-white/70 p-6 shadow-glow backdrop-blur xl:grid-cols-[1.2fr_.8fr] xl:p-8">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
@@ -274,15 +286,14 @@ export default function AdminDashboard() {
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
             <BrandMark />
-            <h1 className="mt-4 font-display text-4xl leading-none text-ink sm:text-5xl">
-              Office setup should be centralized, simple, and hard to misuse.
+            <h1 className="mt-4 font-display text-3xl leading-tight text-ink sm:text-4xl">
+              Admin workspace for offices, employees, and attendance reports.
             </h1>
-            <p className="mt-4 max-w-3xl text-base leading-8 text-muted">
-              Firebase is appropriate for this configuration layer because multiple clients need a shared source of
-              truth. Proper Firestore rules and real admin authentication still need to be added before this is trusted
-              in production.
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-muted sm:text-base">
+              This screen should stay compact. Office setup, employee control, and summary reporting are separated so
+              admin users can switch tasks instead of scrolling through one long page.
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white"
                 href="/"
@@ -295,13 +306,6 @@ export default function AdminDashboard() {
               >
                 Open kiosk
               </Link>
-              <button
-                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
-                onClick={handleLogout}
-                type="button"
-              >
-                Logout
-              </button>
             </div>
           </motion.div>
 
@@ -318,10 +322,19 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              {moduleCards.map(module => (
-                <div key={module} className="rounded-2xl border border-black/5 bg-white/75 p-4 text-sm text-muted">
-                  {module}
-                </div>
+              {panelTabs.map(panel => (
+                <button
+                  key={panel.id}
+                  className={`rounded-2xl border p-4 text-left text-sm transition ${
+                    activePanel === panel.id
+                      ? 'border-brand/30 bg-brand/10 text-brand-dark'
+                      : 'border-black/5 bg-white/75 text-muted hover:bg-white'
+                  }`}
+                  onClick={() => setActivePanel(panel.id)}
+                  type="button"
+                >
+                  {panel.label}
+                </button>
               ))}
             </div>
           </motion.aside>
@@ -382,16 +395,31 @@ export default function AdminDashboard() {
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut', delay: 0.06 }}
           >
-            <header className="mb-6">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Editor</span>
+            <header className="mb-6 border-b border-black/5 pb-5">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Workspace</span>
               <h2 className="mt-2 font-display text-3xl text-ink">{activeOffice?.name || 'Select an office'}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-7 text-muted">
                 Regional admins should be able to edit all offices. Office admins should only edit their own office.
-                This UI is already aligned with that model.
               </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {panelTabs.map(panel => (
+                  <button
+                    key={`panel-${panel.id}`}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      activePanel === panel.id
+                        ? 'bg-brand text-white'
+                        : 'border border-black/10 bg-white text-ink hover:bg-stone-50'
+                    }`}
+                    onClick={() => setActivePanel(panel.id)}
+                    type="button"
+                  >
+                    {panel.label}
+                  </button>
+                ))}
+              </div>
             </header>
 
-            {activeOffice ? (
+            {activePanel === 'office' && activeOffice ? (
               <div className="grid gap-5 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <Field label="Office map location">
@@ -503,17 +531,17 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : activePanel === 'office' ? (
               <div className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-10 text-center text-sm text-muted">
                 No office selected.
               </div>
-            )}
+            ) : null}
           </motion.section>
         </div>
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-[1.75rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+          className={`${activePanel === 'employees' ? 'block' : 'hidden'} rounded-[1.75rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
         >
@@ -555,7 +583,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4">
+          <div className="mt-6 grid max-h-[60vh] gap-4 overflow-auto pr-1">
             {filteredPersons.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted">
                 No employees match the current filters.
@@ -618,7 +646,7 @@ export default function AdminDashboard() {
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-[1.75rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+          className={`${activePanel === 'summary' ? 'block' : 'hidden'} rounded-[1.75rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.12 }}
         >
@@ -680,9 +708,9 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="mt-6 overflow-x-auto">
+          <div className="mt-6 max-h-[62vh] overflow-auto">
             <table className="min-w-full border-separate border-spacing-y-3 text-left">
-              <thead>
+              <thead className="sticky top-0 bg-white/95 backdrop-blur">
                 <tr className="text-xs uppercase tracking-[0.16em] text-muted">
                   <th className="px-3 py-2">Employee</th>
                   <th className="px-3 py-2">Office</th>
@@ -731,7 +759,7 @@ export default function AdminDashboard() {
           </div>
         </motion.section>
       </div>
-    </main>
+    </AppShell>
   )
 }
 
