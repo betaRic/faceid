@@ -6,7 +6,9 @@
       "Bash(cp D:/Downloads/face-id-app/node_modules/@vladmandic/face-api/model/ssd_mobilenetv1_model-weights_manifest.json D:/Downloads/face-id-app/public/models/ssd_mobilenetv1_model-weights_manifest.json)",
       "Bash(cp D:/Downloads/face-id-app/node_modules/@vladmandic/face-api/model/face_landmark_68_model.bin D:/Downloads/face-id-app/public/models/face_landmark_68_model.bin)",
       "Bash(cp D:/Downloads/face-id-app/node_modules/@vladmandic/face-api/model/face_landmark_68_model-weights_manifest.json D:/Downloads/face-id-app/public/models/face_landmark_68_model-weights_manifest.json)",
-      "Bash(cp D:/Downloads/face-id-app/node_modules/@vladmandic/face-api/model/face_recognition_model.bin D:/Downloads/face-id-app/public/models/face_recognition_model.bin)"
+      "Bash(cp D:/Downloads/face-id-app/node_modules/@vladmandic/face-api/model/face_recognition_model.bin D:/Downloads/face-id-app/public/models/face_recognition_model.bin)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('main:', d.get\\('main', 'NOT SET'\\)\\); print\\('version:', d.get\\('version'\\)\\)\")",
+      "Bash(node:*)"
     ]
   }
 }
