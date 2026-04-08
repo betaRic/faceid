@@ -532,13 +532,10 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             <h1 className="mt-3 font-display text-3xl leading-tight text-ink sm:text-4xl">
               Admin workspace
             </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">
+              Manage office policy, employee status, and attendance behavior from one screen. Changes here affect kiosk and registration behavior for the selected office.
+            </p>
             <div className="mt-4 flex flex-wrap gap-3">
-              <Link
-                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white"
-                href="/"
-              >
-                Back to navigation
-              </Link>
               <Link
                 className="inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
                 href="/kiosk"
@@ -599,6 +596,16 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Attendance health</span>
               <p className="mt-2 text-lg font-semibold text-ink">{acceptedCount} accepted / {blockedCount} blocked</p>
               <p className="mt-1 text-sm leading-7 text-muted">Recent server decisions for the current admin scope.</p>
+            </div>
+
+            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Scan cooldowns</span>
+              <p className="mt-2 text-lg font-semibold text-ink">
+                {activeOffice ? `${activeOffice.workPolicy?.checkInCooldownMinutes ?? 30}m in / ${activeOffice.workPolicy?.checkOutCooldownMinutes ?? 5}m out` : 'Select an office'}
+              </p>
+              <p className="mt-1 text-sm leading-7 text-muted">
+                Controls how soon the same employee can be recorded again after a successful scan.
+              </p>
             </div>
           </motion.aside>
         </section>
@@ -755,6 +762,14 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
                 <Field label="Grace period (minutes)">
                   <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.gracePeriodMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.gracePeriodMinutes} />
+                </Field>
+
+                <Field label="Check-in cooldown (minutes)">
+                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.checkInCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkInCooldownMinutes ?? 30} />
+                </Field>
+
+                <Field label="Check-out cooldown (minutes)">
+                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.checkOutCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} />
                 </Field>
 
                 <div className="md:col-span-2">

@@ -28,6 +28,8 @@ function normalizeOfficePayload(officeId, payload) {
       afternoonIn: String(payload?.workPolicy?.afternoonIn || '13:00'),
       afternoonOut: String(payload?.workPolicy?.afternoonOut || '17:00'),
       gracePeriodMinutes: Number(payload?.workPolicy?.gracePeriodMinutes ?? 0),
+      checkInCooldownMinutes: Number(payload?.workPolicy?.checkInCooldownMinutes ?? 30),
+      checkOutCooldownMinutes: Number(payload?.workPolicy?.checkOutCooldownMinutes ?? 5),
     },
   }
 }

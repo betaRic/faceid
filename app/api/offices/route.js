@@ -20,6 +20,8 @@ function normalizeOffice(office) {
       afternoonIn: String(office.workPolicy?.afternoonIn || '13:00'),
       afternoonOut: String(office.workPolicy?.afternoonOut || '17:00'),
       gracePeriodMinutes: Number(office.workPolicy?.gracePeriodMinutes ?? 0),
+      checkInCooldownMinutes: Number(office.workPolicy?.checkInCooldownMinutes ?? 30),
+      checkOutCooldownMinutes: Number(office.workPolicy?.checkOutCooldownMinutes ?? 5),
     },
   }
 }

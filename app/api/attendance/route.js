@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
 import { REGION12_OFFICES, calculateDistanceMeters, isOfficeWfhDay } from '../../../lib/offices'
-import { AMBIGUOUS_MATCH_MARGIN, COOLDOWN_MS, DISTANCE_THRESHOLD } from '../../../lib/config'
-import { deriveDailyAttendanceRecord } from '../../../lib/daily-attendance'
+import { AMBIGUOUS_MATCH_MARGIN, DISTANCE_THRESHOLD } from '../../../lib/config'
+import { deriveDailyAttendanceRecord, getNextAttendanceAction } from '../../../lib/daily-attendance'
 import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
 import { euclideanDistance, matchBiometricIndexCandidates, queryBiometricIndexCandidates } from '../../../lib/biometric-index'
 import { consumeAttendanceChallenge, getAttendanceChallenge } from '../../../lib/attendance-challenge'
@@ -156,19 +156,28 @@ async function getAttendanceLogsForDate(db, employeeId, date) {
   return snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
 }
 
+async function getLatestAttendanceLog(db, employeeId) {
+  const snapshot = await db
+    .collection('attendance')
+    .where('employeeId', '==', employeeId)
+    .orderBy('timestamp', 'desc')
+    .limit(1)
+    .get()
+
+  if (snapshot.empty) return null
+  const record = snapshot.docs[0]
+  return { id: record.id, ...record.data() }
+}
+
 function buildAttendanceDocId(employeeId, timestamp) {
   return `${employeeId}_${timestamp}`
 }
 
 async function writeAttendanceAtomically(db, entry) {
   const attendanceRef = db.collection('attendance').doc(buildAttendanceDocId(entry.employeeId, entry.timestamp))
-  const employeeLockRef = db.collection('attendance_locks').doc(entry.employeeId)
 
   return db.runTransaction(async transaction => {
-    const [attendanceSnap, lockSnap] = await Promise.all([
-      transaction.get(attendanceRef),
-      transaction.get(employeeLockRef),
-    ])
+    const attendanceSnap = await transaction.get(attendanceRef)
 
     // Idempotency: exact same doc ID already committed
     if (attendanceSnap.exists) {
@@ -179,28 +188,26 @@ async function writeAttendanceAtomically(db, entry) {
       }
     }
 
-    // Cooldown: check via document field (serializable document read, not a query)
-    const lastTs = lockSnap.data()?.lastAttendanceTimestamp
-    if (Number.isFinite(lastTs) && entry.timestamp - lastTs < COOLDOWN_MS) {
-      return { ok: false, duplicate: true, entry: null }
-    }
-
     transaction.set(attendanceRef, {
       ...entry,
       descriptor: FieldValue.delete(),
       createdAt: FieldValue.serverTimestamp(),
     }, { merge: false })
 
-    transaction.set(employeeLockRef, {
-      updatedAt: FieldValue.serverTimestamp(),
-      lastAttendanceTimestamp: entry.timestamp,
-    }, { merge: true })
-
     return {
       ok: true,
       attendanceId: attendanceRef.id,
     }
   })
+}
+
+function getCooldownForActionMinutes(office, action) {
+  const policy = office?.workPolicy || {}
+  const raw = action === 'checkin'
+    ? Number(policy.checkInCooldownMinutes ?? 30)
+    : Number(policy.checkOutCooldownMinutes ?? 5)
+
+  return Number.isFinite(raw) && raw >= 0 ? raw : action === 'checkin' ? 30 : 5
 }
 
 function matchPersonFromDescriptor(persons, descriptor) {
@@ -369,6 +376,24 @@ export async function POST(request) {
     entry.confidence = personMatch.confidence ?? entry.confidence
     entry.id = buildAttendanceDocId(entry.employeeId, entry.timestamp)
 
+    const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.date)
+    const nextAction = getNextAttendanceAction(dailyLogs, office)
+    const latestAttendanceLog = await getLatestAttendanceLog(db, entry.employeeId)
+    const cooldownMinutes = getCooldownForActionMinutes(office, nextAction)
+    const cooldownMs = cooldownMinutes * 60 * 1000
+
+    if (latestAttendanceLog && cooldownMs > 0 && entry.timestamp - latestAttendanceLog.timestamp < cooldownMs) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: `${nextAction === 'checkin' ? 'Check-in' : 'Check-out'} available again after ${cooldownMinutes} minute(s).`,
+          decisionCode: 'blocked_recent_duplicate',
+          entry: latestAttendanceLog,
+        },
+        { status: 409 },
+      )
+    }
+
     if (officeMatchedWfh) {
       entry.attendanceMode = 'WFH'
       entry.geofenceStatus = 'WFH office day'
@@ -411,9 +436,9 @@ export async function POST(request) {
       )
     }
 
-    const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.date)
+    const refreshedDailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.date)
     const dailyRecord = deriveDailyAttendanceRecord({
-      logs: dailyLogs,
+      logs: refreshedDailyLogs,
       person,
       office,
       targetDate: entry.date,

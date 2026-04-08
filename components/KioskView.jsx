@@ -516,6 +516,7 @@ export default function KioskView({
   const isConfirmed = kioskState === 'confirmed'
   const isUnknown = kioskState === 'unknown'
   const isBlocked = kioskState === 'blocked'
+  const showStabilityGuide = !capturedFrameUrl && !isConfirmed && !isBlocked && !isUnknown
 
   return (
     <AppShell
@@ -540,15 +541,38 @@ export default function KioskView({
           {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
           {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
 
+          {showStabilityGuide ? (
+            <div className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none">
+              <div className="relative h-[22rem] w-[16rem] max-h-[58vh] max-w-[70vw] rounded-[3rem] border border-white/55 bg-white/6 shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_0_80px_rgba(255,255,255,0.08)] backdrop-blur-[1px]">
+                <div className="absolute inset-x-6 top-10 h-20 rounded-[999px] border border-white/35" />
+                <div className="absolute left-1/2 top-[6.6rem] h-7 w-7 -translate-x-1/2 rounded-full border border-white/35" />
+                <div className="absolute inset-x-[2.35rem] bottom-12 h-[8.75rem] rounded-[2.25rem] border border-white/28" />
+                <div className="absolute -left-px -top-px h-14 w-14 rounded-tl-[3rem] border-l-2 border-t-2 border-white/85" />
+                <div className="absolute -right-px -top-px h-14 w-14 rounded-tr-[3rem] border-r-2 border-t-2 border-white/85" />
+                <div className="absolute -bottom-px -left-px h-14 w-14 rounded-bl-[3rem] border-b-2 border-l-2 border-white/85" />
+                <div className="absolute -bottom-px -right-px h-14 w-14 rounded-br-[3rem] border-b-2 border-r-2 border-white/85" />
+              </div>
+            </div>
+          ) : null}
+
           <div className="absolute right-5 top-5 z-[4] rounded-full bg-white/92 px-5 py-3 text-right shadow-lg backdrop-blur">
             <div className="font-display text-2xl text-ink sm:text-3xl">{clock}</div>
             <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted">{dateStr}</div>
           </div>
 
+          {showStabilityGuide ? (
+            <div className="absolute inset-x-5 bottom-5 z-[4] flex justify-center">
+              <div className="rounded-full bg-white/90 px-5 py-3 text-center shadow-lg backdrop-blur">
+                <div className="text-sm font-semibold text-ink">{camera.camOn ? 'Hold still for capture' : 'Stand inside the frame'}</div>
+                <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted">{camera.camOn ? 'Automatic scan will start when your face is steady' : 'Kiosk will guide capture automatically'}</div>
+              </div>
+            </div>
+          ) : null}
+
           {!camera.camOn ? (
             <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
               <div className="text-5xl opacity-60">◈</div>
-              <div className="text-sm font-medium">{camera.camError || 'Camera offline'}</div>
+              <div className="text-sm font-medium">{camera.camError || 'Camera idle'}</div>
             </div>
           ) : null}
           {alertState ? (
