@@ -88,7 +88,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   const [dailySummaryRecords, setDailySummaryRecords] = useState([])
   const [draftOffice, setDraftOffice] = useState(null)
   const [status, setStatus] = useState(firebaseEnabled ? 'Connected to Firebase' : 'Using local storage fallback')
-  const [summaryDate, setSummaryDate] = useState(new Date().toLocaleDateString('en-PH'))
+  const [summaryDate, setSummaryDate] = useState(todayIso)
   const [employeeQuery, setEmployeeQuery] = useState('')
   const [employeeOfficeFilter, setEmployeeOfficeFilter] = useState('all')
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState('all')
@@ -482,7 +482,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `attendance-summary-${summaryDate.replaceAll('/', '-')}.csv`
+    link.download = `attendance-summary-${summaryDate}.csv`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -904,8 +904,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                   className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
                   defaultValue={todayIso}
                   onChange={event => {
-                    const value = event.target.value
-                    setSummaryDate(new Date(`${value}T00:00:00`).toLocaleDateString('en-PH'))
+                    setSummaryDate(event.target.value)
                   }}
                   type="date"
                 />

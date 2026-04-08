@@ -186,6 +186,7 @@ export default function RegisterView({
     autoRef.current = window.setInterval(async () => {
       if (busyRef.current || !camera.camOn || previewUrl || !modelsReady) return
 
+      busyRef.current = true
       try {
         const canvas = camera.captureImageData({
           maxWidth: DETECTION_MAX_DIMENSION,
@@ -222,12 +223,12 @@ export default function RegisterView({
           return
         }
 
-        busyRef.current = true
         stopDetect()
         await captureFace()
-        busyRef.current = false
       } catch {
         setStatusMsg('Camera scan interrupted')
+      } finally {
+        busyRef.current = false
       }
     }, 500)
   }, [camera, captureFace, drawBox, livenessChallenge.id, livenessPassed, modelsReady, previewUrl, resetLiveness, stopDetect])

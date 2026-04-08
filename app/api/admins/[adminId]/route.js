@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../../lib/firebase-admin'
-import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue } from '../../../../lib/admin-auth'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, revalidateAdminSession } from '../../../../lib/admin-auth'
 import { writeAuditLog } from '../../../../lib/audit-log'
 import { getActiveRegionalAdminCount } from '../../../../lib/admin-directory'
 
@@ -35,6 +35,11 @@ export async function PUT(request, { params }) {
 
   try {
     const db = getAdminDb()
+    const stillActive = await revalidateAdminSession(db, session)
+    if (!stillActive) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     const ref = db.collection('admins').doc(params.adminId)
     const existing = await ref.get()
     if (!existing.exists) {
@@ -102,6 +107,11 @@ export async function DELETE(request, { params }) {
 
   try {
     const db = getAdminDb()
+    const stillActive = await revalidateAdminSession(db, session)
+    if (!stillActive) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     const ref = db.collection('admins').doc(params.adminId)
     const existing = await ref.get()
     if (!existing.exists) {

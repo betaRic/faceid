@@ -26,6 +26,8 @@ function normalizeEntry(body) {
   }
 }
 
+const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000
+
 function validateEntry(entry) {
   if (!entry.id) {
     return 'Attendance payload is incomplete.'
@@ -35,8 +37,17 @@ function validateEntry(entry) {
     return 'Attendance timestamp is invalid.'
   }
 
-  if (entry.descriptor.length === 0 || entry.descriptor.some(value => !Number.isFinite(value))) {
+  if (Math.abs(entry.timestamp - Date.now()) > TIMESTAMP_TOLERANCE_MS) {
+    return 'Attendance timestamp is too far from server time.'
+  }
+
+  if (entry.descriptor.length !== 128 || entry.descriptor.some(value => !Number.isFinite(value))) {
     return 'Face descriptor is required for attendance verification.'
+  }
+
+  const norm = Math.sqrt(entry.descriptor.reduce((sum, value) => sum + value * value, 0))
+  if (norm < 0.5 || norm > 2.0) {
+    return 'Face descriptor is not valid.'
   }
 
   return null
@@ -140,25 +151,24 @@ async function writeAttendanceAtomically(db, entry) {
   const employeeLockRef = db.collection('attendance_locks').doc(entry.employeeId)
 
   return db.runTransaction(async transaction => {
-    await transaction.get(employeeLockRef)
+    const [attendanceSnap, lockSnap] = await Promise.all([
+      transaction.get(attendanceRef),
+      transaction.get(employeeLockRef),
+    ])
 
-    const recentQuery = db
-      .collection('attendance')
-      .where('employeeId', '==', entry.employeeId)
-      .where('timestamp', '>=', entry.timestamp - COOLDOWN_MS)
-      .orderBy('timestamp', 'desc')
-      .limit(1)
-
-    const recentSnapshot = await transaction.get(recentQuery)
-    if (!recentSnapshot.empty) {
+    // Idempotency: exact same doc ID already committed
+    if (attendanceSnap.exists) {
       return {
         ok: false,
         duplicate: true,
-        entry: {
-          id: recentSnapshot.docs[0].id,
-          ...recentSnapshot.docs[0].data(),
-        },
+        entry: { id: attendanceSnap.id, ...attendanceSnap.data() },
       }
+    }
+
+    // Cooldown: check via document field (serializable document read, not a query)
+    const lastTs = lockSnap.data()?.lastAttendanceTimestamp
+    if (Number.isFinite(lastTs) && entry.timestamp - lastTs < COOLDOWN_MS) {
+      return { ok: false, duplicate: true, entry: null }
     }
 
     transaction.set(attendanceRef, {

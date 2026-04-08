@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
-import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue } from '../../../lib/admin-auth'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, revalidateAdminSession } from '../../../lib/admin-auth'
 import { listAdminProfiles } from '../../../lib/admin-directory'
 import { writeAuditLog } from '../../../lib/audit-log'
 
@@ -53,6 +53,11 @@ export async function POST(request) {
 
   try {
     const db = getAdminDb()
+    const stillActive = await revalidateAdminSession(db, session)
+    if (!stillActive) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     const existing = await db.collection('admins').where('email', '==', body.email).limit(1).get()
     if (!existing.empty) {
       return NextResponse.json({ ok: false, message: 'An admin record already exists for that email.' }, { status: 409 })

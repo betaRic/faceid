@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../../../lib/firebase-admin'
-import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName } from '../../../../../lib/admin-auth'
+import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName, revalidateAdminSession } from '../../../../../lib/admin-auth'
 import { writeAuditLog } from '../../../../../lib/audit-log'
 
 function normalizeOfficePayload(officeId, payload) {
@@ -76,6 +76,11 @@ export async function PUT(request, { params }) {
 
   try {
     const db = getAdminDb()
+    const stillActive = await revalidateAdminSession(db, session)
+    if (!stillActive) {
+      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
     await db.collection('offices').doc(office.id).set({
       ...office,
       updatedAt: FieldValue.serverTimestamp(),
