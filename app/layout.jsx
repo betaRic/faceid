@@ -5,7 +5,7 @@ import { SpeedInsights } from '@vercel/speed-insights/next'
 
 export const metadata = {
   title: 'FaceAttend',
-  description: 'Mobile-first attendance system blueprint for regional, provincial, and HUC offices.',
+  description: 'Face attendance for DILG Region XII.',
   icons: {
     icon: '/favicon.ico',
   },

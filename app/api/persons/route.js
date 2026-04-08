@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
 import {
-  adminSessionAllowsOffice,
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
   resolveAdminSession,
@@ -107,11 +106,6 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required for registration.' }, { status: 401 })
-  }
-
   const body = normalizeBody(await request.json().catch(() => null))
   const validationError = validateBody(body)
   if (validationError) {
@@ -120,13 +114,8 @@ export async function POST(request) {
 
   try {
     const db = getAdminDb()
-    const resolvedSession = await resolveAdminSession(db, session)
-    if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
-    }
-    if (!adminSessionAllowsOffice(resolvedSession, body.officeId)) {
-      return NextResponse.json({ ok: false, message: 'This admin session cannot register employees for that office.' }, { status: 403 })
-    }
+    const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+    const resolvedSession = session ? await resolveAdminSession(db, session) : null
 
     const ip = getRequestIp(request)
     const ipLimit = await enforceRateLimit(db, {
@@ -203,7 +192,7 @@ export async function POST(request) {
 
     await syncPersonBiometricIndex(db, transactionResult.personId, transactionResult.nextPerson)
 
-    if (transactionResult.existing) {
+    if (resolvedSession && transactionResult.existing) {
       await writeAuditLog(db, {
         actorRole: resolvedSession.role,
         actorScope: resolvedSession.scope,
@@ -218,7 +207,7 @@ export async function POST(request) {
           officeName: body.officeName,
         },
       })
-    } else {
+    } else if (resolvedSession) {
       await writeAuditLog(db, {
         actorRole: resolvedSession.role,
         actorScope: resolvedSession.scope,

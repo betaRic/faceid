@@ -7,7 +7,7 @@ import AppShell from './AppShell'
 const modules = [
   {
     title: 'Kiosk',
-    description: 'Face scan attendance with GPS validation for enrolled employees.',
+    description: 'Attendance scanning for enrolled employees.',
     href: '/kiosk',
     accent: 'from-brand/12 to-brand/4',
     border: 'border-brand/20',
@@ -16,25 +16,16 @@ const modules = [
   },
   {
     title: 'Registration',
-    description: 'Enroll employees with guided face capture and office assignment.',
+    description: 'Public face registration for new users.',
     href: '/registration',
     accent: 'from-accent/12 to-accent/4',
     border: 'border-accent/20',
-    tag: 'Enrollment',
+    tag: 'Open',
     tagColor: 'bg-amber-100 text-amber-700',
   },
   {
-    title: 'Blueprint',
-    description: 'System architecture, policy model, and office data reference.',
-    href: '/blueprint',
-    accent: 'from-stone-200/70 to-stone-100/50',
-    border: 'border-black/[0.06]',
-    tag: 'Reference',
-    tagColor: 'bg-stone-100 text-stone-600',
-  },
-  {
     title: 'Admin',
-    description: 'Office setup, employee management, schedules and reporting.',
+    description: 'Registration, office setup, employee management, and reports.',
     href: '/admin/login',
     accent: 'from-ink/90 to-stone-800/90',
     border: 'border-ink/10',
@@ -47,8 +38,7 @@ const modules = [
 const stats = [
   { label: 'Offices', value: '5' },
   { label: 'GPS Sites', value: '5' },
-  { label: 'Policy Layers', value: '3' },
-  { label: 'Auth Model', value: 'Google' },
+  { label: 'Admin Auth', value: 'Google' },
 ]
 
 const stagger = {
@@ -83,12 +73,11 @@ export default function PlatformNavigator() {
               variants={fadeUp}
               className="max-w-3xl font-display text-4xl leading-tight text-ink sm:text-5xl"
             >
-              Face-based attendance for regional government offices.
+              Face attendance for regional government offices.
             </motion.h1>
 
             <motion.p variants={fadeUp} className="max-w-2xl text-base leading-relaxed text-muted">
-              GPS-validated, server-enforced attendance with biometric enrollment.
-              One office per employee. No client-side trust.
+              Open the kiosk for attendance or the admin portal for registration and setup.
             </motion.p>
 
             <motion.div variants={fadeUp} className="flex flex-wrap gap-3">
@@ -114,7 +103,7 @@ export default function PlatformNavigator() {
             variants={stagger}
             initial="hidden"
             animate="show"
-            className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-2"
+          className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-1"
           >
             {stats.map(stat => (
               <motion.div
@@ -142,7 +131,7 @@ export default function PlatformNavigator() {
             Modules
           </motion.h2>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-3">
             {modules.map(module => (
               <motion.div key={module.href} variants={fadeUp}>
                 <Link
@@ -171,18 +160,6 @@ export default function PlatformNavigator() {
           </div>
         </motion.section>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4, duration: 0.4 }}
-          className="rounded-2xl border border-amber-200/60 bg-amber-50/60 px-5 py-4"
-        >
-          <p className="text-sm leading-relaxed text-amber-800">
-            <span className="font-semibold">Controlled rollout:</span>{' '}
-            Face detection runs on the client. The server validates GPS, identity, and office policy before accepting attendance.
-            Not a fully hardened biometric platform — treat as a pilot deployment.
-          </p>
-        </motion.div>
       </div>
     </AppShell>
   )

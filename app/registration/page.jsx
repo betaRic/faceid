@@ -5,5 +5,5 @@ const FaceAttendanceApp = dynamic(() => import('../../components/FaceAttendanceA
 })
 
 export default function RegistrationPage() {
-  return <FaceAttendanceApp initialPage="register" />
+  return <FaceAttendanceApp initialPage="register" loadPersons={false} loadAttendance={false} showRegistrationAction={false} />
 }

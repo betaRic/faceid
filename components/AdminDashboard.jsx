@@ -530,12 +530,8 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
           >
             <BrandMark />
             <h1 className="mt-3 font-display text-3xl leading-tight text-ink sm:text-4xl">
-              Admin workspace for offices, employees, and attendance reports.
+              Admin workspace
             </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted sm:text-base">
-              Compact by design. Office setup, employee control, and summary reporting are separated so admins can work
-              without long vertical scrolling.
-            </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <Link
                 className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white"
@@ -548,6 +544,12 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 href="/kiosk"
               >
                 Open kiosk
+              </Link>
+              <Link
+                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                href="/registration"
+              >
+                Open registration
               </Link>
             </div>
           </motion.div>
@@ -918,9 +920,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             <div>
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Attendance summary</span>
               <h2 className="mt-2 font-display text-3xl text-ink">Daily AM/PM reporting</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
-                Daily record output for the selected date, with AM/PM segments and totals already derived on the server.
-              </p>
             </div>
             <div className="grid w-full gap-3 sm:max-w-4xl sm:grid-cols-4">
               <Field label="Summary date">
@@ -1033,9 +1032,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             <aside className="rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Decision codes</span>
               <h3 className="mt-2 font-display text-2xl text-ink">Recent failure pattern</h3>
-              <p className="mt-2 text-sm leading-7 text-muted">
-                This is the quickest way to see what the dry run is struggling with.
-              </p>
 
               <div className="mt-4 grid gap-3">
                 {decisionStats.length === 0 ? (
@@ -1082,9 +1078,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Admin management</span>
                   <h2 className="mt-2 font-display text-3xl text-ink">Regional and office admins</h2>
-                  <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
-                    Regional admins assign office scope, promote, demote, disable, or remove admin access.
-                  </p>
                 </div>
               </div>
 

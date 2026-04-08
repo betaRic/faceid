@@ -63,12 +63,8 @@ export default function AdminLogin() {
           >
             <BrandMark />
             <h1 className="mt-3 font-display text-3xl leading-tight text-ink sm:text-4xl">
-              Admin access should be server-validated, not hidden by client state.
+              Admin login
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-muted sm:text-base">
-              Shared PIN login was weak and has been removed. Google sign-in plus server-managed admin records is the
-              correct model for a shared Vercel deployment.
-            </p>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Link
                 className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white"
@@ -87,10 +83,6 @@ export default function AdminLogin() {
           >
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Admin Login</span>
             <h2 className="mt-2 font-display text-3xl text-ink">Login</h2>
-            <p className="mt-3 text-sm leading-7 text-muted">
-              Use Google for named admin access. The first regional admin can be bootstrapped from the server allowlist,
-              then all later admin roles should be managed from the admin workspace itself.
-            </p>
 
             <button
               className="mt-6 inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -106,8 +98,7 @@ export default function AdminLogin() {
             ) : null}
 
             <div className="mt-5 rounded-2xl border border-black/5 bg-stone-50 px-4 py-4 text-sm leading-7 text-muted">
-              If a Google account is verified but does not have an admin record yet, access stays blocked until a
-              regional admin adds that person in the Admins panel.
+              Approved admin account required.
             </div>
           </motion.div>
         </section>

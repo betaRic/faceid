@@ -5,5 +5,5 @@ const FaceAttendanceApp = dynamic(() => import('../../components/FaceAttendanceA
 })
 
 export default function KioskPage() {
-  return <FaceAttendanceApp initialPage="kiosk" />
+  return <FaceAttendanceApp initialPage="kiosk" loadPersons={false} loadAttendance={false} />
 }

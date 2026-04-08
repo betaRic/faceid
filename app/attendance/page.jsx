@@ -1,9 +1,5 @@
-import dynamic from 'next/dynamic'
-
-const FaceAttendanceApp = dynamic(() => import('../../components/FaceAttendanceApp'), {
-  ssr: false,
-})
+import { redirect } from 'next/navigation'
 
 export default function AttendancePage() {
-  return <FaceAttendanceApp initialPage="kiosk" />
+  redirect('/admin')
 }

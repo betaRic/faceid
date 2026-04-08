@@ -4,15 +4,6 @@ import { motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { detectSingleDescriptor } from '../lib/face-api'
 import { DETECTION_MAX_DIMENSION, FACE_COLORS, PREVIEW_MAX_DIMENSION } from '../lib/config'
-import {
-  analyzeLiveness,
-  createLivenessTracker,
-  hasLivenessTrackerPassed,
-  isLivenessChallengePassed,
-  pickLivenessChallenge,
-  updateLivenessTracker,
-} from '../lib/liveness'
-import { evaluateDetectionQuality } from '../lib/biometric-quality'
 import BrandMark from './BrandMark'
 import { useAudioCue } from '../hooks/useAudioCue'
 import AppShell from './AppShell'
@@ -27,6 +18,7 @@ const STEPS = [
 ]
 
 export default function RegisterView({
+  allowDelete = true,
   camera,
   persons,
   offices,
@@ -36,6 +28,7 @@ export default function RegisterView({
   dataStatus,
   errorMessage,
   onBack,
+  showRosterTools = true,
 }) {
   const [name, setName] = useState('')
   const [employeeId, setEmployeeId] = useState('')
@@ -45,8 +38,6 @@ export default function RegisterView({
   const [faceFound, setFaceFound] = useState(false)
   const [statusMsg, setStatusMsg] = useState('Starting camera...')
   const [toast, setToast] = useState(null)
-  const [livenessChallenge, setLivenessChallenge] = useState(() => pickLivenessChallenge('any'))
-  const [livenessPassed, setLivenessPassed] = useState(false)
   const [step, setStep] = useState('capture')
   const [lastSavedSummary, setLastSavedSummary] = useState(null)
   const [showRoster, setShowRoster] = useState(false)
@@ -55,7 +46,7 @@ export default function RegisterView({
   const autoRef = useRef(null)
   const nameRef = useRef(null)
   const busyRef = useRef(false)
-  const livenessTrackerRef = useRef(createLivenessTracker())
+  const previewUrlRef = useRef(null)
 
   const selectedOffice = offices.find(office => office.id === officeId) || null
   const existingPerson = useMemo(
@@ -69,17 +60,15 @@ export default function RegisterView({
     window.setTimeout(() => setToast(null), duration)
   }, [])
 
+  useEffect(() => {
+    previewUrlRef.current = previewUrl
+  }, [previewUrl])
+
   const stopDetect = useCallback(() => {
     if (autoRef.current) {
       window.clearInterval(autoRef.current)
       autoRef.current = null
     }
-  }, [])
-
-  const resetLiveness = useCallback(() => {
-    livenessTrackerRef.current = createLivenessTracker()
-    setLivenessChallenge(pickLivenessChallenge('any'))
-    setLivenessPassed(false)
   }, [])
 
   const wait = useCallback(duration => new Promise(resolve => {
@@ -140,18 +129,15 @@ export default function RegisterView({
       const faceResult = await detectSingleDescriptor(canvas)
 
       if (faceResult) {
-        const quality = evaluateDetectionQuality(faceResult, canvas.width, canvas.height, canvas)
         const previewUrl = canvas.toDataURL('image/jpeg', 0.85)
 
-        if (!bestCapture || quality.score > bestCapture.quality.score) {
+        if (!bestCapture) {
           bestCapture = {
             faceResult,
-            quality,
             previewUrl,
           }
         }
-
-        if (quality.ok) break
+        break
       }
 
       if (attempt < 2) await wait(120)
@@ -162,12 +148,7 @@ export default function RegisterView({
       return
     }
 
-    const { faceResult, quality, previewUrl } = bestCapture
-    if (!quality.ok) {
-      setStatusMsg(quality.reason)
-      showToast(quality.reason)
-      return
-    }
+    const { faceResult, previewUrl } = bestCapture
 
     setPendingDesc(faceResult.descriptor)
     setPreviewUrl(previewUrl)
@@ -179,12 +160,11 @@ export default function RegisterView({
 
   const startDetect = useCallback(() => {
     stopDetect()
-    resetLiveness()
     setStep('capture')
-    setStatusMsg('Align face with camera and complete the liveness check...')
+    setStatusMsg('Align face with the camera or press capture.')
 
     autoRef.current = window.setInterval(async () => {
-      if (busyRef.current || !camera.camOn || previewUrl || !modelsReady) return
+      if (busyRef.current || !camera.camOn || previewUrlRef.current || !modelsReady) return
 
       busyRef.current = true
       try {
@@ -197,33 +177,12 @@ export default function RegisterView({
         drawBox(result || null, canvas.width, canvas.height)
 
         if (!result) {
-          setLivenessPassed(false)
           setStatusMsg('Scanning for face...')
           return
         }
 
-        const quality = evaluateDetectionQuality(result, canvas.width, canvas.height, canvas)
-        if (!quality.ok) {
-          setStatusMsg(quality.reason)
-          return
-        }
-
-        const liveness = analyzeLiveness(result)
-        livenessTrackerRef.current = updateLivenessTracker(livenessTrackerRef.current, liveness)
-        const passedChallenge = isLivenessChallengePassed(livenessChallenge.id, liveness)
-          || hasLivenessTrackerPassed(livenessChallenge.id, livenessTrackerRef.current)
-
-        if (!livenessPassed && passedChallenge) {
-          setLivenessPassed(true)
-          setStatusMsg('Liveness confirmed. Capturing face...')
-        }
-
-        if (!livenessPassed && !passedChallenge) {
-          setStatusMsg(`${livenessChallenge.label} to continue...`)
-          return
-        }
-
         stopDetect()
+        setStatusMsg('Capturing face...')
         await captureFace()
       } catch {
         setStatusMsg('Camera scan interrupted')
@@ -231,7 +190,7 @@ export default function RegisterView({
         busyRef.current = false
       }
     }, 500)
-  }, [camera, captureFace, drawBox, livenessChallenge.id, livenessPassed, modelsReady, previewUrl, resetLiveness, stopDetect])
+  }, [camera, captureFace, drawBox, modelsReady, stopDetect])
 
   useEffect(() => {
     camera.start().then(() => startDetect())
@@ -357,6 +316,7 @@ export default function RegisterView({
             className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
             onClick={() => setShowRoster(current => !current)}
             type="button"
+            disabled={!showRosterTools}
           >
             {showRoster ? 'Hide roster' : 'Show roster'}
           </button>
@@ -382,8 +342,7 @@ export default function RegisterView({
         >
           <div className="min-w-0">
             <BrandMark />
-            <h1 className="mt-2 font-display text-2xl text-ink sm:text-3xl">Employee Enrollment Wizard</h1>
-            <p className="mt-1 text-sm leading-7 text-muted">Capture, review, and save without leaving the workflow or forcing long scrolling.</p>
+            <h1 className="mt-2 font-display text-2xl text-ink sm:text-3xl">Employee registration</h1>
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
@@ -396,6 +355,7 @@ export default function RegisterView({
                 className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
                 onClick={() => setShowRoster(current => !current)}
                 type="button"
+                disabled={!showRosterTools}
               >
                 {showRoster ? 'Hide roster' : 'Show roster'}
               </button>
@@ -467,24 +427,26 @@ export default function RegisterView({
                     </div>
 
                     <div className="absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 px-4">
-                      <span className="rounded-full bg-brand/20 px-4 py-2 text-sm font-semibold text-white backdrop-blur">
-                        Automatic capture only
-                      </span>
-                      <span className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] backdrop-blur ${livenessPassed ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-stone-100'}`}>
-                        {livenessPassed ? 'Liveness passed' : livenessChallenge.label}
-                      </span>
+                      <button
+                        className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!faceFound || !camera.camOn || !modelsReady}
+                        onClick={() => {
+                          stopDetect()
+                          setStatusMsg('Capturing face...')
+                          captureFace()
+                        }}
+                        type="button"
+                      >
+                        Capture now
+                      </button>
                     </div>
                   </div>
                 </div>
 
                 <div className="grid content-start gap-3">
                   <InfoCard
-                    title="How this works"
-                    text="The wizard waits for a detected face and a simple liveness action, then captures automatically. No manual photo button is needed."
-                  />
-                  <InfoCard
-                    title="Camera note"
-                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Use the front camera in normal lighting. The user does not need to be perfectly still.'}
+                    title="Camera"
+                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Keep the face centered.'}
                     tone={!modelsReady ? 'warn' : 'default'}
                   />
                   <InfoCard
@@ -509,10 +471,6 @@ export default function RegisterView({
                 </div>
 
                 <div className="grid content-start gap-3">
-                  <InfoCard
-                    title="Review"
-                    text="Check if the face is clear, centered, and usable. If it looks weak, retake before saving details."
-                  />
                   <div className="grid gap-3">
                     <button
                       className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
@@ -604,13 +562,13 @@ export default function RegisterView({
 
                   {existingPerson ? (
                     <InfoCard
-                      title="Existing employee"
+                      title="Existing record"
                       text={`${existingPerson.name} currently has ${existingSamples} sample(s) under ${existingPerson.officeName}.`}
                     />
                   ) : (
                     <InfoCard
-                      title="New employee"
-                      text="This employee ID does not exist yet in the current roster."
+                      title="Record"
+                      text="New employee."
                     />
                   )}
                 </div>
@@ -652,7 +610,7 @@ export default function RegisterView({
             ) : null}
           </motion.section>
 
-          {showRoster ? (
+          {showRoster && showRosterTools ? (
             <motion.aside
               animate={{ opacity: 1, x: 0 }}
               initial={{ opacity: 0, x: 20 }}
@@ -694,13 +652,15 @@ export default function RegisterView({
                         </div>
                       </div>
 
-                      <button
-                        className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-red-700 transition hover:bg-red-100"
-                        onClick={() => handleDelete(person.id, person.name)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
+                      {allowDelete ? (
+                        <button
+                          className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-red-700 transition hover:bg-red-100"
+                          onClick={() => handleDelete(person.id, person.name)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      ) : null}
                     </div>
                   ))
                 )}

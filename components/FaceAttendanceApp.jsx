@@ -16,20 +16,30 @@ import {
   upsertPersonSample,
 } from '../lib/data-store'
 
-export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
+function getDefaultDataStatus(loadPersons) {
+  if (!firebaseEnabled) {
+    return localFallbackAllowed
+      ? 'Using browser storage (dev biometric fallback enabled)'
+      : 'Firebase required for biometric operations'
+  }
+
+  return loadPersons ? 'Connecting to Firebase...' : 'Ready'
+}
+
+export default function FaceAttendanceApp({
+  initialPage = 'kiosk',
+  loadPersons = true,
+  loadAttendance = true,
+  showRegistrationAction = true,
+  showRosterTools = loadPersons,
+}) {
   const camera = useCamera()
   const [page, setPage] = useState(initialPage)
   const [persons, setPersons] = useState([])
   const [attendance, setAttendance] = useState([])
   const [modelsReady, setModelsReady] = useState(false)
   const [modelStatus, setModelStatus] = useState('Initializing...')
-  const [dataStatus, setDataStatus] = useState(
-    firebaseEnabled
-      ? 'Connecting to Firebase...'
-      : localFallbackAllowed
-        ? 'Using browser storage (dev biometric fallback enabled)'
-        : 'Firebase required for biometric operations',
-  )
+  const [dataStatus, setDataStatus] = useState(getDefaultDataStatus(loadPersons))
   const [errorMessage, setErrorMessage] = useState(null)
 
   useEffect(() => {
@@ -54,6 +64,13 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
   }, [])
 
   useEffect(() => {
+    if (!loadPersons) {
+      setPersons([])
+      setDataStatus(getDefaultDataStatus(false))
+      setErrorMessage(null)
+      return () => {}
+    }
+
     const unsubscribe = subscribeToPersons(
       nextPersons => {
         setPersons(nextPersons)
@@ -72,9 +89,15 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
     )
 
     return unsubscribe
-  }, [])
+  }, [loadPersons])
 
   useEffect(() => {
+    if (!loadAttendance) {
+      setAttendance([])
+      setErrorMessage(null)
+      return () => {}
+    }
+
     const unsubscribe = subscribeToAttendance(
       setAttendance,
       error => {
@@ -83,7 +106,7 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
     )
 
     return unsubscribe
-  }, [])
+  }, [loadAttendance])
 
   const todayLogCount = useMemo(() => {
     const today = new Date().toLocaleDateString('en-PH')
@@ -161,10 +184,10 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
           errorMessage={errorMessage}
           modelStatus={modelStatus}
           modelsReady={modelsReady}
-          onGoRegister={() => {
+          onGoRegister={showRegistrationAction ? () => {
             camera.stop()
             setPage('register')
-          }}
+          } : null}
           onLogAttendance={handleLogAttendance}
           offices={REGION12_OFFICES}
           persons={persons}
@@ -172,6 +195,7 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
         />
       ) : (
         <RegisterView
+          allowDelete={showRosterTools}
           camera={camera}
           dataStatus={dataStatus}
           errorMessage={errorMessage}
@@ -184,6 +208,7 @@ export default function FaceAttendanceApp({ initialPage = 'kiosk' }) {
           onEnrollPerson={handleEnrollPerson}
           offices={REGION12_OFFICES}
           persons={persons}
+          showRosterTools={showRosterTools}
         />
       )}
     </div>
