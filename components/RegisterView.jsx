@@ -11,7 +11,7 @@ import AppShell from './AppShell'
 const MIN_SAMPLES = 3
 
 const STEPS = [
-  { id: 'capture', number: '1', title: 'Capture face', description: 'Align your face, then capture manually.' },
+  { id: 'capture', number: '1', title: 'Capture face', description: 'Automatic capture starts when the face is ready.' },
   { id: 'review', number: '2', title: 'Review photo', description: 'Retake the image if the preview is unclear.' },
   { id: 'details', number: '3', title: 'Employee details', description: 'Enter employee ID, name, and assigned office.' },
   { id: 'complete', number: '4', title: 'Enrollment saved', description: 'Continue with another sample or a new employee.' },
@@ -156,7 +156,7 @@ export default function RegisterView({
   const startDetect = useCallback(() => {
     stopDetect()
     setStep('capture')
-    setStatusMsg('Align face with the camera, then press capture.')
+    setStatusMsg('Align face with the camera.')
 
     autoRef.current = window.setInterval(async () => {
       if (busyRef.current || !camera.camOn || previewUrl || !modelsReady) return
@@ -176,14 +176,16 @@ export default function RegisterView({
           return
         }
 
-        setStatusMsg('Face ready. Press capture when still.')
+        stopDetect()
+        setStatusMsg('Capturing face...')
+        await captureFace()
       } catch {
         setStatusMsg('Camera scan interrupted')
       } finally {
         busyRef.current = false
       }
     }, REGISTRATION_SCAN_INTERVAL_MS)
-  }, [camera, drawBox, modelsReady, previewUrl, stopDetect])
+  }, [camera, captureFace, drawBox, modelsReady, previewUrl, stopDetect])
 
   useEffect(() => {
     camera.start().then(() => startDetect())
@@ -388,19 +390,10 @@ export default function RegisterView({
                       </span>
                     </div>
 
-                    <div className="absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 px-4">
-                      <button
-                        className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={!faceFound || !camera.camOn || !modelsReady}
-                        onClick={async () => {
-                          stopDetect()
-                          setStatusMsg('Capturing face...')
-                          await captureFace()
-                        }}
-                        type="button"
-                      >
-                        Capture now
-                      </button>
+                    <div className="absolute inset-x-0 bottom-5 z-10 flex justify-center px-4">
+                      <span className={`rounded-full px-4 py-2 text-sm font-semibold backdrop-blur ${faceFound ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-stone-100'}`}>
+                        {faceFound ? 'Face ready' : 'Waiting for face'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -408,7 +401,7 @@ export default function RegisterView({
                 <div className="grid content-start gap-3">
                   <InfoCard
                     title="Camera"
-                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Manual capture only. Keep the face centered, then press capture.'}
+                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Keep the face centered until the capture completes.'}
                     tone={!modelsReady ? 'warn' : 'default'}
                   />
                   <InfoCard

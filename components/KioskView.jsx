@@ -190,6 +190,7 @@ export default function KioskView({
   const [, setCurrentMatch] = useState(null)
   const [capturedFrameUrl, setCapturedFrameUrl] = useState(null)
   const [flashKey, setFlashKey] = useState(0)
+  const [alertState, setAlertState] = useState(null)
   const [, setLastMeaningfulFailure] = useState('')
   const playAudioCue = useAudioCue()
 
@@ -230,10 +231,16 @@ export default function KioskView({
       confirmRef.current = 0
       setCapturedFrameUrl(null)
       setCurrentMatch(null)
+      setAlertState(null)
       setKioskState('idle')
       camera.clearOverlay()
     }, delay)
   }, [camera])
+
+  const showAlertAndResume = useCallback((message, delay = 2200) => {
+    setAlertState(message)
+    scheduleResume(delay)
+  }, [scheduleResume])
 
   useEffect(() => {
     const tick = () => {
@@ -367,13 +374,15 @@ export default function KioskView({
 
         const verificationDetections = await detectWithDescriptors(verificationCanvas)
         if (!verificationDetections.length) {
+          setKioskState('unknown')
+          showAlertAndResume('No reliable face match was found.')
           confirmRef.current = 0
-          scheduleResume()
           return
         }
 
         const coordinates = getCachedPositionCoordinates(cachedPositionRef)
         const acceptedEntries = []
+        let noReliableMatchSeen = false
 
         for (let index = 0; index < verificationDetections.length; index += 1) {
           const detection = verificationDetections[index]
@@ -397,13 +406,14 @@ export default function KioskView({
             })
 
             if (result.entry) acceptedEntries.push(result.entry)
-          } catch {
-            // Trial mode: ignore faces that fail matching and keep successful entries only.
+          } catch (error) {
+            if (error?.decisionCode === 'blocked_no_reliable_match') {
+              noReliableMatchSeen = true
+            }
           }
         }
 
         if (acceptedEntries.length) {
-          const latestAccepted = acceptedEntries[acceptedEntries.length - 1]
           setLastMeaningfulFailure('')
           setFlashKey(value => value + 1)
           setCurrentMatch({
@@ -413,8 +423,13 @@ export default function KioskView({
             detail: acceptedEntries.map(entry => entry.name).join(', '),
           })
           setKioskState('confirmed')
+          setAlertState(null)
+        } else if (noReliableMatchSeen) {
+          setKioskState('unknown')
+          showAlertAndResume('No reliable face match was found.')
         } else {
-          setKioskState('idle')
+          setKioskState('unknown')
+          showAlertAndResume('No reliable face match was found.')
         }
 
         confirmRef.current = 0
@@ -463,11 +478,11 @@ export default function KioskView({
           detail: safeDecision.detail,
         })
       }
-      scheduleResume()
+      showAlertAndResume(safeDecision.detail)
     } finally {
       busyRef.current = false
     }
-  }, [camera, drawOverlay, modelsReady, onLogAttendance, scheduleResume])
+  }, [camera, drawOverlay, modelsReady, onLogAttendance, scheduleResume, setAlertState, showAlertAndResume])
 
   const startLoop = useCallback(() => {
     if (scanRef.current) return
@@ -534,6 +549,14 @@ export default function KioskView({
             <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
               <div className="text-5xl opacity-60">◈</div>
               <div className="text-sm font-medium">{camera.camError || 'Camera offline'}</div>
+            </div>
+          ) : null}
+          {alertState ? (
+            <div className="absolute inset-0 z-[5] flex items-center justify-center bg-black/40 px-6">
+              <div className="w-full max-w-sm rounded-[1.5rem] bg-white px-6 py-6 text-center shadow-2xl">
+                <div className="text-sm font-semibold uppercase tracking-[0.18em] text-warn">Scan result</div>
+                <div className="mt-3 text-lg font-semibold text-ink">{alertState}</div>
+              </div>
             </div>
           ) : null}
           {errorMessage ? (
