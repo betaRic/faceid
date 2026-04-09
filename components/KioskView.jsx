@@ -516,18 +516,18 @@ export default function KioskView({
   const isConfirmed = kioskState === 'confirmed'
   const isUnknown = kioskState === 'unknown'
   const isBlocked = kioskState === 'blocked'
-  const showStabilityGuide = !capturedFrameUrl && !isConfirmed && !isBlocked && !isUnknown
+  const showIdleAnimation = !capturedFrameUrl && !isConfirmed && !isBlocked && !isUnknown
 
   return (
     <AppShell
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
     >
-      <div className="page-frame xl:min-h-[calc(100dvh-10.5rem)]">
+      <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
         <motion.section
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="relative min-h-[calc(100dvh-10.5rem)] overflow-hidden rounded-[1.75rem] border border-black/5 bg-black shadow-glow"
+          className="relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:rounded-[1.75rem] xl:min-h-[calc(100dvh-10.5rem)]"
         >
           <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
           {capturedFrameUrl ? (
@@ -541,30 +541,33 @@ export default function KioskView({
           {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
           {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
 
-          {showStabilityGuide ? (
-            <div className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none">
-              <div className="relative h-[22rem] w-[16rem] max-h-[58vh] max-w-[70vw] rounded-[3rem] border border-white/55 bg-white/6 shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_0_80px_rgba(255,255,255,0.08)] backdrop-blur-[1px]">
-                <div className="absolute inset-x-6 top-10 h-20 rounded-[999px] border border-white/35" />
-                <div className="absolute left-1/2 top-[6.6rem] h-7 w-7 -translate-x-1/2 rounded-full border border-white/35" />
-                <div className="absolute inset-x-[2.35rem] bottom-12 h-[8.75rem] rounded-[2.25rem] border border-white/28" />
-                <div className="absolute -left-px -top-px h-14 w-14 rounded-tl-[3rem] border-l-2 border-t-2 border-white/85" />
-                <div className="absolute -right-px -top-px h-14 w-14 rounded-tr-[3rem] border-r-2 border-t-2 border-white/85" />
-                <div className="absolute -bottom-px -left-px h-14 w-14 rounded-bl-[3rem] border-b-2 border-l-2 border-white/85" />
-                <div className="absolute -bottom-px -right-px h-14 w-14 rounded-br-[3rem] border-b-2 border-r-2 border-white/85" />
+          {showIdleAnimation ? (
+            <div className="pointer-events-none absolute inset-0 z-[4] overflow-hidden">
+              <div className="kiosk-idle-orb kiosk-idle-orb-a" />
+              <div className="kiosk-idle-orb kiosk-idle-orb-b" />
+              <div className="kiosk-idle-orb kiosk-idle-orb-c" />
+              <div className="kiosk-idle-scanline" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="kiosk-idle-core">
+                  <div className="kiosk-idle-ring kiosk-idle-ring-a" />
+                  <div className="kiosk-idle-ring kiosk-idle-ring-b" />
+                  <div className="kiosk-idle-ring kiosk-idle-ring-c" />
+                  <div className="kiosk-idle-pulse" />
+                </div>
               </div>
             </div>
           ) : null}
 
-          <div className="absolute right-5 top-5 z-[4] rounded-full bg-white/92 px-5 py-3 text-right shadow-lg backdrop-blur">
-            <div className="font-display text-2xl text-ink sm:text-3xl">{clock}</div>
-            <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted">{dateStr}</div>
+          <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] bg-white/92 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:rounded-full sm:px-5 sm:py-3">
+            <div className="font-display text-lg leading-none text-ink sm:text-3xl">{clock}</div>
+            <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-muted sm:text-xs sm:tracking-[0.18em]">{dateStr}</div>
           </div>
 
-          {showStabilityGuide ? (
-            <div className="absolute inset-x-5 bottom-5 z-[4] flex justify-center">
-              <div className="rounded-full bg-white/90 px-5 py-3 text-center shadow-lg backdrop-blur">
-                <div className="text-sm font-semibold text-ink">{camera.camOn ? 'Hold still for capture' : 'Stand inside the frame'}</div>
-                <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted">{camera.camOn ? 'Automatic scan will start when your face is steady' : 'Kiosk will guide capture automatically'}</div>
+          {showIdleAnimation ? (
+            <div className="absolute inset-x-3 bottom-3 z-[4] flex justify-center sm:inset-x-5 sm:bottom-5">
+              <div className="w-full max-w-sm rounded-[1.1rem] bg-white/90 px-4 py-2.5 text-center shadow-lg backdrop-blur sm:w-auto sm:max-w-full sm:rounded-full sm:px-5 sm:py-3">
+                <div className="text-sm font-semibold text-ink">{camera.camOn ? 'Preparing capture' : 'Kiosk idle'}</div>
+                <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-muted sm:text-xs sm:tracking-[0.18em]">{camera.camOn ? 'Waiting for a steady face' : 'Ready for the next scan'}</div>
               </div>
             </div>
           ) : null}
@@ -576,15 +579,15 @@ export default function KioskView({
             </div>
           ) : null}
           {alertState ? (
-            <div className="absolute inset-0 z-[5] flex items-center justify-center bg-black/40 px-6">
-              <div className="w-full max-w-sm rounded-[1.5rem] bg-white px-6 py-6 text-center shadow-2xl">
+            <div className="absolute inset-0 z-[5] flex items-center justify-center bg-black/40 px-4 sm:px-6">
+              <div className="w-full max-w-sm rounded-[1.25rem] bg-white px-5 py-5 text-center shadow-2xl sm:rounded-[1.5rem] sm:px-6 sm:py-6">
                 <div className="text-sm font-semibold uppercase tracking-[0.18em] text-warn">Scan result</div>
-                <div className="mt-3 text-lg font-semibold text-ink">{alertState}</div>
+                <div className="mt-3 text-base font-semibold text-ink sm:text-lg">{alertState}</div>
               </div>
             </div>
           ) : null}
           {errorMessage ? (
-            <div className="absolute inset-x-5 bottom-5 z-[4] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg backdrop-blur">
+            <div className="absolute inset-x-3 bottom-3 z-[4] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg backdrop-blur sm:inset-x-5 sm:bottom-5">
               {errorMessage}
             </div>
           ) : null}

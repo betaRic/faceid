@@ -19,6 +19,25 @@
   box-shadow: 0 0 0 6px rgba(12, 108, 88, 0.18);
 }
 
+.office-map-marker-pulse span {
+  animation: officeMapMarkerPulse 1.2s ease-out 2;
+}
+
+@keyframes officeMapMarkerPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(12, 108, 88, 0.28);
+  }
+  65% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 12px rgba(12, 108, 88, 0.08);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(12, 108, 88, 0.18);
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -88,6 +107,150 @@ select {
 
 video {
   display: block;
+}
+
+.kiosk-idle-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(18px);
+  opacity: 0.28;
+  animation: kioskFloat 11s ease-in-out infinite;
+}
+
+.kiosk-idle-orb-a {
+  top: 12%;
+  left: 14%;
+  width: 16rem;
+  height: 16rem;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 72%);
+}
+
+.kiosk-idle-orb-b {
+  right: 10%;
+  bottom: 16%;
+  width: 20rem;
+  height: 20rem;
+  background: radial-gradient(circle, rgba(12, 108, 88, 0.28) 0%, rgba(12, 108, 88, 0) 72%);
+  animation-delay: -3.5s;
+}
+
+.kiosk-idle-orb-c {
+  left: 50%;
+  top: 18%;
+  width: 12rem;
+  height: 12rem;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(207, 122, 45, 0.22) 0%, rgba(207, 122, 45, 0) 72%);
+  animation-delay: -6s;
+}
+
+.kiosk-idle-core {
+  position: relative;
+  width: min(40vw, 18rem);
+  height: min(40vw, 18rem);
+  min-width: 12rem;
+  min-height: 12rem;
+}
+
+.kiosk-idle-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.08);
+}
+
+.kiosk-idle-ring-a {
+  animation: kioskPulse 3.8s ease-out infinite;
+}
+
+.kiosk-idle-ring-b {
+  inset: 12%;
+  opacity: 0.68;
+  animation: kioskPulse 3.8s ease-out infinite;
+  animation-delay: -1.25s;
+}
+
+.kiosk-idle-ring-c {
+  inset: 24%;
+  opacity: 0.48;
+  animation: kioskPulse 3.8s ease-out infinite;
+  animation-delay: -2.5s;
+}
+
+.kiosk-idle-pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.25rem;
+  height: 1.25rem;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 0 28px rgba(255, 255, 255, 0.45);
+  animation: kioskGlow 2.2s ease-in-out infinite;
+}
+
+.kiosk-idle-scanline {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.8), rgba(255,255,255,0));
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.2);
+  animation: kioskSweep 4.8s ease-in-out infinite;
+  opacity: 0.65;
+}
+
+@keyframes kioskFloat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -14px, 0) scale(1.05);
+  }
+}
+
+@keyframes kioskPulse {
+  0% {
+    transform: scale(0.82);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.48;
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+
+@keyframes kioskGlow {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(0.92);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes kioskSweep {
+  0%, 100% {
+    top: 20%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.6;
+  }
+  50% {
+    top: 56%;
+    opacity: 0.9;
+  }
+  85% {
+    opacity: 0.4;
+  }
 }
 
 .suite-shell {

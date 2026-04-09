@@ -311,14 +311,14 @@ export default function RegisterView({
       actions={(
         <>
           <button
-            className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:w-auto"
             onClick={() => setShowRoster(current => !current)}
             type="button"
             disabled={!showRosterTools}
           >
             {showRoster ? 'Hide roster' : 'Show roster'}
           </button>
-          <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm">
+          <div className="w-full rounded-full bg-white px-4 py-2.5 text-center text-sm font-semibold text-ink shadow-sm sm:w-auto">
             {persons.length} enrolled
           </div>
         </>
@@ -326,7 +326,7 @@ export default function RegisterView({
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
     >
       {toast ? (
-        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-brand-dark px-5 py-3 text-sm font-medium text-white shadow-xl">
+        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-brand-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
           {toast}
         </div>
       ) : null}
@@ -336,9 +336,9 @@ export default function RegisterView({
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
+          className="rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow backdrop-blur sm:p-4"
         >
-          <div className="grid gap-2 lg:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {STEPS.map((item, index) => (
               <WizardStep
                 key={item.id}
@@ -357,14 +357,14 @@ export default function RegisterView({
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
-            className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
+            className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow backdrop-blur sm:p-4"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3">
-              <div>
+            <div className="flex flex-col gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Enrollment workspace</span>
-                <h2 className="mt-1 font-display text-2xl text-ink">{STEPS[stepIndex]?.title}</h2>
+                <h2 className="mt-1 font-display text-xl text-ink sm:text-2xl">{STEPS[stepIndex]?.title}</h2>
               </div>
-              <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm">
+              <div className="max-w-full rounded-[1rem] bg-white px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm sm:max-w-[22rem] sm:rounded-full">
                 {statusMsg}
               </div>
             </div>
@@ -372,7 +372,7 @@ export default function RegisterView({
             {step === 'capture' ? (
               <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1.1fr)_300px]">
                 <div className="min-h-0 overflow-hidden rounded-[1.6rem] border border-black/5 bg-black shadow-glow">
-                  <div className="relative h-full min-h-[320px] xl:min-h-[460px]">
+                  <div className="relative h-full min-h-[280px] sm:min-h-[320px] xl:min-h-[460px]">
                     <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
                     <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
                     <canvas ref={camera.overlayRef} className="absolute inset-0 h-full w-full" />
@@ -398,7 +398,7 @@ export default function RegisterView({
                   </div>
                 </div>
 
-                <div className="grid content-start gap-3">
+                <div className="grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-1">
                   <InfoCard
                     title="Camera"
                     text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Keep the face centered until the capture completes.'}
@@ -428,14 +428,14 @@ export default function RegisterView({
                 <div className="grid content-start gap-3">
                   <div className="grid gap-3">
                     <button
-                      className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                      className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark sm:rounded-full"
                       onClick={goToDetails}
                       type="button"
                     >
                       Continue to details
                     </button>
                     <button
-                      className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                      className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:rounded-full"
                       onClick={handleRetake}
                       type="button"
                     >
@@ -487,14 +487,14 @@ export default function RegisterView({
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <button
-                      className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                      className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:rounded-full"
                       onClick={() => setStep('review')}
                       type="button"
                     >
                       Back to review
                     </button>
                     <button
-                      className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40 sm:rounded-full"
                       disabled={!pendingDesc || !name.trim() || !employeeId.trim() || !officeId}
                       onClick={handleRegister}
                       type="button"
@@ -547,14 +547,14 @@ export default function RegisterView({
 
                 <div className="grid content-start gap-3">
                   <button
-                    className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                    className="inline-flex w-full items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark sm:rounded-full"
                     onClick={handleAddAnotherSample}
                     type="button"
                   >
                     Add another sample
                   </button>
                   <button
-                    className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                    className="inline-flex w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:rounded-full"
                     onClick={handleNewPerson}
                     type="button"
                   >
@@ -570,7 +570,7 @@ export default function RegisterView({
               animate={{ opacity: 1, x: 0 }}
               initial={{ opacity: 0, x: 20 }}
               transition={{ duration: 0.35, ease: 'easeOut', delay: 0.1 }}
-              className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
+              className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow backdrop-blur sm:p-4"
             >
               <div className="mb-4 flex items-center justify-between gap-4">
                 <h2 className="font-display text-2xl text-ink">Enrolled employees</h2>
@@ -644,9 +644,9 @@ function WizardStep({ active, complete, number, title, description }) {
         <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-brand text-white' : 'bg-white text-muted'}`}>
           {number}
         </span>
-        <div>
+        <div className="min-w-0">
           <div className="text-sm font-semibold text-ink">{title}</div>
-          <div className="text-xs leading-5 text-muted">{description}</div>
+          <div className="hidden text-xs leading-5 text-muted sm:block">{description}</div>
         </div>
       </div>
     </div>

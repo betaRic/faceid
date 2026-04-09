@@ -67,7 +67,7 @@ export default function AdminLogin() {
             </h1>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Link
-                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white"
+                className="inline-flex items-center justify-center rounded-[1rem] border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white sm:rounded-full"
                 href="/"
               >
                 Back to navigation
@@ -85,7 +85,7 @@ export default function AdminLogin() {
             <h2 className="mt-2 font-display text-3xl text-ink">Login</h2>
 
             <button
-              className="mt-6 inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 inline-flex w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-full"
               disabled={googleSubmitting}
               onClick={handleGoogleLogin}
               type="button"

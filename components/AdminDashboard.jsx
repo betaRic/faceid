@@ -1,28 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { subscribeToAttendance, subscribeToPersons, updatePersonRecord } from '../lib/data-store'
 import { firebaseEnabled } from '../lib/firebase'
 import { saveOfficeConfig, subscribeToOfficeConfigs } from '../lib/office-admin-store'
 import AppShell from './AppShell'
+import AdminOfficePanel from './AdminOfficePanel'
 import BrandMark from './BrandMark'
-
-const OfficeLocationPicker = dynamic(() => import('./OfficeLocationPicker'), {
-  ssr: false,
-})
-
-const dayOptions = [
-  { value: 1, label: 'Mon' },
-  { value: 2, label: 'Tue' },
-  { value: 3, label: 'Wed' },
-  { value: 4, label: 'Thu' },
-  { value: 5, label: 'Fri' },
-  { value: 6, label: 'Sat' },
-  { value: 0, label: 'Sun' },
-]
 
 const panelTabs = [
   { id: 'office', label: 'Office Setup' },
@@ -30,33 +16,6 @@ const panelTabs = [
   { id: 'summary', label: 'Summary' },
   { id: 'admins', label: 'Admins' },
 ]
-
-function getOfficeSetupItems(office) {
-  if (!office) return []
-
-  return [
-    {
-      label: 'GPS pin',
-      ok: Number.isFinite(office.gps?.latitude) && Number.isFinite(office.gps?.longitude),
-    },
-    {
-      label: 'Radius',
-      ok: Number.isFinite(office.gps?.radiusMeters) && office.gps.radiusMeters > 0,
-    },
-    {
-      label: 'Schedule',
-      ok: Boolean(office.workPolicy?.schedule && office.workPolicy?.morningIn && office.workPolicy?.afternoonOut),
-    },
-    {
-      label: 'Working days',
-      ok: Array.isArray(office.workPolicy?.workingDays) && office.workPolicy.workingDays.length > 0,
-    },
-    {
-      label: 'WFH rule',
-      ok: Array.isArray(office.workPolicy?.wfhDays),
-    },
-  ]
-}
 
 function getScopeLabel(roleScope) {
   return roleScope === 'office' ? 'Office admin' : 'Regional admin'
@@ -104,7 +63,12 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   const [adminScope, setAdminScope] = useState('office')
   const [adminOfficeId, setAdminOfficeId] = useState('')
   const [officeDraftWarning, setOfficeDraftWarning] = useState('')
+  const [locationLoading, setLocationLoading] = useState(false)
+  const [locationNotice, setLocationNotice] = useState('')
+  const [highlightLocationPin, setHighlightLocationPin] = useState(false)
   const draftOfficeRef = useRef(draftOffice)
+  const locationNoticeTimerRef = useRef(null)
+  const locationPulseTimerRef = useRef(null)
 
   useEffect(() => {
     const unsubscribe = subscribeToOfficeConfigs(
@@ -129,6 +93,11 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   useEffect(() => {
     draftOfficeRef.current = draftOffice
   }, [draftOffice])
+
+  useEffect(() => () => {
+    if (locationNoticeTimerRef.current) window.clearTimeout(locationNoticeTimerRef.current)
+    if (locationPulseTimerRef.current) window.clearTimeout(locationPulseTimerRef.current)
+  }, [])
 
   useEffect(() => {
     const unsubscribePersons = subscribeToPersons(setPersons, () => {})
@@ -175,12 +144,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
     return offices.find(office => office.id === selectedOfficeId) || null
   }, [draftOffice, offices, selectedOfficeId])
 
-  const officeSetupItems = useMemo(() => getOfficeSetupItems(activeOffice), [activeOffice])
-  const officeSetupScore = useMemo(
-    () => officeSetupItems.filter(item => item.ok).length,
-    [officeSetupItems],
-  )
-
   const visibleAttendance = useMemo(() => (
     attendance.filter(entry => (roleScope === 'regional' ? true : entry.officeId === selectedOfficeId))
   ), [attendance, roleScope, selectedOfficeId])
@@ -199,16 +162,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       .sort((left, right) => right.count - left.count)
       .slice(0, 6)
   }, [visibleAttendance])
-
-  const acceptedCount = useMemo(
-    () => visibleAttendance.filter(entry => String(entry.decisionCode || '').startsWith('accepted_')).length,
-    [visibleAttendance],
-  )
-
-  const blockedCount = useMemo(
-    () => visibleAttendance.filter(entry => String(entry.decisionCode || '').startsWith('blocked_')).length,
-    [visibleAttendance],
-  )
 
   useEffect(() => {
     if (!firebaseEnabled) {
@@ -328,15 +281,32 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       return
     }
 
+    setLocationLoading(true)
+    setLocationNotice('')
     setStatus('Getting current location...')
 
     navigator.geolocation.getCurrentPosition(
       position => {
         updateDraft('gps.latitude', Number(position.coords.latitude.toFixed(6)))
         updateDraft('gps.longitude', Number(position.coords.longitude.toFixed(6)))
+        setLocationLoading(false)
+        setLocationNotice('Current location applied to the office pin. Save office settings to keep it.')
+        setHighlightLocationPin(true)
         setStatus('Office location updated from current device location')
+        if (locationNoticeTimerRef.current) window.clearTimeout(locationNoticeTimerRef.current)
+        if (locationPulseTimerRef.current) window.clearTimeout(locationPulseTimerRef.current)
+        locationNoticeTimerRef.current = window.setTimeout(() => {
+          setLocationNotice('')
+          locationNoticeTimerRef.current = null
+        }, 3200)
+        locationPulseTimerRef.current = window.setTimeout(() => {
+          setHighlightLocationPin(false)
+          locationPulseTimerRef.current = null
+        }, 2200)
       },
       error => {
+        setLocationLoading(false)
+        setLocationNotice('')
         setStatus(error.message || 'Unable to get current location')
       },
       {
@@ -522,7 +492,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       contentClassName="px-4 py-5 sm:px-6 lg:px-8"
     >
       <div className="page-frame flex flex-col gap-4 xl:min-h-[calc(100dvh-10.8rem)]">
-        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-5 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,420px)]">
+        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-4 shadow-glow backdrop-blur sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,420px)]">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
@@ -535,15 +505,18 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">
               Manage office policy, employee status, and attendance behavior from one screen. Changes here affect kiosk and registration behavior for the selected office.
             </p>
+            <div className="mt-3 inline-flex max-w-full rounded-[1rem] bg-stone-100 px-4 py-2 text-sm text-muted sm:rounded-full">
+              {status}
+            </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <Link
-                className="inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark sm:w-auto sm:rounded-full"
                 href="/kiosk"
               >
                 Open kiosk
               </Link>
               <Link
-                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:w-auto sm:rounded-full"
                 href="/registration"
               >
                 Open registration
@@ -558,62 +531,19 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             transition={{ duration: 0.45, ease: 'easeOut', delay: 0.08 }}
           >
             <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Storage</span>
-              <p className="mt-2 text-lg font-semibold text-ink">{firebaseEnabled ? 'Firebase enabled' : 'Local fallback'}</p>
-              <p className="mt-1 text-sm leading-7 text-muted">{status}</p>
-            </div>
-
-            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Office setup</span>
-              <p className="mt-2 text-lg font-semibold text-ink">
-                {activeOffice ? `${officeSetupScore}/${officeSetupItems.length} ready` : 'Select an office'}
-              </p>
-              {activeOffice ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {officeSetupItems.map(item => (
-                    <span
-                      key={item.label}
-                      className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
-                        item.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                      }`}
-                    >
-                      {item.label}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Admin scope</span>
               <p className="mt-2 text-lg font-semibold text-ink">{getScopeLabel(roleScope)}</p>
               <p className="mt-1 text-sm leading-7 text-muted">
                 {roleScope === 'office' ? 'Server-locked to one office.' : 'Can manage every office and admin record.'}
               </p>
             </div>
-
-            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Attendance health</span>
-              <p className="mt-2 text-lg font-semibold text-ink">{acceptedCount} accepted / {blockedCount} blocked</p>
-              <p className="mt-1 text-sm leading-7 text-muted">Recent server decisions for the current admin scope.</p>
-            </div>
-
-            <div className="rounded-2xl border border-black/5 bg-white/75 p-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Scan cooldowns</span>
-              <p className="mt-2 text-lg font-semibold text-ink">
-                {activeOffice ? `${activeOffice.workPolicy?.checkInCooldownMinutes ?? 30}m in / ${activeOffice.workPolicy?.checkOutCooldownMinutes ?? 5}m out` : 'Select an office'}
-              </p>
-              <p className="mt-1 text-sm leading-7 text-muted">
-                Controls how soon the same employee can be recorded again after a successful scan.
-              </p>
-            </div>
           </motion.aside>
         </section>
 
-        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
           <motion.aside
             animate={{ opacity: 1, y: 0 }}
-            className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur"
+            className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow backdrop-blur sm:p-4"
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
           >
@@ -638,11 +568,11 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 ))}
               </select>
 
-              <div className="grid gap-2">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
                 {panelTabs.map(panel => (
                   <button
                     key={`side-panel-${panel.id}`}
-                    className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                    className={`min-h-12 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
                       activePanel === panel.id
                         ? 'border-brand/30 bg-brand/10 text-brand-dark'
                         : 'border-black/5 bg-stone-50 text-ink hover:bg-white'
@@ -655,7 +585,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 ))}
               </div>
 
-              <div className="grid min-h-0 gap-3 overflow-auto pr-1">
+              <div className="grid min-h-0 gap-3 overflow-auto pr-1 xl:max-h-[52vh]">
                 {visibleOffices.map(office => (
                   <button
                     key={office.id}
@@ -674,7 +604,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
           <motion.section
             animate={{ opacity: 1, y: 0 }}
-            className="min-h-0 rounded-[1.5rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur"
+            className="min-h-0 rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-5"
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, ease: 'easeOut', delay: 0.06 }}
           >
@@ -686,143 +616,25 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
               </p>
             </header>
 
-            {activePanel === 'office' && activeOffice ? (
-              <div className="grid max-h-[62vh] gap-5 overflow-auto pr-1 md:grid-cols-2">
-                {officeDraftWarning ? (
-                  <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                    {officeDraftWarning}
-                  </div>
-                ) : null}
-
-                <div className="md:col-span-2">
-                  <Field label="Office map location">
-                    <OfficeLocationPicker
-                      latitude={activeOffice.gps.latitude}
-                      longitude={activeOffice.gps.longitude}
-                      onChange={({ latitude, longitude }) => {
-                        updateDraft('gps.latitude', latitude)
-                        updateDraft('gps.longitude', longitude)
-                      }}
-                      radiusMeters={activeOffice.gps.radiusMeters}
-                    />
-                  </Field>
-                  <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                    <button
-                      className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
-                      onClick={handleUseMyLocation}
-                      type="button"
-                    >
-                      Use my location
-                    </button>
-                    <div className="rounded-full bg-brand/8 px-4 py-3 text-sm text-brand-dark">
-                      Click on the map to place the office pin and adjust the geofence.
-                    </div>
-                  </div>
-                </div>
-
-                <Field label="Office name">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('name', event.target.value)} value={activeOffice.name} />
-                </Field>
-
-                <Field label="Location label">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('location', event.target.value)} value={activeOffice.location} />
-                </Field>
-
-                <Field label="Latitude">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('gps.latitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.latitude} />
-                </Field>
-
-                <Field label="Longitude">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('gps.longitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.longitude} />
-                </Field>
-
-                <Field label="Radius meters">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('gps.radiusMeters', Number(event.target.value))} type="number" value={activeOffice.gps.radiusMeters} />
-                </Field>
-
-                <Field label="Schedule label">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.schedule', event.target.value)} value={activeOffice.workPolicy.schedule} />
-                </Field>
-
-                <Field label="AM in">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.morningIn', event.target.value)} type="time" value={activeOffice.workPolicy.morningIn} />
-                </Field>
-
-                <Field label="AM out">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.morningOut', event.target.value)} type="time" value={activeOffice.workPolicy.morningOut} />
-                </Field>
-
-                <Field label="PM in">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.afternoonIn', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonIn} />
-                </Field>
-
-                <Field label="PM out">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.afternoonOut', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonOut} />
-                </Field>
-
-                <Field label="Grace period (minutes)">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.gracePeriodMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.gracePeriodMinutes} />
-                </Field>
-
-                <Field label="Check-in cooldown (minutes)">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.checkInCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkInCooldownMinutes ?? 30} />
-                </Field>
-
-                <Field label="Check-out cooldown (minutes)">
-                  <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.checkOutCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} />
-                </Field>
-
-                <div className="md:col-span-2">
-                  <Field label="Working days">
-                    <div className="flex flex-wrap gap-2">
-                      {dayOptions.map(day => (
-                        <button
-                          key={`working-${day.value}`}
-                          className={`rounded-full border px-4 py-2 text-sm transition ${activeOffice.workPolicy.workingDays.includes(day.value) ? 'border-brand/40 bg-brand/10 text-brand-dark' : 'border-black/10 bg-white text-muted'}`}
-                          onClick={() => toggleDay('workingDays', day.value)}
-                          type="button"
-                        >
-                          {day.label}
-                        </button>
-                      ))}
-                    </div>
-                  </Field>
-                </div>
-
-                <div className="md:col-span-2">
-                  <Field label="WFH days">
-                    <div className="flex flex-wrap gap-2">
-                      {dayOptions.map(day => (
-                        <button
-                          key={`wfh-${day.value}`}
-                          className={`rounded-full border px-4 py-2 text-sm transition ${activeOffice.workPolicy.wfhDays.includes(day.value) ? 'border-accent/40 bg-accent/10 text-ink' : 'border-black/10 bg-white text-muted'}`}
-                          onClick={() => toggleDay('wfhDays', day.value)}
-                          type="button"
-                        >
-                          {day.label}
-                        </button>
-                      ))}
-                    </div>
-                  </Field>
-                </div>
-
-                <div className="md:col-span-2">
-                  <button className="inline-flex w-full items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark" onClick={handleSaveOffice} type="button">
-                    Save office settings
-                  </button>
-                </div>
-              </div>
-            ) : activePanel === 'office' ? (
-              <div className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-10 text-center text-sm text-muted">
-                No office selected.
-              </div>
+            {activePanel === 'office' ? (
+              <AdminOfficePanel
+                activeOffice={activeOffice}
+                handleSaveOffice={handleSaveOffice}
+                handleUseMyLocation={handleUseMyLocation}
+                highlightLocationPin={highlightLocationPin}
+                locationLoading={locationLoading}
+                locationNotice={locationNotice}
+                officeDraftWarning={officeDraftWarning}
+                toggleDay={toggleDay}
+                updateDraft={updateDraft}
+              />
             ) : null}
           </motion.section>
         </div>
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}
-          className={`${activePanel === 'employees' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
+          className={`${activePanel === 'employees' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6`}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
         >
@@ -831,7 +643,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Employees</span>
               <h2 className="mt-2 font-display text-3xl text-ink">Transfer and account control</h2>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
-                Registration captures the face. This screen controls office assignment and account status.
+                Registration handles enrollment. This screen controls office assignment and account status.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -927,7 +739,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}
-          className={`${activePanel === 'summary' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
+          className={`${activePanel === 'summary' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6`}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.12 }}
         >
@@ -993,7 +805,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 </div>
               ) : null}
 
-              <table className="min-w-full border-separate border-spacing-y-3 text-left">
+              <table className="min-w-[920px] border-separate border-spacing-y-3 text-left">
                 <thead className="sticky top-0 bg-white/95 backdrop-blur">
                   <tr className="text-xs uppercase tracking-[0.16em] text-muted">
                     <th className="px-3 py-2">Employee</th>
@@ -1079,7 +891,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}
-          className={`${activePanel === 'admins' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur`}
+          className={`${activePanel === 'admins' ? 'block' : 'hidden'} rounded-[1.5rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6`}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.14 }}
         >

@@ -20,7 +20,7 @@ export default function AppShell({ children, actions = null, navItems = defaultN
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 border-b border-black/[0.06] bg-white/85 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1440px] items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <Link href="/" className="shrink-0">
             <BrandMark compact />
           </Link>
@@ -45,7 +45,7 @@ export default function AppShell({ children, actions = null, navItems = defaultN
             })}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
             {actions}
             <button
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/[0.08] bg-white/80 text-muted transition-colors hover:bg-white md:hidden"

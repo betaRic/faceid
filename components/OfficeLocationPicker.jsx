@@ -6,24 +6,25 @@ import { divIcon } from 'leaflet'
 
 const DEFAULT_CENTER = [6.3358, 124.7741]
 
-const markerIcon = divIcon({
-  className: 'office-map-marker',
-  html: '<span></span>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
-})
-
 export default function OfficeLocationPicker({
   latitude,
   longitude,
   radiusMeters,
   onChange,
+  highlightPin = false,
 }) {
   const center = useMemo(() => (
     Number.isFinite(latitude) && Number.isFinite(longitude)
       ? [latitude, longitude]
       : DEFAULT_CENTER
   ), [latitude, longitude])
+
+  const markerIcon = useMemo(() => divIcon({
+    className: `office-map-marker${highlightPin ? ' office-map-marker-pulse' : ''}`,
+    html: '<span></span>',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  }), [highlightPin])
 
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-100">

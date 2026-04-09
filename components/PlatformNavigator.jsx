@@ -59,7 +59,7 @@ export default function PlatformNavigator() {
           variants={stagger}
           initial="hidden"
           animate="show"
-          className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,420px)] xl:items-end"
+          className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,420px)] xl:items-end"
         >
           <div className="space-y-6">
             <motion.div variants={fadeUp}>
@@ -71,7 +71,7 @@ export default function PlatformNavigator() {
 
             <motion.h1
               variants={fadeUp}
-              className="max-w-3xl font-display text-4xl leading-tight text-ink sm:text-5xl"
+              className="max-w-3xl font-display text-3xl leading-tight text-ink sm:text-5xl"
             >
               Face attendance for regional government offices.
             </motion.h1>
@@ -103,7 +103,7 @@ export default function PlatformNavigator() {
             variants={stagger}
             initial="hidden"
             animate="show"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-1"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1"
           >
             {stats.map(stat => (
               <motion.div
@@ -136,7 +136,7 @@ export default function PlatformNavigator() {
               <motion.div key={module.href} variants={fadeUp}>
                 <Link
                   href={module.href}
-                  className={`group flex h-full min-h-[180px] flex-col justify-between rounded-2xl border ${module.border} bg-gradient-to-br ${module.accent} p-5 backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg`}
+                  className={`group flex h-full min-h-[160px] flex-col justify-between rounded-2xl border ${module.border} bg-gradient-to-br ${module.accent} p-4 sm:min-h-[180px] sm:p-5 backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <h3 className={`font-display text-2xl ${module.dark ? 'text-white' : 'text-ink'}`}>
