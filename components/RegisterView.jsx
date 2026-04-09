@@ -10,7 +10,8 @@ import AppShell from './AppShell'
 
 const MIN_SAMPLES = 3
 const BURST_CAPTURE_ATTEMPTS = 7
-const BURST_CAPTURE_INTERVAL_MS = 90
+const BURST_CAPTURE_INTERVAL_MS = 140
+const VIEW_RESTORE_DELAY_MS = 80
 
 const STEPS = [
   { id: 'capture', number: '1', title: 'Capture face', description: 'Automatic burst capture starts when the face is ready.' },
@@ -123,6 +124,11 @@ export default function RegisterView({
 
     try {
       for (let attempt = 0; attempt < BURST_CAPTURE_ATTEMPTS; attempt += 1) {
+        if (attempt === 0) {
+          setStatusMsg(`Capturing burst frames (1/${BURST_CAPTURE_ATTEMPTS})...`)
+        } else {
+          setStatusMsg(`Capturing burst frames (${attempt + 1}/${BURST_CAPTURE_ATTEMPTS})...`)
+        }
         const canvas = camera.captureImageData({
           maxWidth: PREVIEW_MAX_DIMENSION,
           maxHeight: PREVIEW_MAX_DIMENSION,
@@ -297,19 +303,24 @@ export default function RegisterView({
   }, [employeeId, name, officeId, onEnrollPerson, pendingDesc, persons, playAudioCue, selectedOffice, showToast])
 
   const resetForCapture = useCallback(async () => {
+    stopDetect()
+    setStep('capture')
     setPendingDesc(null)
     setPreviewUrl(null)
     setFaceFound(false)
     setLastSavedSummary(null)
+    setStatusMsg('Preparing camera...')
     camera.clearOverlay()
+
     try {
+      await wait(VIEW_RESTORE_DELAY_MS)
       await camera.start()
     } catch {
       setStatusMsg('Camera unavailable')
       return
     }
     startDetect()
-  }, [camera, startDetect])
+  }, [camera, startDetect, stopDetect, wait])
 
   const handleRetake = useCallback(() => {
     resetForCapture()
