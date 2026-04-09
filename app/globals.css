@@ -483,6 +483,12 @@ video {
   margin-inline: auto;
 }
 
+.page-frame-fluid {
+  width: 100%;
+  max-width: none;
+  margin-inline: auto;
+}
+
 .kiosk-root {
   display: grid;
   min-height: 100vh;

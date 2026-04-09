@@ -13,25 +13,46 @@ import {
   KIOSK_ATTEMPT_COOLDOWN_MS,
   KIOSK_FACE_LOSS_GRACE_MS,
 } from '../lib/config'
-import { buildAttendanceEntryTiming } from '../lib/attendance-time'
+import { ATTENDANCE_TIME_ZONE, buildAttendanceEntryTiming } from '../lib/attendance-time'
 import { useAudioCue } from '../hooks/useAudioCue'
 import AppShell from './AppShell'
 
-const pad = value => String(value).padStart(2, '0')
+const kioskClockFormatter = new Intl.DateTimeFormat('en-PH', {
+  timeZone: ATTENDANCE_TIME_ZONE,
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: true,
+})
+
+const kioskDateFormatter = new Intl.DateTimeFormat('en-PH', {
+  timeZone: ATTENDANCE_TIME_ZONE,
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+})
+
+const kioskHourFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: ATTENDANCE_TIME_ZONE,
+  hour: '2-digit',
+  hour12: false,
+})
 
 function formatTime(timestamp) {
-  const date = new Date(timestamp)
-  const hours = date.getHours()
-  return `${pad(hours % 12 || 12)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${hours >= 12 ? 'PM' : 'AM'}`
+  return kioskClockFormatter.format(new Date(timestamp))
 }
 
 function formatDate(timestamp) {
-  return new Date(timestamp).toLocaleDateString('en-PH', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
+  return kioskDateFormatter.format(new Date(timestamp))
+}
+
+function getGreeting(timestamp) {
+  const hour = Number(kioskHourFormatter.format(new Date(timestamp)))
+  if (!Number.isFinite(hour)) return 'Welcome'
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
 }
 
 function drawBracketBox(ctx, box, color, label, confidence, scaleX = 1, scaleY = 1) {
@@ -181,7 +202,7 @@ export default function KioskView({
   const [clock, setClock] = useState('')
   const [dateStr, setDateStr] = useState('')
   const [kioskState, setKioskState] = useState('idle')
-  const [, setCurrentMatch] = useState(null)
+  const [currentMatch, setCurrentMatch] = useState(null)
   const [capturedFrameUrl, setCapturedFrameUrl] = useState(null)
   const [flashKey, setFlashKey] = useState(0)
   const [alertState, setAlertState] = useState(null)
@@ -426,6 +447,10 @@ export default function KioskView({
               name: result.entry.name || 'Attendance recorded',
               confidence: result.entry.confidence ?? 0,
               officeName: result.entry.officeName || null,
+              employeeId: result.entry.employeeId || null,
+              time: result.entry.time || timing.time,
+              timestamp: Number(result.entry.timestamp ?? timing.timestamp),
+              action: result.entry.action || '',
               detail: `${result.entry.action === 'checkout' ? 'Check-out' : 'Check-in'} recorded`,
             })
             setKioskState('confirmed')
@@ -539,6 +564,7 @@ export default function KioskView({
   const isConfirmed = kioskState === 'confirmed'
   const isUnknown = kioskState === 'unknown'
   const isBlocked = kioskState === 'blocked'
+  const showSuccessScreen = Boolean(isConfirmed && currentMatch)
   const locationBadgeLabel = locationState?.ready
     ? 'Location ready'
     : locationState?.bypassed
@@ -554,35 +580,72 @@ export default function KioskView({
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:rounded-[1.75rem] xl:min-h-[calc(100dvh-10.5rem)]"
+          className={`relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] xl:min-h-[calc(100dvh-10.5rem)] ${showSuccessScreen ? 'bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.22),rgba(255,255,255,0.96))]' : 'bg-black'}`}
         >
-          <video ref={camera.setVideoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
-          {capturedFrameUrl ? (
-            <img alt="Captured verification frame" className="absolute inset-0 z-[1] h-full w-full object-cover" src={capturedFrameUrl} />
-          ) : null}
-          <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
-          <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
+          {showSuccessScreen ? (
+            <div className="absolute inset-0 z-[6] flex items-center justify-center px-4 py-6 sm:px-6">
+              <div className="w-full max-w-xl rounded-[2rem] border border-black/5 bg-white/85 px-6 py-8 text-center shadow-2xl backdrop-blur sm:px-10 sm:py-10">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                </div>
+                <div className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700/90">
+                  {currentMatch.detail || 'Attendance recorded'}
+                </div>
+                <h2 className="mt-3 font-display text-3xl text-ink sm:text-4xl">
+                  {getGreeting(currentMatch.timestamp || Date.now())}
+                </h2>
+                <div className="mt-2 text-2xl font-semibold text-ink sm:text-3xl">
+                  {currentMatch.name}
+                </div>
+                <div className="mt-2 text-sm text-muted sm:text-base">
+                  {currentMatch.officeName || 'Unassigned office'}
+                </div>
 
-          <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/35 via-transparent to-black/25" />
-          {kioskState === 'scanning' ? <div className="absolute inset-0 z-[3] border-2 border-brand/80 shadow-[inset_0_0_60px_rgba(12,108,88,0.25)]" /> : null}
-          {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
-          {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
-
-          <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
-            <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
-            <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs sm:tracking-[0.18em]">{dateStr}</div>
-          </div>
-          <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
-            <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs sm:tracking-[0.18em]">{locationBadgeLabel}</div>
-            <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
-          </div>
-
-          {!camera.camOn ? (
-            <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
-              <div className="text-5xl opacity-60">◈</div>
-              <div className="text-sm font-medium">{camera.camError || 'Camera idle'}</div>
+                <div className="mt-7 grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 text-left sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Time</div>
+                    <div className="mt-2 font-display text-2xl text-ink">{currentMatch.time || formatTime(currentMatch.timestamp || Date.now())}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Employee ID</div>
+                    <div className="mt-2 text-lg font-semibold text-ink">{currentMatch.employeeId || '--'}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <>
+              <video ref={camera.setVideoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+              {capturedFrameUrl ? (
+                <img alt="Captured verification frame" className="absolute inset-0 z-[1] h-full w-full object-cover" src={capturedFrameUrl} />
+              ) : null}
+              <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
+              <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
+
+              <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/35 via-transparent to-black/25" />
+              {kioskState === 'scanning' ? <div className="absolute inset-0 z-[3] border-2 border-brand/80 shadow-[inset_0_0_60px_rgba(12,108,88,0.25)]" /> : null}
+              {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
+              {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
+
+              <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
+                <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
+                <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs sm:tracking-[0.18em]">{dateStr}</div>
+              </div>
+              <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs sm:tracking-[0.18em]">{locationBadgeLabel}</div>
+                <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
+              </div>
+
+              {!camera.camOn ? (
+                <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
+                  <div className="text-5xl opacity-60">◈</div>
+                  <div className="text-sm font-medium">{camera.camError || 'Camera idle'}</div>
+                </div>
+              ) : null}
+            </>
+          )}
           {alertState ? (
             <div className="absolute inset-0 z-[5] flex items-center justify-center bg-black/40 px-4 sm:px-6">
               <div className="w-full max-w-sm rounded-[1.25rem] bg-white px-5 py-5 text-center shadow-2xl sm:rounded-[1.5rem] sm:px-6 sm:py-6">

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '../../../../lib/firebase-admin'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '../../../../lib/admin-auth'
+import { buildAttendanceSummary } from '../../../../lib/attendance-summary'
 import { toLegacyAttendanceDate } from '../../../../lib/attendance-time'
+import { listOfficeRecords } from '../../../../lib/office-directory'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -23,31 +25,46 @@ export async function GET(request) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
+    const offices = await listOfficeRecords(db)
+    const legacyDateLabel = toLegacyAttendanceDate(date)
+
     const snapshot = await db
-      .collection('attendance_daily')
+      .collection('attendance')
       .where('dateKey', '==', date)
-      .orderBy('name')
       .get()
 
-    let records = snapshot.docs.map(record => ({
-      id: record.id,
-      ...record.data(),
-    }))
+    let attendance = snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
 
-    if (records.length === 0) {
+    if (attendance.length === 0) {
       const legacySnapshot = await db
-        .collection('attendance_daily')
-        .where('date', '==', toLegacyAttendanceDate(date))
-        .orderBy('name')
+        .collection('attendance')
+        .where('date', '==', legacyDateLabel)
         .get()
 
-      records = legacySnapshot.docs.map(record => ({
-        id: record.id,
-        ...record.data(),
-      }))
+      attendance = legacySnapshot.docs.map(record => ({ id: record.id, ...record.data() }))
     }
 
-    records = records.filter(record => adminSessionAllowsOffice(resolvedSession, record.officeId))
+    attendance = attendance
+      .map(entry => ({
+        ...entry,
+        timestamp: Number(entry?.timestamp ?? 0),
+        dateKey: entry?.dateKey || date,
+        dateLabel: entry?.dateLabel || entry?.date || legacyDateLabel,
+      }))
+      .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+      .sort((left, right) => Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0))
+
+    const summary = buildAttendanceSummary({
+      attendance,
+      persons: [],
+      offices,
+      targetDate: date,
+    })
+
+    const records = summary.map(row => ({
+      id: row.employeeId ? `${row.employeeId}_${date}` : `${row.name}_${date}`,
+      ...row,
+    }))
 
     return NextResponse.json({ ok: true, records })
   } catch (error) {

@@ -31,21 +31,6 @@ function getScopeLabel(roleScope) {
   return roleScope === 'office' ? 'Office admin' : 'Regional admin'
 }
 
-function formatDecisionLabel(code) {
-  const normalized = String(code || '').trim()
-  if (!normalized) return 'Unknown'
-
-  return normalized
-    .replaceAll('_', ' ')
-    .replace(/\b\w/g, char => char.toUpperCase())
-}
-
-function getDecisionTone(code) {
-  if (String(code || '').startsWith('accepted_')) return 'ok'
-  if (code === 'blocked_recent_duplicate') return 'warn'
-  return 'bad'
-}
-
 function formatApprovalLabel(status) {
   return String(status || '')
     .replace(/\b\w/g, char => char.toUpperCase())
@@ -306,21 +291,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   const visibleAttendance = useMemo(() => (
     attendance.filter(entry => (roleScope === 'regional' ? true : entry.officeId === selectedOfficeId))
   ), [attendance, roleScope, selectedOfficeId])
-
-  const decisionStats = useMemo(() => {
-    const counters = new Map()
-
-    visibleAttendance.forEach(entry => {
-      const code = String(entry.decisionCode || '').trim()
-      if (!code) return
-      counters.set(code, (counters.get(code) || 0) + 1)
-    })
-
-    return Array.from(counters.entries())
-      .map(([code, count]) => ({ code, count, tone: getDecisionTone(code) }))
-      .sort((left, right) => right.count - left.count)
-      .slice(0, 6)
-  }, [visibleAttendance])
 
   useEffect(() => {
     if (!firebaseEnabled) {
@@ -863,7 +833,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   if (!officesLoaded) {
     return (
       <AppShell contentClassName="px-4 py-5 sm:px-6 lg:px-8">
-        <div className="page-frame">
+        <div className="page-frame-fluid">
           <LoadingPanel
             body="Loading office configuration, scope, and admin workspace data."
             title="Preparing admin workspace"
@@ -884,7 +854,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       )}
       contentClassName="px-4 py-5 sm:px-6 lg:px-8"
     >
-      <div className="page-frame xl:h-[calc(100dvh-10.5rem)]">
+      <div className="page-frame-fluid xl:h-[calc(100dvh-10.5rem)]">
         <div className="grid min-h-0 gap-5 xl:h-full xl:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="xl:sticky xl:top-24 xl:h-[calc(100dvh-8rem)]">
             <div className="flex h-full flex-col gap-4 rounded-[2rem] border border-black/5 bg-[linear-gradient(180deg,rgba(12,108,88,0.08),rgba(255,255,255,0.96))] p-5 shadow-glow backdrop-blur">
@@ -1398,7 +1368,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                     <div className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-dark">Summary</div>
                     <h2 className="mt-2 font-display text-3xl text-ink">Daily attendance report</h2>
                   </div>
-                  <div className="grid w-full gap-3 sm:max-w-4xl sm:grid-cols-4">
+                  <div className="grid w-full gap-3 sm:grid-cols-4">
                     <Field label="Summary date">
                       <input
                         className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
@@ -1446,7 +1416,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:min-h-0 xl:flex-1">
+                <div className="mt-6 xl:min-h-0 xl:flex-1">
                   <div className="overflow-x-auto xl:min-h-0 xl:overflow-auto">
                     {!firebaseEnabled ? (
                       <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -1511,37 +1481,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                       </table>
                     )}
                   </div>
-
-                  <aside className="rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 xl:min-h-0 xl:overflow-auto">
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Decision codes</div>
-                    <h3 className="mt-2 text-xl font-semibold text-ink">Recent failure pattern</h3>
-
-                    <div className="mt-4 grid gap-3">
-                      {decisionStats.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-black/10 bg-white px-4 py-8 text-center text-sm text-muted">
-                          No recent decision codes available yet.
-                        </div>
-                      ) : (
-                        decisionStats.map(item => (
-                          <div key={item.code} className="flex items-center justify-between gap-3 rounded-2xl border border-black/5 bg-white px-4 py-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-semibold text-ink">{formatDecisionLabel(item.code)}</div>
-                              <div className="text-xs uppercase tracking-[0.12em] text-muted">{item.code}</div>
-                            </div>
-                            <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
-                              item.tone === 'ok'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : item.tone === 'warn'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-red-100 text-red-700'
-                            }`}>
-                              {item.count}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </aside>
                 </div>
               </motion.section>
             ) : null}
