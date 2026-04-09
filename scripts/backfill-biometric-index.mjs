@@ -1,5 +1,6 @@
 import { cert, getApp, getApps, initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
+import { isPersonBiometricActive, getEffectivePersonApprovalStatus } from '../lib/person-approval.js'
 
 function readServiceAccount() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim()
@@ -30,6 +31,18 @@ function safeArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+function normalizeStoredDescriptors(value) {
+  return safeArray(value)
+    .map(sample => {
+      if (Array.isArray(sample)) return sample.map(Number)
+      if (sample && typeof sample === 'object' && Array.isArray(sample.vector)) {
+        return sample.vector.map(Number)
+      }
+      return null
+    })
+    .filter(sample => Array.isArray(sample) && sample.length > 0)
+}
+
 function normalizeDescriptor(descriptor) {
   const vector = safeArray(descriptor).map(Number)
   const magnitude = Math.sqrt(vector.reduce((total, value) => total + (value * value), 0))
@@ -53,7 +66,7 @@ async function main() {
 
   for (const personRecord of personsSnapshot.docs) {
     const person = personRecord.data()
-    const descriptors = safeArray(person.descriptors)
+    const descriptors = normalizeStoredDescriptors(person.descriptors)
     const batch = db.batch()
 
     descriptors.forEach((descriptor, sampleIndex) => {
@@ -68,7 +81,8 @@ async function main() {
         name: String(person.name || ''),
         officeId: String(person.officeId || ''),
         officeName: String(person.officeName || ''),
-        active: person.active !== false,
+        active: isPersonBiometricActive(person),
+        approvalStatus: getEffectivePersonApprovalStatus(person),
         descriptor: safeArray(descriptor).map(Number),
         normalizedDescriptor,
         bucketA,

@@ -2,6 +2,7 @@ import './globals.css'
 import 'leaflet/dist/leaflet.css'
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/next'
+import AppProviders from '../components/AppProviders'
 
 export const metadata = {
   title: 'FaceAttend',
@@ -15,7 +16,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        {children}
+        <AppProviders>{children}</AppProviders>
         <Analytics />
         <SpeedInsights />
       </body>

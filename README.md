@@ -5,6 +5,7 @@ FaceAttend is a mobile-first face attendance system for DILG Region XII built wi
 It supports:
 - kiosk attendance
 - employee enrollment
+- public enrollment approval workflow
 - office and GPS management
 - office schedules and WFH rules
 - employee transfer and active/inactive status
@@ -41,6 +42,7 @@ Main entry page for:
 `/kiosk`
 
 Shared camera attendance mode with:
+- one-time biometric runtime boot before camera is shown
 - local live face detection
 - one final descriptor submission to the server
 - server-side identity decision
@@ -53,14 +55,14 @@ Wizard-based enrollment flow:
 1. capture face
 2. review preview
 3. enter employee details
-4. save enrollment
+4. submit enrollment for admin review
 
 Features:
 - automatic capture
 - employee ID required
 - duplicate employee ID blocking
 - duplicate face blocking
-- roster drawer for existing employees
+- pending approval status for public submissions
 
 ### 4. Admin
 `/admin/login`
@@ -69,7 +71,8 @@ Features:
 Admin features:
 - office GPS management
 - office schedule and WFH management
-- employee transfer between offices
+- employee CRUD
+- employee approval / rejection
 - employee activate / deactivate
 - attendance summary
 - CSV export
@@ -127,6 +130,7 @@ Bluntly:
 What is already improved:
 - matching no longer relies on name
 - inactive employees are excluded
+- pending / rejected enrollments are excluded from attendance matching
 - ambiguous matches are blocked
 - weak captures are rejected
 - final attendance identity is now decided by the server
@@ -134,6 +138,19 @@ What is already improved:
 What is still true:
 - live detection still happens on the client
 - attendance still relies on client-generated descriptors
+- approval and policy controls mitigate risk, but they do not cryptographically prove descriptor authenticity
+
+## Public Enrollment Control
+
+Public enrollment is intentionally allowed, but it is no longer immediately trusted.
+
+- public submissions land as `pending`
+- pending and rejected records are excluded from biometric attendance matching
+- office admins can review their office submissions
+- regional admins can review all submissions
+- approval, rejection, and review changes are audit logged
+
+This is the correct compromise for the current browser + Vercel + Firebase architecture.
 
 ## Project Structure
 
@@ -162,16 +179,31 @@ hooks/
 
 lib/
   admin-auth.js
+  admin-directory.js
   attendance-summary.js
+  attendance-time.js
+  audit-log.js
+  biometric-index.js
+  client-polling.js
+  biometrics/
+    enrollment-burst.js
+    face-api.js
+    oval-capture.js
   biometric-quality.js
   config.js
   data-store.js
-  face-api.js
-  firebase.js
   firebase-admin.js
+  firebase/
+    client.js
+  firestore-index-admin.js
   liveness.js
   office-admin-store.js
+  office-directory.js
+  office-store.js
   offices.js
+  person-approval.js
+  person-directory.js
+  rate-limit.js
   runtime-readiness.js
 
 public/
@@ -212,6 +244,47 @@ Check deployment environment:
 
 ```bash
 npm run check:env
+```
+
+## Deployment
+
+### 1. Deploy Firestore rules and indexes
+
+This repo now includes `firebase.json`, `firestore.rules`, and `firestore.indexes.json`.
+
+Deploy Firestore configuration with the Firebase CLI:
+
+```bash
+firebase deploy --only firestore --project YOUR_FIREBASE_PROJECT_ID
+```
+
+If you only need to push composite indexes:
+
+```bash
+firebase deploy --only firestore:indexes --project YOUR_FIREBASE_PROJECT_ID
+```
+
+### 2. Backfill biometric index records after schema changes
+
+```bash
+npm run backfill:biometric-index
+```
+
+### 3. Deploy the Next.js app to Vercel
+
+Required steps:
+
+1. create or link the Vercel project
+2. set the Firebase public env vars
+3. set `ADMIN_SESSION_SECRET`
+4. set `ADMIN_REGIONAL_PIN` if regional PIN login is required
+5. set `FIREBASE_SERVICE_ACCOUNT_JSON`
+6. deploy
+
+Production deploy command:
+
+```bash
+vercel --prod
 ```
 
 ## Environment Variables

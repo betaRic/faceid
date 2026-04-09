@@ -17,10 +17,16 @@ const dayOptions = [
   { value: 0, label: 'Sun' },
 ]
 
+const officeTypeOptions = [
+  'Regional Office',
+  'Provincial Office',
+  'HUC Office',
+]
+
 const officeTabs = [
   { id: 'location', label: 'Location' },
   { id: 'schedule', label: 'Schedule' },
-  { id: 'attendance', label: 'Attendance' },
+  { id: 'attendance', label: 'Scan rules' },
 ]
 
 export default function AdminOfficePanel({
@@ -30,6 +36,7 @@ export default function AdminOfficePanel({
   toggleDay,
   handleUseMyLocation,
   handleSaveOffice,
+  savePending = false,
   locationLoading = false,
   locationNotice = '',
   highlightLocationPin = false,
@@ -45,22 +52,51 @@ export default function AdminOfficePanel({
   }
 
   return (
-    <div className="grid max-h-[62vh] gap-4 overflow-auto pr-1 sm:gap-5">
+    <div className="grid gap-5">
       {officeDraftWarning ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {officeDraftWarning}
         </div>
       ) : null}
 
-      <section className="rounded-[1.4rem] border border-black/5 bg-stone-50 p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Office record</span>
-            <h3 className="mt-2 font-display text-2xl text-ink">{activeOffice.name}</h3>
-            <p className="mt-1 text-sm text-muted">{activeOffice.officeType} • {activeOffice.location}</p>
-          </div>
+      <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Office name">
+            <input
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              onChange={event => updateDraft('name', event.target.value)}
+              value={activeOffice.name}
+            />
+          </Field>
+          <Field label="Short name">
+            <input
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              onChange={event => updateDraft('shortName', event.target.value)}
+              value={activeOffice.shortName || ''}
+            />
+          </Field>
+          <Field label="Office type">
+            <select
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              onChange={event => updateDraft('officeType', event.target.value)}
+              value={activeOffice.officeType}
+            >
+              {officeTypeOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Location">
+            <input
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              onChange={event => updateDraft('location', event.target.value)}
+              value={activeOffice.location}
+            />
+          </Field>
+        </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="flex flex-col gap-3 lg:items-end">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[340px]">
             {officeTabs.map(tab => (
               <button
                 key={tab.id}
@@ -76,12 +112,25 @@ export default function AdminOfficePanel({
               </button>
             ))}
           </div>
+          <button
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-full"
+            disabled={savePending}
+            onClick={handleSaveOffice}
+            type="button"
+          >
+            {savePending ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Saving...
+              </>
+            ) : 'Save office settings'}
+          </button>
         </div>
       </section>
 
       {activeTab === 'location' ? (
-        <div className="grid gap-5">
-          <div className="md:col-span-2">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_420px]">
+          <div>
             <DataSection
               description="Map and geofence values used for on-site validation."
               title="Location"
@@ -120,16 +169,6 @@ export default function AdminOfficePanel({
           <DataTable
             rows={[
               {
-                label: 'Office name',
-                description: 'Primary display name used in admin and kiosk records.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('name', event.target.value)} value={activeOffice.name} />,
-              },
-              {
-                label: 'Location label',
-                description: 'Short place label shown in office lists.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('location', event.target.value)} value={activeOffice.location} />,
-              },
-              {
                 label: 'Latitude',
                 description: 'Geofence center latitude.',
                 control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('gps.latitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.latitude} />,
@@ -152,13 +191,26 @@ export default function AdminOfficePanel({
 
       {activeTab === 'schedule' ? (
         <div className="grid gap-5">
+          <DataSection
+            description="Generated from the configured work days and AM/PM duty times."
+            title="Schedule summary"
+          >
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <InfoCard label="Working days" value={formatCompactDays(activeOffice.workPolicy.workingDays)} />
+              <InfoCard label="WFH days" value={formatCompactDays(activeOffice.workPolicy.wfhDays)} />
+              <InfoCard
+                label="Morning session"
+                value={`${formatTime(activeOffice.workPolicy.morningIn)} to ${formatTime(activeOffice.workPolicy.morningOut)}`}
+              />
+              <InfoCard
+                label="Afternoon session"
+                value={`${formatTime(activeOffice.workPolicy.afternoonIn)} to ${formatTime(activeOffice.workPolicy.afternoonOut)}`}
+              />
+            </div>
+          </DataSection>
+
           <DataTable
             rows={[
-              {
-                label: 'Schedule label',
-                description: 'Human-readable office schedule.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.schedule', event.target.value)} value={activeOffice.workPolicy.schedule} />,
-              },
               {
                 label: 'Grace period',
                 description: 'Allowed late buffer before tardiness counts.',
@@ -219,11 +271,11 @@ export default function AdminOfficePanel({
                 control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.checkOutCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} />,
               },
             ]}
-            title="Attendance rules"
+            title="Scan rules"
           />
 
           <div className="rounded-[1.4rem] border border-black/5 bg-stone-50 p-4">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Current policy</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Current scan policy</span>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <PolicyBadge label="Check-in wait" value={`${activeOffice.workPolicy.checkInCooldownMinutes ?? 30} min`} />
               <PolicyBadge label="Check-out wait" value={`${activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} min`} />
@@ -231,12 +283,6 @@ export default function AdminOfficePanel({
           </div>
         </div>
       ) : null}
-
-      <div className="sticky bottom-0 z-10 bg-gradient-to-t from-[#f8f4ed] via-[#f8f4ed]/96 to-transparent pt-3">
-        <button className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark sm:rounded-full" onClick={handleSaveOffice} type="button">
-          Save office settings
-        </button>
-      </div>
     </div>
   )
 }
@@ -314,4 +360,32 @@ function Field({ label, children }) {
       {children}
     </label>
   )
+}
+
+function InfoCard({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-black/5 bg-white px-4 py-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-dark">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-ink">{value}</div>
+    </div>
+  )
+}
+
+function formatCompactDays(values = []) {
+  if (!values.length) return 'None'
+
+  return dayOptions
+    .filter(day => values.includes(day.value))
+    .map(day => day.label)
+    .join(', ')
+}
+
+function formatTime(value) {
+  if (!value) return '--'
+
+  const [hours, minutes] = String(value).split(':')
+  const numericHours = Number(hours)
+  const suffix = numericHours >= 12 ? 'PM' : 'AM'
+  const displayHours = ((numericHours + 11) % 12) + 1
+  return `${displayHours}:${minutes} ${suffix}`
 }

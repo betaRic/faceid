@@ -13,9 +13,20 @@ const defaultNavItems = [
   { href: '/admin', label: 'Admin' },
 ]
 
-export default function AppShell({ children, actions = null, navItems = defaultNavItems, contentClassName = '' }) {
+export default function AppShell({
+  children,
+  actions = null,
+  navItems = defaultNavItems,
+  contentClassName = '',
+  onBeforeNavigate = null,
+}) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const handleNavigate = href => {
+    if (typeof onBeforeNavigate === 'function' && href !== pathname) {
+      onBeforeNavigate(href)
+    }
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -38,6 +49,7 @@ export default function AppShell({ children, actions = null, navItems = defaultN
                       : 'text-muted hover:bg-black/[0.04] hover:text-ink'
                   }`}
                   href={item.href}
+                  onClick={() => handleNavigate(item.href)}
                 >
                   {item.label}
                 </Link>
@@ -81,7 +93,10 @@ export default function AppShell({ children, actions = null, navItems = defaultN
                     <Link
                       key={item.href}
                       href={item.href}
-                      onClick={() => setMobileOpen(false)}
+                      onClick={() => {
+                        handleNavigate(item.href)
+                        setMobileOpen(false)
+                      }}
                       className={`rounded-xl px-4 py-3 text-sm font-semibold transition-colors ${
                         active
                           ? 'bg-brand/10 text-brand-dark'

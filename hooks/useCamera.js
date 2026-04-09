@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 export function useCamera() {
   const videoRef = useRef(null)
@@ -17,11 +17,40 @@ export function useCamera() {
     if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
   }, [])
 
+  const attachStreamToVideo = useCallback(async () => {
+    const video = videoRef.current
+    const stream = streamRef.current
+    if (!video || !stream) return
+
+    if (video.srcObject !== stream) {
+      video.srcObject = stream
+    }
+
+    if (video.paused) {
+      await video.play()
+    }
+  }, [])
+
+  const setVideoRef = useCallback(node => {
+    videoRef.current = node
+
+    if (node && streamRef.current) {
+      attachStreamToVideo().catch(() => {})
+    }
+  }, [attachStreamToVideo])
+
   const start = useCallback(async () => {
     if (startPromiseRef.current) return startPromiseRef.current
 
     if (streamRef.current && videoRef.current?.srcObject === streamRef.current) {
       setCamError(null)
+      setCamOn(true)
+      return streamRef.current
+    }
+
+    if (streamRef.current) {
+      setCamError(null)
+      await attachStreamToVideo()
       setCamOn(true)
       return streamRef.current
     }
@@ -33,16 +62,7 @@ export function useCamera() {
         const stream = await requestPreferredCameraStream()
 
         streamRef.current = stream
-
-        if (videoRef.current) {
-          if (videoRef.current.srcObject !== stream) {
-            videoRef.current.srcObject = stream
-          }
-
-          if (videoRef.current.paused) {
-            await videoRef.current.play()
-          }
-        }
+        await attachStreamToVideo()
 
         setCamOn(true)
         return stream
@@ -58,7 +78,7 @@ export function useCamera() {
     })()
 
     return startPromiseRef.current
-  }, [])
+  }, [attachStreamToVideo])
 
   const stop = useCallback(() => {
     if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop())
@@ -92,8 +112,9 @@ export function useCamera() {
 
   useEffect(() => () => stop(), [stop])
 
-  return {
+  return useMemo(() => ({
     videoRef,
+    setVideoRef,
     canvasRef,
     overlayRef,
     camOn,
@@ -102,7 +123,7 @@ export function useCamera() {
     stop,
     captureImageData,
     clearOverlay,
-  }
+  }), [camError, camOn, captureImageData, clearOverlay, setVideoRef, start, stop])
 }
 
 async function requestPreferredCameraStream() {

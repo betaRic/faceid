@@ -3,13 +3,20 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../../../lib/firebase-admin'
 import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName, resolveAdminSession } from '../../../../../lib/admin-auth'
 import { writeAuditLog } from '../../../../../lib/audit-log'
+import { clearOfficeRecordCache } from '../../../../../lib/office-directory'
 
 function normalizeOfficePayload(officeId, payload) {
   return {
     id: officeId,
+    code: String(payload?.code || '').trim(),
     name: String(payload?.name || '').trim(),
+    shortName: String(payload?.shortName || '').trim(),
     officeType: String(payload?.officeType || '').trim(),
     location: String(payload?.location || '').trim(),
+    provinceOrCity: String(payload?.provinceOrCity || '').trim(),
+    wifiSsid: String(payload?.wifiSsid || '').trim(),
+    status: String(payload?.status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active',
+    employees: Number(payload?.employees ?? 0),
     gps: {
       latitude: Number(payload?.gps?.latitude),
       longitude: Number(payload?.gps?.longitude),
@@ -86,6 +93,7 @@ export async function PUT(request, { params }) {
       ...office,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
+    clearOfficeRecordCache()
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

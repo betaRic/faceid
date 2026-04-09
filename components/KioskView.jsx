@@ -2,17 +2,18 @@
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { detectFaceBoxes, detectWithDescriptors } from '../lib/face-api'
+import { detectFaceBoxes, detectWithDescriptors } from '../lib/biometrics/face-api'
 import {
   CONFIRM_FRAMES,
   SCAN_INTERVAL_MS,
   CONFIRMED_HOLD_MS,
   UNKNOWN_DEBOUNCE_MS,
-  DETECTION_MAX_DIMENSION,
+  KIOSK_IDLE_DETECTION_MAX_DIMENSION,
   PREVIEW_MAX_DIMENSION,
   KIOSK_ATTEMPT_COOLDOWN_MS,
   KIOSK_FACE_LOSS_GRACE_MS,
 } from '../lib/config'
+import { buildAttendanceEntryTiming } from '../lib/attendance-time'
 import { useAudioCue } from '../hooks/useAudioCue'
 import AppShell from './AppShell'
 
@@ -92,37 +93,8 @@ function selectPrimaryFace(detections, sourceWidth, sourceHeight) {
     .sort((left, right) => right.score - left.score)[0] || null
 }
 
-function getCurrentPositionWithOptions(options = {}) {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Location services are not available on this device'))
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0,
-      ...options,
-    })
-  })
-}
-
-const GPS_CACHE_TTL_MS = 30 * 1000
-const GPS_REFRESH_INTERVAL_MS = 15 * 1000
 const VERIFICATION_BURST_FRAMES = 4
 const VERIFICATION_BURST_INTERVAL_MS = 80
-
-function getCachedPositionCoordinates(cacheRef) {
-  const cached = cacheRef.current
-  if (!cached) return null
-  if (Date.now() - cached.timestamp > GPS_CACHE_TTL_MS) return null
-
-  return {
-    latitude: cached.latitude,
-    longitude: cached.longitude,
-  }
-}
 
 function getSafeDecisionMessage(decisionCode) {
   switch (decisionCode) {
@@ -161,6 +133,11 @@ function getSafeDecisionMessage(decisionCode) {
         name: 'Attendance blocked',
         detail: 'Employee account is inactive.',
       }
+    case 'blocked_pending_approval':
+      return {
+        name: 'Pending approval',
+        detail: 'Enrollment exists but still needs admin approval.',
+      }
     case 'blocked_missing_office_config':
       return {
         name: 'Attendance blocked',
@@ -196,6 +173,8 @@ function formatDebugDetail(debug) {
 export default function KioskView({
   camera,
   modelsReady,
+  workspaceReady,
+  locationState,
   onLogAttendance,
   errorMessage,
 }) {
@@ -217,15 +196,13 @@ export default function KioskView({
   const unknownTimer = useRef(null)
   const resumeTimerRef = useRef(null)
   const previousStateRef = useRef('idle')
-  const cachedPositionRef = useRef(null)
-  const gpsRefreshPendingRef = useRef(false)
   const attemptCooldownUntilRef = useRef(0)
   const faceLossTimerRef = useRef(null)
   const pausedRef = useRef(false)
 
   const stopLoop = useCallback(() => {
     if (scanRef.current) {
-      window.clearInterval(scanRef.current)
+      window.clearTimeout(scanRef.current)
       scanRef.current = null
     }
     if (faceLossTimerRef.current) {
@@ -241,6 +218,12 @@ export default function KioskView({
   const wait = useCallback(duration => new Promise(resolve => {
     window.setTimeout(resolve, duration)
   }), [])
+
+  const pauseScanning = useCallback(() => {
+    pausedRef.current = true
+    stopLoop()
+    camera.clearOverlay()
+  }, [camera, stopLoop])
 
   const scheduleResume = useCallback((delay = KIOSK_ATTEMPT_COOLDOWN_MS) => {
     if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current)
@@ -274,45 +257,6 @@ export default function KioskView({
     tick()
     const interval = window.setInterval(tick, 1000)
     return () => window.clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return undefined
-
-    let active = true
-
-    const refreshPosition = async () => {
-      if (gpsRefreshPendingRef.current) return
-
-      gpsRefreshPendingRef.current = true
-
-      try {
-        const position = await getCurrentPositionWithOptions({
-          timeout: 5000,
-          maximumAge: GPS_CACHE_TTL_MS,
-        })
-
-        if (!active) return
-
-        cachedPositionRef.current = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          timestamp: Date.now(),
-        }
-      } catch {
-        // Keep the last known good position; scan flow will treat stale or missing cache as unavailable.
-      } finally {
-        gpsRefreshPendingRef.current = false
-      }
-    }
-
-    refreshPosition()
-    const interval = window.setInterval(refreshPosition, GPS_REFRESH_INTERVAL_MS)
-
-    return () => {
-      active = false
-      window.clearInterval(interval)
-    }
   }, [])
 
   const drawOverlay = useCallback((detection, sourceWidth, sourceHeight) => {
@@ -373,10 +317,13 @@ export default function KioskView({
 
     try {
       const canvas = camera.captureImageData({
-        maxWidth: DETECTION_MAX_DIMENSION,
-        maxHeight: DETECTION_MAX_DIMENSION,
+        maxWidth: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
+        maxHeight: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
       })
-      const detections = await detectFaceBoxes(canvas)
+      const detections = await detectFaceBoxes(canvas, {
+        allowEnhancedRetry: false,
+        minConfidence: 0.55,
+      })
       const primary = selectPrimaryFace(detections, canvas.width, canvas.height)
       const primaryDetection = primary?.detection || null
 
@@ -428,68 +375,85 @@ export default function KioskView({
 
         setCapturedFrameUrl(bestCapture.canvas.toDataURL('image/jpeg', 0.82))
         const verificationDetections = bestCapture.detections
+        const primaryVerification = selectPrimaryFace(
+          verificationDetections,
+          bestCapture.canvas.width,
+          bestCapture.canvas.height,
+        )
 
-        const coordinates = getCachedPositionCoordinates(cachedPositionRef)
-        const acceptedEntries = []
-        let noReliableMatchSeen = false
-        let latestDebug = ''
-
-        for (let index = 0; index < verificationDetections.length; index += 1) {
-          const detection = verificationDetections[index]
-
-          try {
-            const result = await onLogAttendance({
-              id: `${now}-${index}`,
-              name: '',
-              employeeId: '',
-              officeId: '',
-              officeName: '',
-              attendanceMode: '',
-              geofenceStatus: '',
-              confidence: 0,
-              timestamp: now + index,
-              date: new Date(now).toLocaleDateString('en-PH'),
-              time: formatTime(now + index),
-              latitude: coordinates?.latitude ?? null,
-              longitude: coordinates?.longitude ?? null,
-              descriptor: Array.from(detection.descriptor),
-            })
-
-            if (result.entry) acceptedEntries.push(result.entry)
-          } catch (error) {
-            if (error?.decisionCode === 'blocked_no_reliable_match') {
-              noReliableMatchSeen = true
-              latestDebug = formatDebugDetail(error?.debug)
-            }
-          }
+        if (verificationDetections.length > 1) {
+          setKioskState('blocked')
+          showAlertAndResume('Multiple faces detected. One employee at a time.', 2400)
+          confirmRef.current = 0
+          return
         }
 
-        if (acceptedEntries.length) {
-          setLastMeaningfulFailure('')
-          setFlashKey(value => value + 1)
-          setCurrentMatch({
-            name: `${acceptedEntries.length} employee${acceptedEntries.length > 1 ? 's' : ''} recorded`,
+        if (!primaryVerification?.detection?.descriptor) {
+          setKioskState('unknown')
+          showAlertAndResume('No reliable face match was found.')
+          confirmRef.current = 0
+          return
+        }
+
+        const coordinates = locationState?.coords || null
+        const timing = buildAttendanceEntryTiming(now)
+        let attendanceAccepted = false
+
+        try {
+          const result = await onLogAttendance({
+            id: `${now}`,
+            name: '',
+            employeeId: '',
+            officeId: '',
+            officeName: '',
+            attendanceMode: '',
+            geofenceStatus: '',
             confidence: 0,
-            officeName: null,
-            detail: acceptedEntries.map(entry => entry.name).join(', '),
+            timestamp: timing.timestamp,
+            dateKey: timing.dateKey,
+            dateLabel: timing.dateLabel,
+            date: timing.date,
+            time: timing.time,
+            latitude: coordinates?.latitude ?? null,
+            longitude: coordinates?.longitude ?? null,
+            descriptor: Array.from(primaryVerification.detection.descriptor),
           })
-          setKioskState('confirmed')
-          setAlertState(null)
-        } else if (noReliableMatchSeen) {
-          setKioskState('unknown')
-          showAlertAndResume('No reliable face match was found.', 2600, latestDebug)
-        } else {
-          setKioskState('unknown')
-          showAlertAndResume('No reliable face match was found.', 2600, latestDebug)
+
+          if (result.entry) {
+            setLastMeaningfulFailure('')
+            setFlashKey(value => value + 1)
+            setCurrentMatch({
+              name: result.entry.name || 'Attendance recorded',
+              confidence: result.entry.confidence ?? 0,
+              officeName: result.entry.officeName || null,
+              detail: `${result.entry.action === 'checkout' ? 'Check-out' : 'Check-in'} recorded`,
+            })
+            setKioskState('confirmed')
+            setAlertState(null)
+            attendanceAccepted = true
+          } else {
+            setKioskState('unknown')
+            showAlertAndResume('No reliable face match was found.')
+          }
+        } catch (error) {
+          const latestDebug = formatDebugDetail(error?.debug)
+          if (error?.decisionCode === 'blocked_no_reliable_match') {
+            setKioskState('unknown')
+            showAlertAndResume('No reliable face match was found.', 2600, latestDebug)
+          } else {
+            throw error
+          }
         }
 
         confirmRef.current = 0
 
-        window.clearTimeout(confirmedTimer.current)
-        confirmedTimer.current = window.setTimeout(() => {
-          confirmedTimer.current = null
-          scheduleResume(250)
-        }, CONFIRMED_HOLD_MS)
+        if (attendanceAccepted) {
+          window.clearTimeout(confirmedTimer.current)
+          confirmedTimer.current = window.setTimeout(() => {
+            confirmedTimer.current = null
+            scheduleResume(250)
+          }, CONFIRMED_HOLD_MS)
+        }
       }
     } catch (error) {
       attemptCooldownUntilRef.current = Date.now() + KIOSK_ATTEMPT_COOLDOWN_MS
@@ -537,20 +501,28 @@ export default function KioskView({
 
   const startLoop = useCallback(() => {
     if (scanRef.current) return
-    scanRef.current = window.setInterval(runScan, SCAN_INTERVAL_MS)
+
+    const scheduleNext = (delay = 0) => {
+      scanRef.current = window.setTimeout(async () => {
+        scanRef.current = null
+        await runScan()
+
+        if (!pausedRef.current) {
+          scheduleNext(SCAN_INTERVAL_MS)
+        }
+      }, delay)
+    }
+
+    pausedRef.current = false
+    scheduleNext()
   }, [runScan])
 
   useEffect(() => {
-    camera.start().then(() => startLoop())
-    return () => stopLoop()
-  }, [camera, startLoop, stopLoop])
-
-  useEffect(() => {
-    if (!modelsReady) return
+    if (!workspaceReady || !modelsReady || !camera.camOn) return () => {}
     stopLoop()
     startLoop()
     return stopLoop
-  }, [modelsReady, startLoop, stopLoop])
+  }, [camera.camOn, modelsReady, startLoop, stopLoop, workspaceReady])
 
   useEffect(() => {
     const previous = previousStateRef.current
@@ -567,9 +539,15 @@ export default function KioskView({
   const isConfirmed = kioskState === 'confirmed'
   const isUnknown = kioskState === 'unknown'
   const isBlocked = kioskState === 'blocked'
+  const locationBadgeLabel = locationState?.ready
+    ? 'Location ready'
+    : locationState?.bypassed
+      ? 'WFH fallback'
+      : 'Location pending'
   return (
     <AppShell
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
+      onBeforeNavigate={pauseScanning}
     >
       <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
         <motion.section
@@ -578,7 +556,7 @@ export default function KioskView({
           transition={{ duration: 0.35, ease: 'easeOut' }}
           className="relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:rounded-[1.75rem] xl:min-h-[calc(100dvh-10.5rem)]"
         >
-          <video ref={camera.videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+          <video ref={camera.setVideoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
           {capturedFrameUrl ? (
             <img alt="Captured verification frame" className="absolute inset-0 z-[1] h-full w-full object-cover" src={capturedFrameUrl} />
           ) : null}
@@ -590,9 +568,13 @@ export default function KioskView({
           {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
           {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
 
-          <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] bg-white/92 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:rounded-full sm:px-5 sm:py-3">
-            <div className="font-display text-lg leading-none text-ink sm:text-3xl">{clock}</div>
-            <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-muted sm:text-xs sm:tracking-[0.18em]">{dateStr}</div>
+          <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
+            <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
+            <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs sm:tracking-[0.18em]">{dateStr}</div>
+          </div>
+          <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs sm:tracking-[0.18em]">{locationBadgeLabel}</div>
+            <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
           </div>
 
           {!camera.camOn ? (

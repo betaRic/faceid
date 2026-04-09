@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
-import { REGION12_OFFICES, calculateDistanceMeters, isOfficeWfhDay } from '../../../lib/offices'
+import { calculateDistanceMeters, isOfficeWfhDay } from '../../../lib/offices'
 import { AMBIGUOUS_MATCH_MARGIN, DISTANCE_THRESHOLD } from '../../../lib/config'
 import { deriveDailyAttendanceRecord, getNextAttendanceAction } from '../../../lib/daily-attendance'
 import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
 import { euclideanDistance, matchBiometricIndexCandidates, queryBiometricIndexCandidates } from '../../../lib/biometric-index'
+import { buildAttendanceEntryTiming, toLegacyAttendanceDate } from '../../../lib/attendance-time'
+import { getOfficeRecord, listOfficeRecords } from '../../../lib/office-directory'
+import { isPersonApproved } from '../../../lib/person-approval'
 
 function normalizeStoredDescriptors(value) {
   return (Array.isArray(value) ? value : [])
@@ -21,7 +24,6 @@ function normalizeStoredDescriptors(value) {
 
 function normalizeEntry(body) {
   return {
-    id: String(body?.id || '').trim(),
     name: String(body?.name || '').trim(),
     employeeId: String(body?.employeeId || '').trim(),
     officeId: String(body?.officeId || '').trim(),
@@ -31,6 +33,8 @@ function normalizeEntry(body) {
     confidence: Number(body?.confidence ?? 0),
     timestamp: Number(body?.timestamp),
     date: String(body?.date || '').trim(),
+    dateKey: String(body?.dateKey || '').trim(),
+    dateLabel: String(body?.dateLabel || '').trim(),
     time: String(body?.time || '').trim(),
     latitude: body?.latitude == null ? null : Number(body.latitude),
     longitude: body?.longitude == null ? null : Number(body.longitude),
@@ -38,21 +42,7 @@ function normalizeEntry(body) {
   }
 }
 
-const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000
-
 function validateEntry(entry) {
-  if (!entry.id) {
-    return 'Attendance payload is incomplete.'
-  }
-
-  if (!Number.isFinite(entry.timestamp) || !entry.date || !entry.time) {
-    return 'Attendance timestamp is invalid.'
-  }
-
-  if (Math.abs(entry.timestamp - Date.now()) > TIMESTAMP_TOLERANCE_MS) {
-    return 'Attendance timestamp is too far from server time.'
-  }
-
   if (entry.descriptor.length !== 128 || entry.descriptor.some(value => !Number.isFinite(value))) {
     return 'Face descriptor is required for attendance verification.'
   }
@@ -62,19 +52,19 @@ function validateEntry(entry) {
     return 'Face descriptor is not valid.'
   }
 
+  if ((entry.latitude == null) !== (entry.longitude == null)) {
+    return 'GPS coordinates must include both latitude and longitude.'
+  }
+
+  if (entry.latitude != null && !Number.isFinite(entry.latitude)) {
+    return 'Latitude is not valid.'
+  }
+
+  if (entry.longitude != null && !Number.isFinite(entry.longitude)) {
+    return 'Longitude is not valid.'
+  }
+
   return null
-}
-
-async function getOffice(db, officeId) {
-  const record = await db.collection('offices').doc(officeId).get()
-  if (record.exists) return { id: record.id, ...record.data() }
-  return REGION12_OFFICES.find(office => office.id === officeId) || null
-}
-
-async function getAllOffices(db) {
-  const snapshot = await db.collection('offices').get()
-  if (snapshot.empty) return REGION12_OFFICES
-  return snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
 }
 
 async function getPersonsForOfficeIds(db, officeIds) {
@@ -102,7 +92,7 @@ async function getPersonsForOfficeIds(db, officeIds) {
     })
   })
 
-  return Array.from(deduped.values())
+  return Array.from(deduped.values()).filter(person => isPersonApproved(person))
 }
 
 function getCandidateOfficeIds(offices, entry) {
@@ -142,7 +132,7 @@ function getCandidateOfficeIds(offices, entry) {
 }
 
 async function getCandidateAttendanceContext(db, entry) {
-  const offices = await getAllOffices(db)
+  const offices = await listOfficeRecords(db)
   const candidateContext = getCandidateOfficeIds(offices, entry)
 
   return {
@@ -151,58 +141,111 @@ async function getCandidateAttendanceContext(db, entry) {
   }
 }
 
-async function getAttendanceLogsForDate(db, employeeId, date) {
+async function getAttendanceLogsForDate(db, employeeId, dateKey, legacyDateLabel = '') {
   const snapshot = await db
     .collection('attendance')
     .where('employeeId', '==', employeeId)
-    .where('date', '==', date)
+    .where('dateKey', '==', dateKey)
     .orderBy('timestamp', 'asc')
     .get()
 
-  return snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
-}
+  if (!snapshot.empty) {
+    return snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
+  }
 
-async function getLatestAttendanceLog(db, employeeId) {
-  const snapshot = await db
+  if (!legacyDateLabel) return []
+
+  const legacySnapshot = await db
     .collection('attendance')
     .where('employeeId', '==', employeeId)
-    .orderBy('timestamp', 'desc')
-    .limit(1)
+    .where('date', '==', legacyDateLabel)
+    .orderBy('timestamp', 'asc')
     .get()
 
-  if (snapshot.empty) return null
-  const record = snapshot.docs[0]
-  return { id: record.id, ...record.data() }
+  return legacySnapshot.docs.map(record => ({ id: record.id, ...record.data() }))
 }
 
 function buildAttendanceDocId(employeeId, timestamp) {
   return `${employeeId}_${timestamp}`
 }
 
-async function writeAttendanceAtomically(db, entry) {
-  const attendanceRef = db.collection('attendance').doc(buildAttendanceDocId(entry.employeeId, entry.timestamp))
+function buildStoredAttendanceEntry(entry) {
+  const { descriptor, ...storedEntry } = entry
+  return storedEntry
+}
+
+function buildAttendanceEntryPreview(entry) {
+  if (!entry) return null
+
+  return {
+    id: entry.id || buildAttendanceDocId(entry.employeeId, entry.timestamp),
+    name: entry.name || '',
+    employeeId: entry.employeeId || '',
+    officeId: entry.officeId || '',
+    officeName: entry.officeName || '',
+    action: entry.action || '',
+    attendanceMode: entry.attendanceMode || '',
+    geofenceStatus: entry.geofenceStatus || '',
+    decisionCode: entry.decisionCode || '',
+    confidence: Number(entry.confidence ?? 0),
+    timestamp: Number(entry.timestamp ?? 0),
+    dateKey: entry.dateKey || '',
+    dateLabel: entry.dateLabel || entry.date || '',
+    date: entry.dateLabel || entry.date || '',
+    time: entry.time || '',
+  }
+}
+
+async function writeAttendanceAtomically(db, entry, cooldownMs) {
+  const attendanceId = buildAttendanceDocId(entry.employeeId, entry.timestamp)
+  const attendanceRef = db.collection('attendance').doc(attendanceId)
+  const attendanceLockRef = db.collection('attendance_locks').doc(entry.employeeId)
+  const storedEntry = buildStoredAttendanceEntry(entry)
+  const entryPreview = buildAttendanceEntryPreview({ ...storedEntry, id: attendanceId })
 
   return db.runTransaction(async transaction => {
-    const attendanceSnap = await transaction.get(attendanceRef)
+    const [attendanceSnap, attendanceLockSnap] = await Promise.all([
+      transaction.get(attendanceRef),
+      transaction.get(attendanceLockRef),
+    ])
 
-    // Idempotency: exact same doc ID already committed
     if (attendanceSnap.exists) {
       return {
         ok: false,
         duplicate: true,
-        entry: { id: attendanceSnap.id, ...attendanceSnap.data() },
+        entry: buildAttendanceEntryPreview({ id: attendanceSnap.id, ...attendanceSnap.data() }),
+      }
+    }
+
+    const lastTimestamp = Number(attendanceLockSnap.data()?.lastTimestamp ?? 0)
+    if (cooldownMs > 0 && lastTimestamp && entry.timestamp - lastTimestamp < cooldownMs) {
+      return {
+        ok: false,
+        duplicate: true,
+        entry: attendanceLockSnap.data()?.lastEntryPreview || null,
       }
     }
 
     transaction.set(attendanceRef, {
-      ...entry,
-      descriptor: FieldValue.delete(),
+      ...storedEntry,
       createdAt: FieldValue.serverTimestamp(),
     }, { merge: false })
 
+    transaction.set(attendanceLockRef, {
+      employeeId: entry.employeeId,
+      officeId: entry.officeId,
+      lastTimestamp: entry.timestamp,
+      lastAttendanceId: attendanceId,
+      lastAction: entry.action || '',
+      lastEntryPreview: entryPreview,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+
     return {
       ok: true,
-      attendanceId: attendanceRef.id,
+      attendanceId,
+      storedEntry,
+      entryPreview,
     }
   })
 }
@@ -265,6 +308,10 @@ function matchPersonFromDescriptor(persons, descriptor) {
   }
 }
 
+function getLegacyDateLabel(dateKey) {
+  return toLegacyAttendanceDate(dateKey)
+}
+
 async function resolveMatchedPerson(db, matchResult) {
   if (!matchResult.ok) return matchResult
 
@@ -282,18 +329,24 @@ async function resolveMatchedPerson(db, matchResult) {
     person: { id: record.id, ...record.data() },
     distance: matchResult.distance,
     confidence: matchResult.confidence,
+    debug: matchResult.debug || null,
   }
 }
 
 export async function POST(request) {
-  const entry = normalizeEntry(await request.json().catch(() => null))
-  const validationError = validateEntry(entry)
+  const requestEntry = normalizeEntry(await request.json().catch(() => null))
+  const validationError = validateEntry(requestEntry)
   if (validationError) {
     return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
   }
 
   try {
     const db = getAdminDb()
+    const entry = {
+      ...requestEntry,
+      ...buildAttendanceEntryTiming(Date.now()),
+    }
+    const hasCoordinates = Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude)
     const ip = getRequestIp(request)
     const ipLimit = await enforceRateLimit(db, {
       key: `attendance-ip:${ip}`,
@@ -314,10 +367,12 @@ export async function POST(request) {
       return NextResponse.json(
         {
           ok: false,
-          message: 'No candidate office matched the current attendance context.',
-          decisionCode: 'blocked_no_candidate_office',
+          message: hasCoordinates
+            ? 'No candidate office matched the current attendance context.'
+            : 'Location is required for on-site attendance. WFH attendance only works when the assigned office is on a configured WFH day.',
+          decisionCode: hasCoordinates ? 'blocked_no_candidate_office' : 'blocked_missing_gps',
         },
-        { status: 404 },
+        { status: hasCoordinates ? 404 : 400 },
       )
     }
 
@@ -360,7 +415,14 @@ export async function POST(request) {
       )
     }
 
-    const office = await getOffice(db, person.officeId)
+    if (!isPersonApproved(person)) {
+      return NextResponse.json(
+        { ok: false, message: 'Employee enrollment is still pending admin approval.', decisionCode: 'blocked_pending_approval' },
+        { status: 403 },
+      )
+    }
+
+    const office = await getOfficeRecord(db, person.officeId)
 
     if (!office) {
       return NextResponse.json(
@@ -390,27 +452,17 @@ export async function POST(request) {
     entry.name = person.name
     entry.employeeId = person.employeeId
     entry.officeId = person.officeId
-    entry.officeName = person.officeName
+    entry.officeName = office.name
     entry.confidence = personMatch.confidence ?? entry.confidence
     entry.id = buildAttendanceDocId(entry.employeeId, entry.timestamp)
+    entry.action = ''
 
-    const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.date)
+    const legacyDateLabel = getLegacyDateLabel(entry.dateKey)
+    const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.dateKey, legacyDateLabel)
     const nextAction = getNextAttendanceAction(dailyLogs, office)
-    const latestAttendanceLog = await getLatestAttendanceLog(db, entry.employeeId)
+    entry.action = nextAction
     const cooldownMinutes = getCooldownForActionMinutes(office, nextAction)
     const cooldownMs = cooldownMinutes * 60 * 1000
-
-    if (latestAttendanceLog && cooldownMs > 0 && entry.timestamp - latestAttendanceLog.timestamp < cooldownMs) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: `${nextAction === 'checkin' ? 'Check-in' : 'Check-out'} available again after ${cooldownMinutes} minute(s).`,
-          decisionCode: 'blocked_recent_duplicate',
-          entry: latestAttendanceLog,
-        },
-        { status: 409 },
-      )
-    }
 
     if (officeMatchedWfh) {
       entry.attendanceMode = 'WFH'
@@ -441,12 +493,12 @@ export async function POST(request) {
       entry.decisionCode = 'accepted_onsite'
     }
 
-    const writeResult = await writeAttendanceAtomically(db, entry)
+    const writeResult = await writeAttendanceAtomically(db, entry, cooldownMs)
     if (!writeResult.ok) {
       return NextResponse.json(
         {
           ok: false,
-          message: 'Attendance already recorded recently.',
+          message: `${nextAction === 'checkin' ? 'Check-in' : 'Check-out'} available again after ${cooldownMinutes} minute(s).`,
           decisionCode: 'blocked_recent_duplicate',
           entry: writeResult.entry,
         },
@@ -454,29 +506,46 @@ export async function POST(request) {
       )
     }
 
-    const refreshedDailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.date)
+    const refreshedDailyLogs = [...dailyLogs, writeResult.storedEntry]
+      .sort((left, right) => Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0))
     const dailyRecord = deriveDailyAttendanceRecord({
       logs: refreshedDailyLogs,
       person,
       office,
-      targetDate: entry.date,
+      targetDateKey: entry.dateKey,
+      targetDateLabel: entry.dateLabel,
     })
 
-    await db.collection('attendance_daily').doc(`${entry.employeeId}_${entry.date}`).set({
+    await db.collection('attendance_daily').doc(`${entry.employeeId}_${entry.dateKey}`).set({
       ...dailyRecord,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
 
     return NextResponse.json({
       ok: true,
-      entry: {
-        ...entry,
-      },
+      entry: writeResult.entryPreview,
       debug: personMatch.debug || null,
     })
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to log attendance.'
+
+    if (message.includes('FAILED_PRECONDITION') && message.includes('query requires an index')) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Attendance index is still building in Firestore. Try again after the index finishes.',
+          decisionCode: 'blocked_index_building',
+          debug: {
+            source: 'firestore',
+            detail: message,
+          },
+        },
+        { status: 503 },
+      )
+    }
+
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to log attendance.' },
+      { ok: false, message, decisionCode: 'blocked_server_error' },
       { status: 500 },
     )
   }

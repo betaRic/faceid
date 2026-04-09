@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import KioskView from './KioskView'
 import RegisterView from './RegisterView'
 import AppShell from './AppShell'
-import { useCamera } from '../hooks/useCamera'
-import { firebaseEnabled, localFallbackAllowed, productionFirebaseRequired } from '../lib/firebase'
-import { loadModels } from '../lib/face-api'
-import { REGION12_OFFICES } from '../lib/offices'
+import { firebaseEnabled, localFallbackAllowed, productionFirebaseRequired } from '../lib/firebase/client'
+import { formatAttendanceDateKey, formatAttendanceDateLabel } from '../lib/attendance-time'
+import { useBiometricRuntime } from './BiometricRuntimeProvider'
+import { subscribeToPublicOffices } from '../lib/office-store'
 import {
   deletePersonRecord,
   logAttendanceEntry,
@@ -33,34 +33,33 @@ export default function FaceAttendanceApp({
   showRegistrationAction = true,
   showRosterTools = loadPersons,
 }) {
-  const camera = useCamera()
+  const runtime = useBiometricRuntime()
+  const {
+    camera,
+    modelStatus,
+    modelsReady,
+    runtimeError,
+    bootStage,
+    workspaceReady,
+    retry,
+    locationState,
+    continueWithoutLocation,
+    canBypassLocation,
+  } = runtime
   const [page, setPage] = useState(initialPage)
   const [persons, setPersons] = useState([])
   const [attendance, setAttendance] = useState([])
-  const [modelsReady, setModelsReady] = useState(false)
-  const [modelStatus, setModelStatus] = useState('Initializing...')
+  const [offices, setOffices] = useState([])
   const [dataStatus, setDataStatus] = useState(getDefaultDataStatus(loadPersons))
   const [errorMessage, setErrorMessage] = useState(null)
 
   useEffect(() => {
-    let mounted = true
+    const unsubscribe = subscribeToPublicOffices(
+      nextOffices => setOffices(nextOffices),
+      error => setErrorMessage(error instanceof Error ? error.message : 'Failed to load offices.'),
+    )
 
-    loadModels(message => {
-      if (mounted) setModelStatus(message)
-    })
-      .then(() => {
-        if (mounted) {
-          setModelsReady(true)
-          setModelStatus('Ready')
-        }
-      })
-      .catch(error => {
-        if (mounted) setModelStatus(`Failed: ${error.message}`)
-      })
-
-    return () => {
-      mounted = false
-    }
+    return unsubscribe
   }, [])
 
   useEffect(() => {
@@ -109,12 +108,18 @@ export default function FaceAttendanceApp({
   }, [loadAttendance])
 
   const todayLogCount = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-PH')
-    return attendance.filter(entry => entry.date === today).length
+    const now = Date.now()
+    const todayKey = formatAttendanceDateKey(now)
+    const todayLabel = formatAttendanceDateLabel(now)
+
+    return attendance.filter(entry => (
+      (entry.dateKey && entry.dateKey === todayKey)
+        || (!entry.dateKey && entry.date === todayLabel)
+    )).length
   }, [attendance])
 
-  const handleEnrollPerson = useCallback(async (profile, descriptor) => {
-    const result = await upsertPersonSample(persons, profile, descriptor)
+  const handleEnrollPerson = useCallback(async (profile, descriptors) => {
+    const result = await upsertPersonSample(persons, profile, descriptors)
     if (result.mode === 'local') setPersons(result.persons)
     return result
   }, [persons])
@@ -174,6 +179,25 @@ export default function FaceAttendanceApp({
     )
   }
 
+  if (!workspaceReady) {
+    return (
+      <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
+        <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
+          <BiometricWorkspaceGate
+            bootStage={bootStage}
+            canBypassLocation={canBypassLocation}
+            errorMessage={runtimeError}
+            locationState={locationState}
+            modelStatus={modelStatus}
+            onContinueWithoutLocation={continueWithoutLocation}
+            page={page}
+            onRetry={retry}
+          />
+        </div>
+      </AppShell>
+    )
+  }
+
   return (
     <div className="app-shell">
       {page === 'kiosk' ? (
@@ -182,14 +206,14 @@ export default function FaceAttendanceApp({
           camera={camera}
           dataStatus={dataStatus}
           errorMessage={errorMessage}
+          locationState={locationState}
           modelStatus={modelStatus}
           modelsReady={modelsReady}
+          workspaceReady={workspaceReady}
           onGoRegister={showRegistrationAction ? () => {
-            camera.stop()
             setPage('register')
           } : null}
           onLogAttendance={handleLogAttendance}
-          offices={REGION12_OFFICES}
           persons={persons}
           todayLogCount={todayLogCount}
         />
@@ -200,17 +224,97 @@ export default function FaceAttendanceApp({
           dataStatus={dataStatus}
           errorMessage={errorMessage}
           modelsReady={modelsReady}
+          workspaceReady={workspaceReady}
           onBack={() => {
-            camera.stop()
             setPage('kiosk')
           }}
           onDeletePerson={handleDeletePerson}
           onEnrollPerson={handleEnrollPerson}
-          offices={REGION12_OFFICES}
+          offices={offices}
           persons={persons}
           showRosterTools={showRosterTools}
         />
       )}
+    </div>
+  )
+}
+
+function BiometricWorkspaceGate({
+  page,
+  bootStage,
+  modelStatus,
+  errorMessage,
+  locationState,
+  onRetry,
+  canBypassLocation,
+  onContinueWithoutLocation,
+}) {
+  const title = page === 'register' ? 'Preparing enrollment workspace' : 'Preparing attendance kiosk'
+  const detail = errorMessage
+    ? errorMessage
+    : bootStage === 'location'
+      ? 'Checking device location before the camera is shown. On-site attendance needs GPS; WFH can continue without it if location is unavailable.'
+    : bootStage === 'camera'
+      ? 'Starting the camera only after biometric models are fully ready.'
+      : 'Loading biometric models before the camera is shown to the user.'
+  const statusLabel = errorMessage
+    ? 'Workspace blocked'
+    : bootStage === 'location'
+      ? 'Checking location'
+    : bootStage === 'camera'
+      ? 'Starting camera'
+      : 'Loading biometric runtime'
+  const runtimeStatus = errorMessage
+    ? (bootStage === 'location' ? (locationState?.status || 'Location unavailable') : modelStatus)
+    : bootStage === 'location'
+      ? (locationState?.status || 'Checking location')
+      : modelStatus
+
+  return (
+    <div className="mx-auto flex h-full min-h-[calc(100dvh-8.25rem)] max-w-4xl items-center justify-center xl:min-h-[calc(100dvh-10.5rem)]">
+      <div className="w-full rounded-[2rem] border border-black/5 bg-[linear-gradient(180deg,rgba(12,108,88,0.08),rgba(255,255,255,0.98))] p-6 shadow-glow backdrop-blur sm:p-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-dark">{statusLabel}</div>
+          <h1 className="mt-4 font-display text-4xl text-ink sm:text-5xl">{title}</h1>
+          <p className="mt-4 text-sm leading-8 text-muted sm:text-base">
+            {detail}
+          </p>
+
+          <div className="mt-8 rounded-[1.5rem] border border-black/5 bg-white/90 p-5 shadow-sm">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand/10 text-brand-dark">
+              <span className={`h-6 w-6 rounded-full border-2 border-current border-t-transparent ${errorMessage ? '' : 'animate-spin'}`} />
+            </div>
+            <div className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted">Runtime status</div>
+            <div className="mt-2 text-lg font-semibold text-ink">{runtimeStatus}</div>
+            {bootStage === 'location' && locationState?.error ? (
+              <div className="mt-3 rounded-[1rem] bg-amber-50 px-4 py-3 text-sm leading-7 text-amber-900">
+                {locationState.error}
+              </div>
+            ) : null}
+          </div>
+
+          {errorMessage ? (
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <button
+                className="inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                onClick={onRetry}
+                type="button"
+              >
+                Retry workspace startup
+              </button>
+              {canBypassLocation ? (
+                <button
+                  className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+                  onClick={onContinueWithoutLocation}
+                  type="button"
+                >
+                  Continue for WFH only
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }

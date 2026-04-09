@@ -8,7 +8,10 @@
     "start": "next start",
     "check:env": "node scripts/check-env.mjs",
     "test": "node tests/run-tests.mjs",
-    "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs"
+    "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs",
+    "sync:firestore-indexes": "node scripts/sync-firestore-indexes.mjs",
+    "deploy:firestore": "firebase deploy --only firestore",
+    "deploy:firestore:indexes": "firebase deploy --only firestore:indexes"
   },
   "dependencies": {
     "@vercel/analytics": "^1.5.0",

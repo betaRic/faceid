@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '../../../../lib/firebase-admin'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '../../../../lib/admin-auth'
+import { toLegacyAttendanceDate } from '../../../../lib/attendance-time'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -24,14 +25,29 @@ export async function GET(request) {
 
     const snapshot = await db
       .collection('attendance_daily')
-      .where('date', '==', date)
+      .where('dateKey', '==', date)
       .orderBy('name')
       .get()
 
-    const records = snapshot.docs.map(record => ({
+    let records = snapshot.docs.map(record => ({
       id: record.id,
       ...record.data(),
-    })).filter(record => adminSessionAllowsOffice(resolvedSession, record.officeId))
+    }))
+
+    if (records.length === 0) {
+      const legacySnapshot = await db
+        .collection('attendance_daily')
+        .where('date', '==', toLegacyAttendanceDate(date))
+        .orderBy('name')
+        .get()
+
+      records = legacySnapshot.docs.map(record => ({
+        id: record.id,
+        ...record.data(),
+      }))
+    }
+
+    records = records.filter(record => adminSessionAllowsOffice(resolvedSession, record.officeId))
 
     return NextResponse.json({ ok: true, records })
   } catch (error) {
