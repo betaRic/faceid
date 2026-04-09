@@ -13,6 +13,8 @@ export default function AdminLogin() {
   const router = useRouter()
   const [status, setStatus] = useState('')
   const [googleSubmitting, setGoogleSubmitting] = useState(false)
+  const [pin, setPin] = useState('')
+  const [pinSubmitting, setPinSubmitting] = useState(false)
 
   async function handleGoogleLogin() {
     if (!auth) {
@@ -52,6 +54,38 @@ export default function AdminLogin() {
     }
   }
 
+  async function handlePinLogin() {
+    if (!pin.trim()) {
+      setStatus('Enter the regional PIN.')
+      return
+    }
+
+    setPinSubmitting(true)
+    setStatus('')
+
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: pin.trim() }),
+      })
+
+      const data = await response.json().catch(() => ({ ok: false, message: 'Regional PIN login failed.' }))
+      if (!response.ok || !data.ok) {
+        setStatus(data.message || 'Regional PIN login failed.')
+        setPinSubmitting(false)
+        return
+      }
+
+      setPin('')
+      router.push('/admin')
+      router.refresh()
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Unable to complete regional PIN login.')
+      setPinSubmitting(false)
+    }
+  }
+
   return (
     <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
       <div className="page-frame flex flex-col gap-4">
@@ -84,21 +118,47 @@ export default function AdminLogin() {
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Admin Login</span>
             <h2 className="mt-2 font-display text-3xl text-ink">Login</h2>
 
-            <button
-              className="mt-6 inline-flex w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-full"
-              disabled={googleSubmitting}
-              onClick={handleGoogleLogin}
-              type="button"
-            >
-              {googleSubmitting ? 'Signing in with Google...' : 'Continue with Google'}
-            </button>
+            <div className="mt-6 grid gap-3">
+              <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Regional access</div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <input
+                    className="w-full rounded-[1rem] border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand sm:rounded-full"
+                    onChange={event => setPin(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') handlePinLogin()
+                    }}
+                    placeholder="Enter regional PIN"
+                    type="password"
+                    value={pin}
+                  />
+                  <button
+                    className="inline-flex min-h-12 items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-full"
+                    disabled={pinSubmitting}
+                    onClick={handlePinLogin}
+                    type="button"
+                  >
+                    {pinSubmitting ? 'Signing in...' : 'Continue with PIN'}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-full"
+                disabled={googleSubmitting}
+                onClick={handleGoogleLogin}
+                type="button"
+              >
+                {googleSubmitting ? 'Signing in with Google...' : 'Continue with Google'}
+              </button>
+            </div>
 
             {status ? (
               <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm leading-7 text-warn">{status}</div>
             ) : null}
 
             <div className="mt-5 rounded-2xl border border-black/5 bg-stone-50 px-4 py-4 text-sm leading-7 text-muted">
-              Approved admin account required.
+              Regional PIN login is regional-only. Google login still uses approved admin records.
             </div>
           </motion.div>
         </section>

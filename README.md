@@ -232,12 +232,14 @@ Server secrets:
 
 ```env
 ADMIN_SESSION_SECRET=
+ADMIN_REGIONAL_PIN=
 FIREBASE_SERVICE_ACCOUNT_JSON=
 ADMIN_ALLOWED_EMAILS=
 ```
 
 Notes:
 - `FIREBASE_SERVICE_ACCOUNT_JSON` should be stored as a secret, not as a file in the repo
+- `ADMIN_REGIONAL_PIN` enables regional-only PIN login on `/admin/login`
 - set `ADMIN_ALLOWED_EMAILS` to a comma-separated list of Google emails allowed to bootstrap the first regional admin
 - use `ADMIN_ALLOWED_EMAILS` only to bootstrap the first regional admin
 - use Firestore `admins` records for all ongoing per-user admin access in a shared deployment
