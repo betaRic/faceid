@@ -180,6 +180,19 @@ function getSafeDecisionMessage(decisionCode) {
   }
 }
 
+function formatDebugDetail(debug) {
+  if (!debug) return ''
+
+  const parts = []
+  if (debug.source) parts.push(`src ${debug.source}`)
+  if (Number.isFinite(debug.bestDistance)) parts.push(`best ${debug.bestDistance.toFixed(3)}`)
+  if (Number.isFinite(debug.threshold)) parts.push(`th ${debug.threshold.toFixed(3)}`)
+  if (Number.isFinite(debug.secondDistance)) parts.push(`second ${debug.secondDistance.toFixed(3)}`)
+  if (Number.isFinite(debug.candidateCount)) parts.push(`cand ${debug.candidateCount}`)
+
+  return parts.join(' | ')
+}
+
 export default function KioskView({
   camera,
   modelsReady,
@@ -193,6 +206,7 @@ export default function KioskView({
   const [capturedFrameUrl, setCapturedFrameUrl] = useState(null)
   const [flashKey, setFlashKey] = useState(0)
   const [alertState, setAlertState] = useState(null)
+  const [alertDebug, setAlertDebug] = useState('')
   const [, setLastMeaningfulFailure] = useState('')
   const playAudioCue = useAudioCue()
 
@@ -238,13 +252,15 @@ export default function KioskView({
       setCapturedFrameUrl(null)
       setCurrentMatch(null)
       setAlertState(null)
+      setAlertDebug('')
       setKioskState('idle')
       camera.clearOverlay()
     }, delay)
   }, [camera])
 
-  const showAlertAndResume = useCallback((message, delay = 2200) => {
+  const showAlertAndResume = useCallback((message, delay = 2200, debug = '') => {
     setAlertState(message)
+    setAlertDebug(debug)
     scheduleResume(delay)
   }, [scheduleResume])
 
@@ -416,6 +432,7 @@ export default function KioskView({
         const coordinates = getCachedPositionCoordinates(cachedPositionRef)
         const acceptedEntries = []
         let noReliableMatchSeen = false
+        let latestDebug = ''
 
         for (let index = 0; index < verificationDetections.length; index += 1) {
           const detection = verificationDetections[index]
@@ -442,6 +459,7 @@ export default function KioskView({
           } catch (error) {
             if (error?.decisionCode === 'blocked_no_reliable_match') {
               noReliableMatchSeen = true
+              latestDebug = formatDebugDetail(error?.debug)
             }
           }
         }
@@ -459,10 +477,10 @@ export default function KioskView({
           setAlertState(null)
         } else if (noReliableMatchSeen) {
           setKioskState('unknown')
-          showAlertAndResume('No reliable face match was found.')
+          showAlertAndResume('No reliable face match was found.', 2600, latestDebug)
         } else {
           setKioskState('unknown')
-          showAlertAndResume('No reliable face match was found.')
+          showAlertAndResume('No reliable face match was found.', 2600, latestDebug)
         }
 
         confirmRef.current = 0
@@ -511,7 +529,7 @@ export default function KioskView({
           detail: safeDecision.detail,
         })
       }
-      showAlertAndResume(safeDecision.detail)
+      showAlertAndResume(safeDecision.detail, 2600, formatDebugDetail(error?.debug))
     } finally {
       busyRef.current = false
     }
@@ -588,6 +606,11 @@ export default function KioskView({
               <div className="w-full max-w-sm rounded-[1.25rem] bg-white px-5 py-5 text-center shadow-2xl sm:rounded-[1.5rem] sm:px-6 sm:py-6">
                 <div className="text-sm font-semibold uppercase tracking-[0.18em] text-warn">Scan result</div>
                 <div className="mt-3 text-base font-semibold text-ink sm:text-lg">{alertState}</div>
+                {alertDebug ? (
+                  <div className="mt-3 rounded-[0.9rem] bg-stone-100 px-3 py-2 text-xs text-muted">
+                    {alertDebug}
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}

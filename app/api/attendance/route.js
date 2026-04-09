@@ -231,9 +231,19 @@ function matchPersonFromDescriptor(persons, descriptor) {
 
   const best = scored[0]
   const second = scored[1] || null
+  const debug = {
+    source: 'office_fallback',
+    candidateCount: scored.length,
+    bestDistance: best?.distance ?? null,
+    secondDistance: second?.distance ?? null,
+    threshold: DISTANCE_THRESHOLD,
+    ambiguousMargin: AMBIGUOUS_MATCH_MARGIN,
+    bestName: best?.person?.name ?? '',
+    secondName: second?.person?.name ?? '',
+  }
 
   if (!best || best.distance > DISTANCE_THRESHOLD) {
-    return { ok: false, decisionCode: 'blocked_no_reliable_match', message: 'No reliable face match was found.' }
+    return { ok: false, decisionCode: 'blocked_no_reliable_match', message: 'No reliable face match was found.', debug }
   }
 
   const margin = second ? second.distance - best.distance : 1
@@ -242,6 +252,7 @@ function matchPersonFromDescriptor(persons, descriptor) {
       ok: false,
       decisionCode: 'blocked_ambiguous_match',
       message: `Face match is too close between ${best.person.name} and ${second.person.name}.`,
+      debug,
     }
   }
 
@@ -250,6 +261,7 @@ function matchPersonFromDescriptor(persons, descriptor) {
     person: best.person,
     distance: best.distance,
     confidence: 1 - best.distance,
+    debug,
   }
 }
 
@@ -330,7 +342,12 @@ export async function POST(request) {
 
     if (!personMatch.ok) {
       return NextResponse.json(
-        { ok: false, message: personMatch.message, decisionCode: personMatch.decisionCode || 'blocked_no_reliable_match' },
+        {
+          ok: false,
+          message: personMatch.message,
+          decisionCode: personMatch.decisionCode || 'blocked_no_reliable_match',
+          debug: personMatch.debug || null,
+        },
         { status: 403 },
       )
     }
@@ -455,6 +472,7 @@ export async function POST(request) {
       entry: {
         ...entry,
       },
+      debug: personMatch.debug || null,
     })
   } catch (error) {
     return NextResponse.json(
