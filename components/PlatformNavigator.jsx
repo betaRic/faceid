@@ -3,164 +3,374 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import AppShell from './AppShell'
+import BrandMark from './BrandMark'
 
-const modules = [
-  {
-    title: 'Kiosk',
-    description: 'Attendance scanning for enrolled employees.',
-    href: '/kiosk',
-    accent: 'from-brand/12 to-brand/4',
-    border: 'border-brand/20',
-    tag: 'Live',
-    tagColor: 'bg-emerald-100 text-emerald-700',
-  },
-  {
-    title: 'Registration',
-    description: 'Public face registration for new users.',
-    href: '/registration',
-    accent: 'from-accent/12 to-accent/4',
-    border: 'border-accent/20',
-    tag: 'Open',
-    tagColor: 'bg-amber-100 text-amber-700',
-  },
-  {
-    title: 'Admin',
-    description: 'Registration, office setup, employee management, and reports.',
-    href: '/admin/login',
-    accent: 'from-ink/90 to-stone-800/90',
-    border: 'border-ink/10',
-    tag: 'Restricted',
-    tagColor: 'bg-white/20 text-white/80',
-    dark: true,
-  },
-]
-
-const stats = [
-  { label: 'Offices', value: '5' },
-  { label: 'GPS Sites', value: '5' },
-  { label: 'Admin Auth', value: 'Google' },
-]
-
+/* ─── Animation variants ─────────────────────────────────── */
 const stagger = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.07 } },
+  show: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
 }
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
 }
 
+const fadeIn = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { duration: 0.4, ease: 'easeOut' } },
+}
+
+/* ─── Data ───────────────────────────────────────────────── */
+const stats = [
+  { value: '5', label: 'Active Offices', icon: '🏛️' },
+  { value: 'GPS', label: 'Location Verified', icon: '📍' },
+  { value: '99%', label: 'Match Accuracy', icon: '🎯' },
+  { value: 'Live', label: 'Real-time Logs', icon: '⚡' },
+]
+
+const modules = [
+  {
+    title: 'Attendance Kiosk',
+    tag: 'Live',
+    tagStyle: 'bg-emerald-100 text-emerald-700',
+    href: '/kiosk',
+    description: 'Walk-up face scanning for enrolled employees. The camera detects your face automatically, verifies identity on the server, and records your attendance in real time.',
+    features: ['Auto face detection', 'Server-side matching', 'GPS geofence validation', 'AM / PM session tracking'],
+    icon: (
+      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+    ),
+    accent: 'from-navy to-navy-light',
+    border: 'border-navy/10',
+    bg: 'bg-white',
+  },
+  {
+    title: 'Employee Registration',
+    tag: 'Open',
+    tagStyle: 'bg-amber-100 text-amber-700',
+    href: '/registration',
+    description: 'Enroll a new employee or add biometric samples to an existing record. Submissions go through an admin approval workflow before attendance is unlocked.',
+    features: ['Burst multi-frame capture', 'Oval face alignment guide', 'Duplicate face detection', 'Pending admin approval'],
+    icon: (
+      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+      </svg>
+    ),
+    accent: 'from-amber to-amber-light',
+    border: 'border-amber/20',
+    bg: 'bg-white',
+  },
+  {
+    title: 'Admin Portal',
+    tag: 'Restricted',
+    tagStyle: 'bg-slate-100 text-slate',
+    href: '/admin/login',
+    description: 'Full-featured administration dashboard. Manage offices, GPS geofences, work schedules, employee records, approval queues, and export daily attendance summaries.',
+    features: ['Office & GPS setup', 'Employee CRUD + approval', 'Daily attendance summary', 'CSV export & audit logs'],
+    icon: (
+      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+    accent: 'from-slate to-slate-light',
+    border: 'border-slate/10',
+    bg: 'bg-white',
+  },
+]
+
+const howItWorks = [
+  {
+    step: '01',
+    title: 'Employee Enrolls',
+    body: 'A new employee visits the registration page, aligns their face in the oval guide, and submits their details. Multiple burst frames are captured for accuracy.',
+  },
+  {
+    step: '02',
+    title: 'Admin Approves',
+    body: 'The enrollment lands in the admin approval queue. The admin reviews the submitted photo and activates the record. Pending records cannot clock in.',
+  },
+  {
+    step: '03',
+    title: 'Kiosk Scans',
+    body: 'At the office, the employee steps in front of the kiosk. The camera detects the face, the server matches the descriptor, and GPS confirms the location.',
+  },
+  {
+    step: '04',
+    title: 'Attendance Recorded',
+    body: 'Check-in and check-out are logged with timestamps. The admin portal shows AM/PM sessions, late minutes, undertime, and exportable daily summaries.',
+  },
+]
+
+const trustPoints = [
+  { label: 'Server-side identity decisions', desc: 'Face matching and GPS validation happen on the server — not the browser.' },
+  { label: 'Approval-gated biometrics', desc: 'Public enrollments cannot access attendance until an admin explicitly approves the record.' },
+  { label: 'Rate limiting & audit logs', desc: 'Every login, approval, and attendance event is rate-limited and logged for accountability.' },
+  { label: 'Geofence enforcement', desc: 'On-site attendance is only accepted when the device is within the configured office GPS radius.' },
+]
+
+/* ─── Component ──────────────────────────────────────────── */
 export default function PlatformNavigator() {
   return (
-    <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="page-frame space-y-6">
-        <motion.section
-          variants={stagger}
-          initial="hidden"
-          animate="show"
-          className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,420px)] xl:items-end"
-        >
-          <div className="space-y-6">
+    <AppShell>
+      {/* ══════════════════════════════════════
+          HERO — Navy gradient, full width
+      ══════════════════════════════════════ */}
+      <section className="relative w-full overflow-hidden bg-hero-gradient">
+        {/* Decorative circles */}
+        <div className="pointer-events-none absolute -right-32 -top-32 h-[500px] w-[500px] rounded-full bg-sky/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 -left-24 h-[400px] w-[400px] rounded-full bg-amber/8 blur-3xl" />
+
+        <div className="container-fluid relative z-10 py-20 md:py-28 lg:py-32">
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            animate="show"
+            className="mx-auto max-w-4xl text-center"
+          >
             <motion.div variants={fadeUp}>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-brand-dark">
-                <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-                DILG Region XII
+              <BrandMark inverted className="mx-auto mb-8 justify-center" />
+            </motion.div>
+
+            <motion.div variants={fadeUp}>
+              <span className="badge badge-sky mb-5 inline-flex">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber animate-pulse" />
+                DILG Region XII · Live System
               </span>
             </motion.div>
 
             <motion.h1
               variants={fadeUp}
-              className="max-w-3xl font-display text-3xl leading-tight text-ink sm:text-5xl"
+              className="text-4xl font-bold leading-tight text-white sm:text-5xl lg:text-6xl"
             >
-              Face attendance for regional government offices.
+              Face Attendance<br />
+              <span className="text-amber">Made Simple.</span>
             </motion.h1>
 
-            <motion.p variants={fadeUp} className="max-w-2xl text-base leading-relaxed text-muted">
-              Open the kiosk for attendance or the admin portal for registration and setup.
+            <motion.p
+              variants={fadeUp}
+              className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-sky/80 sm:text-lg"
+            >
+              A GPS-validated, biometric attendance platform built for DILG Region XII government offices.
+              Server-enforced identity verification with a full admin workflow — from enrollment to daily summary exports.
             </motion.p>
 
-            <motion.div variants={fadeUp} className="flex flex-wrap gap-3">
-              <Link
-                href="/kiosk"
-                className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-dark hover:shadow-md"
-              >
+            <motion.div variants={fadeUp} className="mt-10 flex flex-wrap items-center justify-center gap-3">
+              <Link href="/kiosk" className="btn btn-amber text-base px-7 py-3.5 shadow-glow-orange">
                 Open Kiosk
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>
               </Link>
-              <Link
-                href="/admin/login"
-                className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-6 py-3 text-sm font-semibold text-ink shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-stone-50 hover:shadow-md"
-              >
-                Admin Portal
+              <Link href="/registration" className="btn btn-white text-base px-7 py-3.5">
+                Register Employee
+              </Link>
+              <Link href="/admin/login" className="btn text-sm px-6 py-3.5 border border-sky/30 text-sky hover:bg-sky/10 rounded-full transition-all duration-200">
+                Admin Login →
               </Link>
             </motion.div>
-          </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════
+          STATS BAR — Full width
+      ══════════════════════════════════════ */}
+      <section className="w-full border-y border-navy/8 bg-white">
+        <div className="container-fluid py-6">
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="grid grid-cols-2 gap-4 sm:grid-cols-4"
+          >
+            {stats.map(stat => (
+              <motion.div key={stat.label} variants={fadeIn} className="flex items-center gap-3 py-2">
+                <span className="text-2xl">{stat.icon}</span>
+                <div>
+                  <div className="text-xl font-bold text-navy">{stat.value}</div>
+                  <div className="text-xs font-medium text-slate-light">{stat.label}</div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════
+          MODULES — Full width cards
+      ══════════════════════════════════════ */}
+      <section className="w-full bg-off-white py-16 lg:py-20">
+        <div className="container-fluid">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.45 }}
+            className="mb-10"
+          >
+            <span className="badge badge-navy mb-3">Platform Modules</span>
+            <h2 className="text-2xl font-bold text-navy sm:text-3xl">Three focused tools, one system.</h2>
+            <p className="mt-2 max-w-xl text-slate-light">
+              Each module has a single responsibility — kiosk attendance, enrollment, or administration. No feature bloat.
+            </p>
+          </motion.div>
 
           <motion.div
             variants={stagger}
             initial="hidden"
-            animate="show"
-          className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="grid gap-5 md:grid-cols-3"
           >
-            {stats.map(stat => (
-              <motion.div
-                key={stat.label}
-                variants={fadeUp}
-                className="rounded-2xl border border-black/[0.06] bg-white/70 p-4 backdrop-blur-sm"
-              >
-                <div className="font-display text-3xl text-ink">{stat.value}</div>
-                <div className="mt-1 text-xs font-semibold uppercase tracking-widest text-muted">{stat.label}</div>
-              </motion.div>
-            ))}
-          </motion.div>
-        </motion.section>
-
-        <motion.section
-          variants={stagger}
-          initial="hidden"
-          animate="show"
-          className="rounded-[1.8rem] border border-black/[0.06] bg-white/55 p-4 shadow-glow backdrop-blur-sm"
-        >
-          <motion.h2
-            variants={fadeUp}
-            className="mb-4 text-xs font-semibold uppercase tracking-widest text-muted"
-          >
-            Modules
-          </motion.h2>
-
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-3">
-            {modules.map(module => (
-              <motion.div key={module.href} variants={fadeUp}>
+            {modules.map(mod => (
+              <motion.div key={mod.href} variants={fadeUp}>
                 <Link
-                  href={module.href}
-                  className={`group flex h-full min-h-[160px] flex-col justify-between rounded-2xl border ${module.border} bg-gradient-to-br ${module.accent} p-4 sm:min-h-[180px] sm:p-5 backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg`}
+                  href={mod.href}
+                  className="group flex h-full flex-col rounded-2xl border border-navy/8 bg-white p-6 shadow-card transition-all duration-200 hover:-translate-y-1 hover:shadow-card-hover"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <h3 className={`font-display text-2xl ${module.dark ? 'text-white' : 'text-ink'}`}>
-                      {module.title}
-                    </h3>
-                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest ${module.tagColor}`}>
-                      {module.tag}
-                    </span>
+                  {/* Header */}
+                  <div className="mb-4 flex items-start justify-between">
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${mod.accent} text-white shadow-sm`}>
+                      {mod.icon}
+                    </div>
+                    <span className={`badge ${mod.tagStyle}`}>{mod.tag}</span>
                   </div>
-                  <div>
-                    <p className={`mb-3 text-sm leading-relaxed ${module.dark ? 'text-white/70' : 'text-muted'}`}>
-                      {module.description}
-                    </p>
-                    <span className={`text-xs font-semibold ${module.dark ? 'text-white/60' : 'text-brand'}`}>
-                      Open →
-                    </span>
+
+                  {/* Title + description */}
+                  <h3 className="mb-2 text-lg font-bold text-navy">{mod.title}</h3>
+                  <p className="mb-5 text-sm leading-relaxed text-slate-light flex-1">{mod.description}</p>
+
+                  {/* Feature list */}
+                  <ul className="mb-5 space-y-1.5">
+                    {mod.features.map(f => (
+                      <li key={f} className="flex items-center gap-2 text-xs font-medium text-slate">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* CTA */}
+                  <div className="flex items-center gap-1 text-sm font-semibold text-navy group-hover:text-navy-light transition-colors">
+                    Open module
+                    <svg className="h-4 w-4 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </div>
                 </Link>
               </motion.div>
             ))}
-          </div>
-        </motion.section>
+          </motion.div>
+        </div>
+      </section>
 
-      </div>
+      {/* ══════════════════════════════════════
+          HOW IT WORKS — Full width
+      ══════════════════════════════════════ */}
+      <section className="w-full bg-white py-16 lg:py-20">
+        <div className="container-fluid">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.45 }}
+            className="mb-10"
+          >
+            <span className="badge badge-amber mb-3">How It Works</span>
+            <h2 className="text-2xl font-bold text-navy sm:text-3xl">From enrollment to daily report.</h2>
+          </motion.div>
+
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            {howItWorks.map((step, i) => (
+              <motion.div
+                key={step.step}
+                variants={fadeUp}
+                className="relative rounded-2xl border border-navy/8 bg-sky-light/40 p-6"
+              >
+                {/* Connector line */}
+                {i < howItWorks.length - 1 && (
+                  <div className="absolute -right-2.5 top-10 z-10 hidden h-px w-5 bg-navy/20 lg:block" />
+                )}
+                <div className="mb-4 text-3xl font-black text-navy/10 leading-none">{step.step}</div>
+                <h3 className="mb-2 text-base font-bold text-navy">{step.title}</h3>
+                <p className="text-sm leading-relaxed text-slate-light">{step.body}</p>
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════
+          TRUST / SECURITY — Full width navy band
+      ══════════════════════════════════════ */}
+      <section className="w-full bg-navy py-16 lg:py-20">
+        <div className="container-fluid">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.45 }}
+            className="mb-10"
+          >
+            <span className="badge badge-sky mb-3">Security Model</span>
+            <h2 className="text-2xl font-bold text-white sm:text-3xl">Built for accountability.</h2>
+            <p className="mt-2 max-w-xl text-sky/70 text-sm">
+              This is a controlled rollout system, not a toy. Every meaningful action is logged, rate-limited, and enforced server-side.
+            </p>
+          </motion.div>
+
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            {trustPoints.map(point => (
+              <motion.div key={point.label} variants={fadeUp} className="rounded-xl border border-sky/10 bg-navy-light/60 p-5">
+                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-amber/15">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber" />
+                </div>
+                <div className="mb-1 text-sm font-semibold text-white">{point.label}</div>
+                <div className="text-xs leading-relaxed text-sky/60">{point.desc}</div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════
+          CTA — Full width
+      ══════════════════════════════════════ */}
+      <section className="w-full bg-off-white py-14">
+        <div className="container-fluid">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.4 }}
+            className="flex flex-col items-center justify-between gap-6 rounded-2xl border border-navy/8 bg-white p-8 shadow-card sm:flex-row"
+          >
+            <div>
+              <h3 className="text-xl font-bold text-navy">Ready to start?</h3>
+              <p className="mt-1 text-sm text-slate-light">Open the kiosk for walk-up attendance or log in to the admin portal to manage your office.</p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-3">
+              <Link href="/kiosk" className="btn btn-primary px-6 py-3">Open Kiosk</Link>
+              <Link href="/admin/login" className="btn btn-ghost px-6 py-3">Admin Portal</Link>
+            </div>
+          </motion.div>
+        </div>
+      </section>
     </AppShell>
   )
 }

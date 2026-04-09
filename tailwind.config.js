@@ -9,33 +9,120 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        canvas: '#f4efe6',
-        ink: '#2a2017',
-        muted: '#6e5b4d',
-        brand: {
-          DEFAULT: '#0c6c58',
-          dark: '#094f41',
-          soft: '#d9efe9',
+        // Primary palette
+        navy: {
+          DEFAULT: '#032D57',
+          light: '#0A4278',
+          dark: '#021E3A',
+          50: '#E6EEF7',
+          100: '#C5D8E8',
+          200: '#9BBDD8',
+          300: '#6EA0C6',
+          400: '#4A83B2',
+          500: '#032D57',
+          600: '#02254A',
+          700: '#021E3A',
+          800: '#01162B',
+          900: '#000D1B',
         },
-        accent: {
-          DEFAULT: '#cf7a2d',
-          soft: '#f4dfca',
+        // Accent orange
+        amber: {
+          DEFAULT: '#EA921F',
+          light: '#F2A94B',
+          dark: '#C97A10',
+          50: '#FEF5E7',
+          100: '#FDEACF',
+          200: '#FAD09A',
+          300: '#F5B55A',
+          400: '#F2A94B',
+          500: '#EA921F',
+          600: '#C97A10',
+          700: '#A6640C',
+          800: '#834E09',
+          900: '#5C3606',
         },
-        sand: {
-          DEFAULT: '#fffaf2',
-          strong: '#efe3d2',
+        // Sky blue - secondary
+        sky: {
+          DEFAULT: '#C5D8E8',
+          light: '#E0ECF5',
+          dark: '#9BBDD8',
         },
-        warn: '#c84e2f',
+        // Slate neutral
+        slate: {
+          DEFAULT: '#38444B',
+          light: '#5A6875',
+          dark: '#252E34',
+          50: '#F0F3F5',
+          100: '#D8DFE4',
+          200: '#B5C0C8',
+          300: '#8D9DA7',
+          400: '#677885',
+          500: '#38444B',
+          600: '#2C353B',
+          700: '#20282D',
+          800: '#141A1E',
+          900: '#080B0D',
+        },
       },
       fontFamily: {
-        sans: ['Outfit', 'sans-serif'],
-        display: ['Space Grotesk', 'sans-serif'],
+        sans: ['Poppins', 'sans-serif'],
+        display: ['Poppins', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
+      fontSize: {
+        '2xs': ['0.65rem', { lineHeight: '1rem' }],
+      },
+      fontWeight: {
+        thin: '100',
+        extralight: '200',
+        light: '300',
+        normal: '400',
+        medium: '500',
+        semibold: '600',
+        bold: '700',
+        extrabold: '800',
+        black: '900',
       },
       boxShadow: {
-        glow: '0 20px 60px rgba(73, 42, 16, 0.14)',
+        card: '0 4px 24px rgba(3, 45, 87, 0.08)',
+        'card-hover': '0 8px 40px rgba(3, 45, 87, 0.14)',
+        glow: '0 0 40px rgba(3, 45, 87, 0.12)',
+        'glow-orange': '0 0 40px rgba(234, 146, 31, 0.18)',
+        inner: 'inset 0 2px 8px rgba(3, 45, 87, 0.08)',
+      },
+      borderRadius: {
+        '4xl': '2rem',
+        '5xl': '2.5rem',
       },
       backgroundImage: {
-        'hero-wash': 'radial-gradient(circle at top left, rgba(207, 122, 45, 0.18), transparent 30%), radial-gradient(circle at top right, rgba(12, 108, 88, 0.15), transparent 24%), linear-gradient(180deg, #f8f4ed 0%, #f4efe6 100%)',
+        'hero-gradient': 'linear-gradient(135deg, #032D57 0%, #0A4278 50%, #021E3A 100%)',
+        'card-gradient': 'linear-gradient(135deg, #FFFFFF 0%, #E0ECF5 100%)',
+        'orange-gradient': 'linear-gradient(135deg, #EA921F 0%, #F2A94B 100%)',
+        'navy-fade': 'linear-gradient(180deg, rgba(3,45,87,0) 0%, rgba(3,45,87,0.06) 100%)',
+      },
+      animation: {
+        'fade-up': 'fadeUp 0.5s ease-out forwards',
+        'fade-in': 'fadeIn 0.4s ease-out forwards',
+        'slide-in': 'slideIn 0.4s ease-out forwards',
+        shimmer: 'shimmer 2s linear infinite',
+      },
+      keyframes: {
+        fadeUp: {
+          '0%': { opacity: '0', transform: 'translateY(16px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        slideIn: {
+          '0%': { opacity: '0', transform: 'translateX(-12px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
       },
     },
   },

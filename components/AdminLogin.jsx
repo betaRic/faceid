@@ -21,22 +21,18 @@ export default function AdminLogin() {
       setStatus('Firebase Auth is not configured in this deployment.')
       return
     }
-
     setGoogleSubmitting(true)
     setStatus('')
-
     try {
       const provider = new GoogleAuthProvider()
       provider.setCustomParameters({ prompt: 'select_account' })
       const credential = await signInWithPopup(auth, provider)
       const idToken = await credential.user.getIdToken(true)
-
       const response = await fetch('/api/admin/firebase-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken }),
       })
-
       const data = await response.json().catch(() => ({ ok: false, message: 'Google admin login failed.' }))
       if (!response.ok || !data.ok) {
         setStatus(data.message || 'Google admin login failed.')
@@ -44,7 +40,6 @@ export default function AdminLogin() {
         setGoogleSubmitting(false)
         return
       }
-
       await signOut(auth).catch(() => {})
       router.push('/admin')
       router.refresh()
@@ -55,28 +50,21 @@ export default function AdminLogin() {
   }
 
   async function handlePinLogin() {
-    if (!pin.trim()) {
-      setStatus('Enter the regional PIN.')
-      return
-    }
-
+    if (!pin.trim()) { setStatus('Enter the regional PIN.'); return }
     setPinSubmitting(true)
     setStatus('')
-
     try {
       const response = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: pin.trim() }),
       })
-
       const data = await response.json().catch(() => ({ ok: false, message: 'Regional PIN login failed.' }))
       if (!response.ok || !data.ok) {
         setStatus(data.message || 'Regional PIN login failed.')
         setPinSubmitting(false)
         return
       }
-
       setPin('')
       router.push('/admin')
       router.refresh()
@@ -87,82 +75,113 @@ export default function AdminLogin() {
   }
 
   return (
-    <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="page-frame flex flex-col gap-4">
-        <section className="grid gap-4 rounded-[1.6rem] border border-black/5 bg-white/70 p-5 shadow-glow backdrop-blur xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,460px)]">
-          <motion.div
+    <AppShell>
+      {/* Hero band */}
+      <section className="w-full bg-hero-gradient py-14">
+        <div className="container-fluid">
+          <BrandMark inverted />
+          <motion.h1
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            initial={{ opacity: 0, y: 18 }}
-            transition={{ duration: 0.4, ease: 'easeOut' }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="mt-5 text-3xl font-bold text-white sm:text-4xl"
           >
-            <BrandMark />
-            <h1 className="mt-3 font-display text-3xl leading-tight text-ink sm:text-4xl">
-              Admin login
-            </h1>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <Link
-                className="inline-flex items-center justify-center rounded-[1rem] border border-black/10 bg-white/80 px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white sm:rounded-full"
-                href="/"
-              >
-                Back to navigation
-              </Link>
-            </div>
-          </motion.div>
+            Admin Portal
+          </motion.h1>
+          <p className="mt-2 text-sm text-sky/70">Regional and office administrator access.</p>
+        </div>
+      </section>
 
+      {/* Login card */}
+      <section className="w-full bg-off-white py-10">
+        <div className="container-fluid">
           <motion.div
-            animate={{ opacity: 1, x: 0 }}
-            className="rounded-[1.5rem] border border-black/5 bg-white/90 p-5 shadow-glow"
-            initial={{ opacity: 0, x: 18 }}
-            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.15 }}
+            className="mx-auto max-w-lg"
           >
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Admin Login</span>
-            <h2 className="mt-2 font-display text-3xl text-ink">Login</h2>
+            <div className="card p-7">
+              <h2 className="text-xl font-bold text-navy">Sign in to your account</h2>
+              <p className="mt-1 text-sm text-slate-light">
+                Use your regional PIN or a Google account linked to an admin record.
+              </p>
 
-            <div className="mt-6 grid gap-3">
-              <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Regional access</div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                  <input
-                    className="w-full rounded-[1rem] border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand sm:rounded-full"
-                    onChange={event => setPin(event.target.value)}
-                    onKeyDown={event => {
-                      if (event.key === 'Enter') handlePinLogin()
-                    }}
-                    placeholder="Enter regional PIN"
-                    type="password"
-                    value={pin}
-                  />
-                  <button
-                    className="inline-flex min-h-12 items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-full"
-                    disabled={pinSubmitting}
-                    onClick={handlePinLogin}
-                    type="button"
-                  >
-                    {pinSubmitting ? 'Signing in...' : 'Continue with PIN'}
-                  </button>
+              <div className="mt-6 space-y-4">
+                {/* PIN login */}
+                <div className="rounded-xl border border-navy/8 bg-sky-light/40 p-5">
+                  <label className="field-label">Regional PIN</label>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      className="input flex-1"
+                      type="password"
+                      placeholder="Enter regional PIN"
+                      value={pin}
+                      onChange={e => setPin(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handlePinLogin() }}
+                    />
+                    <button
+                      className="btn btn-primary shrink-0 px-5"
+                      disabled={pinSubmitting}
+                      onClick={handlePinLogin}
+                      type="button"
+                    >
+                      {pinSubmitting ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : 'Continue'}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-navy/8" />
+                  <span className="text-xs font-medium text-slate-light">or</span>
+                  <div className="h-px flex-1 bg-navy/8" />
+                </div>
+
+                {/* Google login */}
+                <button
+                  className="btn btn-ghost w-full py-3 text-sm"
+                  disabled={googleSubmitting}
+                  onClick={handleGoogleLogin}
+                  type="button"
+                >
+                  {googleSubmitting ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-navy border-t-transparent" />
+                  ) : (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                  )}
+                  Continue with Google
+                </button>
               </div>
 
-              <button
-                className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-full"
-                disabled={googleSubmitting}
-                onClick={handleGoogleLogin}
-                type="button"
-              >
-                {googleSubmitting ? 'Signing in with Google...' : 'Continue with Google'}
-              </button>
-            </div>
+              {/* Error */}
+              {status && (
+                <div className="mt-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  {status}
+                </div>
+              )}
 
-            {status ? (
-              <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm leading-7 text-warn">{status}</div>
-            ) : null}
+              {/* Notice */}
+              <div className="mt-5 rounded-xl bg-sky-light/50 px-4 py-3 text-xs leading-relaxed text-slate">
+                Regional PIN login grants regional admin access. Google login is validated against admin records in Firestore.
+              </div>
 
-            <div className="mt-5 rounded-2xl border border-black/5 bg-stone-50 px-4 py-4 text-sm leading-7 text-muted">
-              Regional PIN login is regional-only. Google login still uses approved admin records.
+              <div className="mt-5">
+                <Link href="/" className="text-xs text-slate-light hover:text-navy transition-colors">
+                  ← Back to home
+                </Link>
+              </div>
             </div>
           </motion.div>
-        </section>
-      </div>
+        </div>
+      </section>
     </AppShell>
   )
 }
