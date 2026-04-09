@@ -6,7 +6,6 @@ import { AMBIGUOUS_MATCH_MARGIN, DISTANCE_THRESHOLD } from '../../../lib/config'
 import { deriveDailyAttendanceRecord, getNextAttendanceAction } from '../../../lib/daily-attendance'
 import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
 import { euclideanDistance, matchBiometricIndexCandidates, queryBiometricIndexCandidates } from '../../../lib/biometric-index'
-import { consumeAttendanceChallenge, getAttendanceChallenge } from '../../../lib/attendance-challenge'
 
 function normalizeStoredDescriptors(value) {
   return (Array.isArray(value) ? value : [])
@@ -36,7 +35,6 @@ function normalizeEntry(body) {
     latitude: body?.latitude == null ? null : Number(body.latitude),
     longitude: body?.longitude == null ? null : Number(body.longitude),
     descriptor: Array.isArray(body?.descriptor) ? body.descriptor.map(Number) : [],
-    challengeId: String(body?.challengeId || '').trim(),
   }
 }
 
@@ -57,10 +55,6 @@ function validateEntry(entry) {
 
   if (entry.descriptor.length !== 128 || entry.descriptor.some(value => !Number.isFinite(value))) {
     return 'Face descriptor is required for attendance verification.'
-  }
-
-  if (!entry.challengeId) {
-    return 'Attendance challenge is required.'
   }
 
   const norm = Math.sqrt(entry.descriptor.reduce((sum, value) => sum + value * value, 0))
@@ -288,22 +282,6 @@ export async function POST(request) {
 
   try {
     const db = getAdminDb()
-    const challenge = await getAttendanceChallenge(db, entry.challengeId)
-    if (!challenge) {
-      return NextResponse.json(
-        { ok: false, message: 'Attendance challenge was not found.', decisionCode: 'blocked_invalid_challenge' },
-        { status: 400 },
-      )
-    }
-
-    const challengeResult = await consumeAttendanceChallenge(db, entry.challengeId)
-    if (!challengeResult.ok) {
-      return NextResponse.json(
-        { ok: false, message: challengeResult.message, decisionCode: 'blocked_invalid_challenge' },
-        { status: 400 },
-      )
-    }
-
     const ip = getRequestIp(request)
     const ipLimit = await enforceRateLimit(db, {
       key: `attendance-ip:${ip}`,
@@ -332,13 +310,20 @@ export async function POST(request) {
     }
 
     const indexedCandidates = await queryBiometricIndexCandidates(db, candidateOfficeIds, entry.descriptor)
-    let personMatch = indexedCandidates.length > 0
-      ? matchBiometricIndexCandidates(indexedCandidates, entry.descriptor, DISTANCE_THRESHOLD, AMBIGUOUS_MATCH_MARGIN)
-      : null
+    let personMatch = null
 
     if (indexedCandidates.length > 0) {
-      personMatch = await resolveMatchedPerson(db, personMatch)
-    } else {
+      const indexedMatch = await resolveMatchedPerson(
+        db,
+        matchBiometricIndexCandidates(indexedCandidates, entry.descriptor, DISTANCE_THRESHOLD, AMBIGUOUS_MATCH_MARGIN),
+      )
+
+      if (indexedMatch.ok) {
+        personMatch = indexedMatch
+      }
+    }
+
+    if (!personMatch) {
       const candidatePersons = await getPersonsForOfficeIds(db, candidateOfficeIds)
       personMatch = matchPersonFromDescriptor(candidatePersons, entry.descriptor)
     }
