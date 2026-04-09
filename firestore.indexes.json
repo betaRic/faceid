@@ -61,6 +61,20 @@
       ]
     },
     {
+      "collectionGroup": "admins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "email",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "active",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "biometric_index",
       "queryScope": "COLLECTION",
       "fields": [

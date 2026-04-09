@@ -464,8 +464,8 @@ export default function RegisterView({
                   <Field label="Full name">
                     <input
                       ref={nameRef}
-                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
-                      onChange={event => setName(event.target.value)}
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm uppercase text-ink outline-none transition focus:border-brand"
+                      onChange={event => setName(event.target.value.toUpperCase())}
                       onKeyDown={event => {
                         if (event.key === 'Enter') handleRegister()
                       }}

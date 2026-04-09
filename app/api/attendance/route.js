@@ -8,6 +8,18 @@ import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
 import { euclideanDistance, matchBiometricIndexCandidates, queryBiometricIndexCandidates } from '../../../lib/biometric-index'
 import { consumeAttendanceChallenge, getAttendanceChallenge } from '../../../lib/attendance-challenge'
 
+function normalizeStoredDescriptors(value) {
+  return (Array.isArray(value) ? value : [])
+    .map(sample => {
+      if (Array.isArray(sample)) return sample.map(Number)
+      if (sample && typeof sample === 'object' && Array.isArray(sample.vector)) {
+        return sample.vector.map(Number)
+      }
+      return null
+    })
+    .filter(sample => Array.isArray(sample) && sample.length > 0)
+}
+
 function normalizeEntry(body) {
   return {
     id: String(body?.id || '').trim(),
@@ -212,10 +224,14 @@ function getCooldownForActionMinutes(office, action) {
 
 function matchPersonFromDescriptor(persons, descriptor) {
   const scored = persons
-    .filter(person => Array.isArray(person.descriptors) && person.descriptors.length > 0)
-    .map(person => ({
-      person,
-      distance: Math.min(...person.descriptors.map(sample => euclideanDistance(sample, descriptor))),
+    .map(personRecord => ({
+      person: personRecord,
+      descriptors: normalizeStoredDescriptors(personRecord.descriptors),
+    }))
+    .filter(candidate => candidate.descriptors.length > 0)
+    .map(candidate => ({
+      person: candidate.person,
+      distance: Math.min(...candidate.descriptors.map(sample => euclideanDistance(sample, descriptor))),
     }))
     .sort((left, right) => left.distance - right.distance)
 

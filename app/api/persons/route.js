@@ -15,6 +15,22 @@ function safeArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+function normalizeStoredDescriptors(value) {
+  return safeArray(value)
+    .map(sample => {
+      if (Array.isArray(sample)) return sample.map(Number)
+      if (sample && typeof sample === 'object' && Array.isArray(sample.vector)) {
+        return sample.vector.map(Number)
+      }
+      return null
+    })
+    .filter(sample => Array.isArray(sample) && sample.length > 0)
+}
+
+function serializeDescriptorSample(descriptor) {
+  return { vector: safeArray(descriptor).map(Number) }
+}
+
 function euclideanDistance(left, right) {
   let total = 0
 
@@ -32,7 +48,7 @@ function findDuplicateFace(persons, employeeId, descriptor) {
   persons.forEach(person => {
     if (employeeId && person.employeeId === employeeId) return
 
-    safeArray(person.descriptors).forEach(sample => {
+    normalizeStoredDescriptors(person.descriptors).forEach(sample => {
       const distance = euclideanDistance(sample, descriptor)
       if (!bestMatch || distance < bestMatch.distance) {
         bestMatch = {
@@ -82,7 +98,7 @@ export async function GET(request) {
     const snapshot = await db.collection('persons').orderBy('nameLower').get()
     const persons = snapshot.docs.map(record => {
       const data = record.data()
-      const descriptors = safeArray(data.descriptors)
+      const descriptors = normalizeStoredDescriptors(data.descriptors)
 
       return {
         id: record.id,
@@ -146,9 +162,9 @@ export async function POST(request) {
     }
 
     const payload = {
-      name: body.name,
+      name: body.name.toUpperCase(),
       employeeId: body.employeeId,
-      nameLower: body.name.toLowerCase(),
+      nameLower: body.name.toUpperCase().toLowerCase(),
       officeId: body.officeId,
       officeName: body.officeName,
       updatedAt: FieldValue.serverTimestamp(),
@@ -168,12 +184,12 @@ export async function POST(request) {
             ...existing,
             ...payload,
             active: existing.active !== false,
-            descriptors: [...safeArray(existing.descriptors), body.descriptor],
+            descriptors: [...safeArray(existing.descriptors), serializeDescriptorSample(body.descriptor)],
           }
         : {
             ...payload,
             active: true,
-            descriptors: [body.descriptor],
+            descriptors: [serializeDescriptorSample(body.descriptor)],
             createdAt: FieldValue.serverTimestamp(),
           }
 
