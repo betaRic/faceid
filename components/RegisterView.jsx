@@ -2,33 +2,32 @@
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { detectSingleDescriptor } from '../lib/face-api'
-import { DETECTION_MAX_DIMENSION, FACE_COLORS, PREVIEW_MAX_DIMENSION, REGISTRATION_SCAN_INTERVAL_MS } from '../lib/config'
+import { detectFaceBoxes, detectSingleDescriptor } from '../lib/face-api'
+import { DETECTION_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, REGISTRATION_SCAN_INTERVAL_MS } from '../lib/config'
 import BrandMark from './BrandMark'
 import { useAudioCue } from '../hooks/useAudioCue'
 import AppShell from './AppShell'
 
 const MIN_SAMPLES = 3
+const BURST_CAPTURE_ATTEMPTS = 7
+const BURST_CAPTURE_INTERVAL_MS = 90
 
 const STEPS = [
-  { id: 'capture', number: '1', title: 'Capture face', description: 'Automatic capture starts when the face is ready.' },
+  { id: 'capture', number: '1', title: 'Capture face', description: 'Automatic burst capture starts when the face is ready.' },
   { id: 'review', number: '2', title: 'Review photo', description: 'Retake the image if the preview is unclear.' },
   { id: 'details', number: '3', title: 'Employee details', description: 'Enter employee ID, name, and assigned office.' },
   { id: 'complete', number: '4', title: 'Enrollment saved', description: 'Continue with another sample or a new employee.' },
 ]
 
 export default function RegisterView({
-  allowDelete = true,
   camera,
   persons,
   offices,
   onEnrollPerson,
-  onDeletePerson,
   modelsReady,
   dataStatus,
   errorMessage,
   onBack,
-  showRosterTools = true,
 }) {
   const [name, setName] = useState('')
   const [employeeId, setEmployeeId] = useState('')
@@ -40,12 +39,13 @@ export default function RegisterView({
   const [toast, setToast] = useState(null)
   const [step, setStep] = useState('capture')
   const [lastSavedSummary, setLastSavedSummary] = useState(null)
-  const [showRoster, setShowRoster] = useState(false)
   const playAudioCue = useAudioCue()
 
   const autoRef = useRef(null)
   const nameRef = useRef(null)
   const busyRef = useRef(false)
+  const previewRef = useRef(null)
+  const captureAttemptRef = useRef(false)
 
   const selectedOffice = offices.find(office => office.id === officeId) || null
   const existingPerson = useMemo(
@@ -58,6 +58,10 @@ export default function RegisterView({
     setToast(message)
     window.setTimeout(() => setToast(null), duration)
   }, [])
+
+  useEffect(() => {
+    previewRef.current = previewUrl
+  }, [previewUrl])
 
   const stopDetect = useCallback(() => {
     if (autoRef.current) {
@@ -114,52 +118,74 @@ export default function RegisterView({
   }, [camera])
 
   const captureFace = useCallback(async () => {
+    captureAttemptRef.current = true
     let bestCapture = null
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const canvas = camera.captureImageData({
-        maxWidth: PREVIEW_MAX_DIMENSION,
-        maxHeight: PREVIEW_MAX_DIMENSION,
-      })
-      const faceResult = await detectSingleDescriptor(canvas)
+    try {
+      for (let attempt = 0; attempt < BURST_CAPTURE_ATTEMPTS; attempt += 1) {
+        const canvas = camera.captureImageData({
+          maxWidth: PREVIEW_MAX_DIMENSION,
+          maxHeight: PREVIEW_MAX_DIMENSION,
+        })
+        const faceResult = await detectSingleDescriptor(canvas)
 
-      if (faceResult) {
-        const previewUrl = canvas.toDataURL('image/jpeg', 0.85)
+        if (faceResult) {
+          const previewUrl = canvas.toDataURL('image/jpeg', 0.85)
+          const detectionBox = faceResult.detection?.box
+          const detectionScore = Number(faceResult.detection?.score || 0)
+          const frameArea = Math.max(1, canvas.width * canvas.height)
+          const boxArea = detectionBox ? detectionBox.width * detectionBox.height : 0
+          const centeredness = detectionBox
+            ? 1 - (
+              Math.hypot(
+                (detectionBox.x + (detectionBox.width / 2)) - (canvas.width / 2),
+                (detectionBox.y + (detectionBox.height / 2)) - (canvas.height / 2),
+              ) / Math.hypot(canvas.width / 2, canvas.height / 2)
+            )
+            : 0
+          const score = detectionScore + (boxArea / frameArea) + Math.max(0, centeredness)
 
-        if (!bestCapture) {
-          bestCapture = {
-            faceResult,
-            previewUrl,
+          if (!bestCapture || score > bestCapture.score) {
+            bestCapture = {
+              faceResult,
+              previewUrl,
+              score,
+            }
           }
         }
-        break
+
+        if (attempt < BURST_CAPTURE_ATTEMPTS - 1) await wait(BURST_CAPTURE_INTERVAL_MS)
       }
 
-      if (attempt < 2) await wait(120)
+      if (!bestCapture) {
+        setFaceFound(false)
+        setStatusMsg('Scanning for face...')
+        startDetect()
+        showToast('No face detected. Reposition and try again.')
+        return
+      }
+
+      const { faceResult, previewUrl } = bestCapture
+
+      setPendingDesc(faceResult.descriptor)
+      setPreviewUrl(previewUrl)
+      camera.clearOverlay()
+      setStatusMsg('Best frame captured. Review the preview before continuing.')
+      playAudioCue('notify')
+      setStep('review')
+    } finally {
+      captureAttemptRef.current = false
     }
-
-    if (!bestCapture) {
-      showToast('No face detected. Reposition and try again.')
-      return
-    }
-
-    const { faceResult, previewUrl } = bestCapture
-
-    setPendingDesc(faceResult.descriptor)
-    setPreviewUrl(previewUrl)
-    camera.clearOverlay()
-    setStatusMsg('Face captured. Review the preview before continuing.')
-    playAudioCue('notify')
-    setStep('review')
   }, [camera, playAudioCue, showToast, wait])
 
   const startDetect = useCallback(() => {
     stopDetect()
+    captureAttemptRef.current = false
     setStep('capture')
-    setStatusMsg('Align face with the camera.')
+    setStatusMsg(modelsReady ? 'Align face with the camera.' : 'Loading recognition models...')
 
-    autoRef.current = window.setInterval(async () => {
-      if (busyRef.current || !camera.camOn || previewUrl || !modelsReady) return
+    const runDetection = async () => {
+      if (busyRef.current || !camera.camOn || previewRef.current || !modelsReady || captureAttemptRef.current) return
 
       busyRef.current = true
       try {
@@ -167,9 +193,10 @@ export default function RegisterView({
           maxWidth: DETECTION_MAX_DIMENSION,
           maxHeight: DETECTION_MAX_DIMENSION,
         })
-        const result = await detectSingleDescriptor(canvas)
+        const detections = await detectFaceBoxes(canvas)
+        const result = detections[0] || null
         setFaceFound(Boolean(result))
-        drawBox(result || null, canvas.width, canvas.height)
+        drawBox(result ? { detection: { box: result.box || result.detection?.box } } : null, canvas.width, canvas.height)
 
         if (!result) {
           setStatusMsg('Scanning for face...')
@@ -177,15 +204,20 @@ export default function RegisterView({
         }
 
         stopDetect()
-        setStatusMsg('Capturing face...')
+        setStatusMsg('Capturing burst frames...')
         await captureFace()
       } catch {
         setStatusMsg('Camera scan interrupted')
       } finally {
         busyRef.current = false
       }
-    }, REGISTRATION_SCAN_INTERVAL_MS)
-  }, [camera, captureFace, drawBox, modelsReady, previewUrl, stopDetect])
+    }
+
+    if (!modelsReady) return
+
+    runDetection()
+    autoRef.current = window.setInterval(runDetection, REGISTRATION_SCAN_INTERVAL_MS)
+  }, [camera, captureFace, drawBox, modelsReady, stopDetect])
 
   useEffect(() => {
     camera.start().then(() => startDetect())
@@ -294,34 +326,14 @@ export default function RegisterView({
     resetForCapture()
   }, [resetForCapture])
 
-  const handleDelete = useCallback(async (id, personName) => {
-    if (!window.confirm(`Remove ${personName}?`)) return
-    try {
-      await onDeletePerson(id)
-      showToast(`${personName} removed`)
-    } catch (error) {
-      showToast(error.message || 'Failed to delete person')
-    }
-  }, [onDeletePerson, showToast])
-
   const stepIndex = STEPS.findIndex(item => item.id === step)
 
   return (
     <AppShell
       actions={(
-        <>
-          <button
-            className="inline-flex w-full items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:w-auto"
-            onClick={() => setShowRoster(current => !current)}
-            type="button"
-            disabled={!showRosterTools}
-          >
-            {showRoster ? 'Hide roster' : 'Show roster'}
-          </button>
-          <div className="w-full rounded-full bg-white px-4 py-2.5 text-center text-sm font-semibold text-ink shadow-sm sm:w-auto">
-            {persons.length} enrolled
-          </div>
-        </>
+        <div className="w-full rounded-full bg-white px-4 py-2.5 text-center text-sm font-semibold text-ink shadow-sm sm:w-auto">
+          {persons.length} enrolled
+        </div>
       )}
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
     >
@@ -352,7 +364,7 @@ export default function RegisterView({
           </div>
         </motion.section>
 
-        <div className={`grid min-h-0 flex-1 gap-4 ${showRoster ? 'xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,360px)]' : ''}`}>
+        <div className="grid min-h-0 flex-1 gap-4">
           <motion.section
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
@@ -401,7 +413,7 @@ export default function RegisterView({
                 <div className="grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-1">
                   <InfoCard
                     title="Camera"
-                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Keep the face centered until the capture completes.'}
+                    text={!modelsReady ? 'Loading recognition models before capture begins.' : 'Keep the face centered while the system selects the best frame from the burst.'}
                     tone={!modelsReady ? 'warn' : 'default'}
                   />
                   <InfoCard
@@ -564,64 +576,6 @@ export default function RegisterView({
               </section>
             ) : null}
           </motion.section>
-
-          {showRoster && showRosterTools ? (
-            <motion.aside
-              animate={{ opacity: 1, x: 0 }}
-              initial={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.35, ease: 'easeOut', delay: 0.1 }}
-              className="flex min-h-0 flex-col rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow backdrop-blur sm:p-4"
-            >
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <h2 className="font-display text-2xl text-ink">Enrolled employees</h2>
-                <span className="rounded-full bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">
-                  {persons.length}
-                </span>
-              </div>
-
-              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
-                {persons.length === 0 ? (
-                  <div className="rounded-[1.25rem] border border-dashed border-black/10 bg-stone-50 px-4 py-8 text-center text-sm text-muted">
-                    No employees enrolled yet.
-                  </div>
-                ) : (
-                  persons.map((person, index) => (
-                    <div key={person.id} className="flex items-center gap-3 rounded-[1.25rem] border border-black/5 bg-white px-4 py-3">
-                      <div
-                        className="flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold"
-                        style={{
-                          color: FACE_COLORS[index % FACE_COLORS.length],
-                          borderColor: FACE_COLORS[index % FACE_COLORS.length],
-                        }}
-                      >
-                        {person.name.charAt(0).toUpperCase()}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-ink">{person.name}</div>
-                        <div className="truncate text-xs uppercase tracking-[0.12em] text-muted">{person.employeeId} • {person.officeName}</div>
-                        <div className="text-xs text-muted">
-                          <span style={{ color: (person.sampleCount ?? 0) >= MIN_SAMPLES ? '#15803d' : '#d97706' }}>
-                            {person.sampleCount ?? 0} sample{(person.sampleCount ?? 0) !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                      </div>
-
-                      {allowDelete ? (
-                        <button
-                          className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-red-700 transition hover:bg-red-100"
-                          onClick={() => handleDelete(person.id, person.name)}
-                          type="button"
-                        >
-                          Delete
-                        </button>
-                      ) : null}
-                    </div>
-                  ))
-                )}
-              </div>
-            </motion.aside>
-          ) : null}
         </div>
       </div>
     </AppShell>

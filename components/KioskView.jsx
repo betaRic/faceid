@@ -110,6 +110,8 @@ function getCurrentPositionWithOptions(options = {}) {
 
 const GPS_CACHE_TTL_MS = 30 * 1000
 const GPS_REFRESH_INTERVAL_MS = 15 * 1000
+const VERIFICATION_BURST_FRAMES = 4
+const VERIFICATION_BURST_INTERVAL_MS = 80
 
 function getCachedPositionCoordinates(cacheRef) {
   const cached = cacheRef.current
@@ -222,6 +224,10 @@ export default function KioskView({
     }
   }, [])
 
+  const wait = useCallback(duration => new Promise(resolve => {
+    window.setTimeout(resolve, duration)
+  }), [])
+
   const scheduleResume = useCallback((delay = KIOSK_ATTEMPT_COOLDOWN_MS) => {
     if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current)
 
@@ -315,6 +321,35 @@ export default function KioskView({
     drawBracketBox(ctx, box, '#22c55e', 'FACE READY', null, scaleX, scaleY)
   }, [camera])
 
+  const captureBestVerificationFrame = useCallback(async () => {
+    let bestCapture = null
+
+    for (let attempt = 0; attempt < VERIFICATION_BURST_FRAMES; attempt += 1) {
+      const canvas = camera.captureImageData({
+        maxWidth: PREVIEW_MAX_DIMENSION,
+        maxHeight: PREVIEW_MAX_DIMENSION,
+      })
+      const detections = await detectWithDescriptors(canvas)
+      const primary = selectPrimaryFace(detections, canvas.width, canvas.height)
+      const primaryBox = primary?.box
+      const frameArea = Math.max(1, canvas.width * canvas.height)
+      const boxArea = primaryBox ? primaryBox.width * primaryBox.height : 0
+      const score = detections.length + (boxArea / frameArea)
+
+      if (detections.length && (!bestCapture || score > bestCapture.score)) {
+        bestCapture = {
+          canvas,
+          detections,
+          score,
+        }
+      }
+
+      if (attempt < VERIFICATION_BURST_FRAMES - 1) await wait(VERIFICATION_BURST_INTERVAL_MS)
+    }
+
+    return bestCapture
+  }, [camera, wait])
+
   const runScan = useCallback(async () => {
     if (busyRef.current || pausedRef.current || !camera.camOn || !modelsReady) return
 
@@ -366,19 +401,17 @@ export default function KioskView({
         setKioskState('verifying')
         camera.clearOverlay()
 
-        const verificationCanvas = camera.captureImageData({
-          maxWidth: PREVIEW_MAX_DIMENSION,
-          maxHeight: PREVIEW_MAX_DIMENSION,
-        })
-        setCapturedFrameUrl(verificationCanvas.toDataURL('image/jpeg', 0.82))
-
-        const verificationDetections = await detectWithDescriptors(verificationCanvas)
-        if (!verificationDetections.length) {
+        const bestCapture = await captureBestVerificationFrame()
+        if (!bestCapture) {
+          setCapturedFrameUrl(null)
           setKioskState('unknown')
           showAlertAndResume('No reliable face match was found.')
           confirmRef.current = 0
           return
         }
+
+        setCapturedFrameUrl(bestCapture.canvas.toDataURL('image/jpeg', 0.82))
+        const verificationDetections = bestCapture.detections
 
         const coordinates = getCachedPositionCoordinates(cachedPositionRef)
         const acceptedEntries = []
@@ -482,7 +515,7 @@ export default function KioskView({
     } finally {
       busyRef.current = false
     }
-  }, [camera, drawOverlay, modelsReady, onLogAttendance, scheduleResume, setAlertState, showAlertAndResume])
+  }, [camera, captureBestVerificationFrame, drawOverlay, modelsReady, onLogAttendance, scheduleResume, setAlertState, showAlertAndResume])
 
   const startLoop = useCallback(() => {
     if (scanRef.current) return
@@ -516,8 +549,6 @@ export default function KioskView({
   const isConfirmed = kioskState === 'confirmed'
   const isUnknown = kioskState === 'unknown'
   const isBlocked = kioskState === 'blocked'
-  const showIdleAnimation = !capturedFrameUrl && !isConfirmed && !isBlocked && !isUnknown
-
   return (
     <AppShell
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
@@ -541,36 +572,10 @@ export default function KioskView({
           {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
           {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
 
-          {showIdleAnimation ? (
-            <div className="pointer-events-none absolute inset-0 z-[4] overflow-hidden">
-              <div className="kiosk-idle-orb kiosk-idle-orb-a" />
-              <div className="kiosk-idle-orb kiosk-idle-orb-b" />
-              <div className="kiosk-idle-orb kiosk-idle-orb-c" />
-              <div className="kiosk-idle-scanline" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="kiosk-idle-core">
-                  <div className="kiosk-idle-ring kiosk-idle-ring-a" />
-                  <div className="kiosk-idle-ring kiosk-idle-ring-b" />
-                  <div className="kiosk-idle-ring kiosk-idle-ring-c" />
-                  <div className="kiosk-idle-pulse" />
-                </div>
-              </div>
-            </div>
-          ) : null}
-
           <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] bg-white/92 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:rounded-full sm:px-5 sm:py-3">
             <div className="font-display text-lg leading-none text-ink sm:text-3xl">{clock}</div>
             <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-muted sm:text-xs sm:tracking-[0.18em]">{dateStr}</div>
           </div>
-
-          {showIdleAnimation ? (
-            <div className="absolute inset-x-3 bottom-3 z-[4] flex justify-center sm:inset-x-5 sm:bottom-5">
-              <div className="w-full max-w-sm rounded-[1.1rem] bg-white/90 px-4 py-2.5 text-center shadow-lg backdrop-blur sm:w-auto sm:max-w-full sm:rounded-full sm:px-5 sm:py-3">
-                <div className="text-sm font-semibold text-ink">{camera.camOn ? 'Preparing capture' : 'Kiosk idle'}</div>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-muted sm:text-xs sm:tracking-[0.18em]">{camera.camOn ? 'Waiting for a steady face' : 'Ready for the next scan'}</div>
-              </div>
-            </div>
-          ) : null}
 
           {!camera.camOn ? (
             <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
