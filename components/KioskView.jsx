@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { detectFaceBoxes, detectWithDescriptors } from '../lib/biometrics/human'
 import {
   CONFIRM_FRAMES,
+  DESCRIPTOR_LENGTH,
   SCAN_INTERVAL_MS,
   CONFIRMED_HOLD_MS,
   UNKNOWN_DEBOUNCE_MS,
@@ -124,15 +125,11 @@ function getSafeDecisionMessage(decisionCode) {
     case 'blocked_ambiguous_match':
       return { name: 'Ambiguous match', detail: 'Face is too close to multiple enrolled employees.' }
     case 'blocked_recent_duplicate':
-      return {
-        name: 'Attendance already recorded',
-        detail: 'Attendance already recorded recently.',
-      }
+      return { name: 'Attendance already recorded', detail: 'Attendance already recorded recently.' }
+    case 'blocked_day_complete':
+      return { name: 'Full day recorded', detail: 'AM and PM attendance already recorded for today.' }
     case 'blocked_missing_gps':
-      return {
-        name: 'Attendance blocked',
-        detail: 'GPS unavailable - ensure location is enabled.',
-      }
+      return { name: 'Attendance blocked', detail: 'GPS unavailable — ensure location is enabled.' }
     case 'blocked_geofence':
       return { name: 'Attendance blocked', detail: 'Device is outside the assigned office geofence.' }
     case 'blocked_rate_limited':
@@ -145,10 +142,9 @@ function getSafeDecisionMessage(decisionCode) {
       return { name: 'Attendance blocked', detail: 'Assigned office is not configured correctly.' }
     case 'blocked_no_candidate_office':
     case 'blocked_wrong_office_context':
-      return {
-        name: 'Attendance blocked',
-        detail: 'Current location does not match the assigned office context.',
-      }
+      return { name: 'Attendance blocked', detail: 'Current location does not match the assigned office context.' }
+    case 'blocked_liveness_failed':
+      return { name: 'Liveness check failed', detail: 'Move slightly and try again.' }
     default:
       return { name: 'Attendance blocked', detail: 'Could not process attendance. Please try again or contact an administrator.' }
   }
@@ -182,12 +178,6 @@ export default function KioskView({
   const [alertState, setAlertState] = useState(null)
   const [alertDebug, setAlertDebug] = useState('')
   const [, setLastMeaningfulFailure] = useState('')
-
-  // resumeKey: incrementing this triggers the scan loop useEffect to restart startLoop().
-  // This is the fix for the kiosk freeze bug: when pausedRef is set true during verification,
-  // the self-rescheduling scan loop exits. scheduleResume() was resetting pausedRef but not
-  // restarting the loop. Now incrementing resumeKey causes the useEffect to re-run →
-  // stopLoop() → startLoop(). Works for both the success path and the failure path.
   const [resumeKey, setResumeKey] = useState(0)
 
   const playAudioCue = useAudioCue()
@@ -241,9 +231,6 @@ export default function KioskView({
       setAlertDebug('')
       setKioskState('idle')
       camera.clearOverlay()
-      // Increment resumeKey to trigger the scan loop useEffect to restart startLoop().
-      // Without this, pausedRef resets to false but the self-rescheduling loop is already
-      // dead — nothing calls scheduleNext again. This is the freeze fix.
       setResumeKey(k => k + 1)
     }, delay)
   }, [camera])
@@ -327,10 +314,7 @@ export default function KioskView({
         maxWidth: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
         maxHeight: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
       })
-      const detections = await detectFaceBoxes(canvas, {
-        allowEnhancedRetry: false,
-        minConfidence: 0.55,
-      })
+      const detections = await detectFaceBoxes(canvas)
       const primary = selectPrimaryFace(detections, canvas.width, canvas.height)
       const primaryDetection = primary?.detection || null
 
@@ -402,6 +386,17 @@ export default function KioskView({
           return
         }
 
+        // CLIENT-SIDE VALIDATION: guard against descriptor length mismatch before hitting the server.
+        // @vladmandic/human v3 returns DESCRIPTOR_LENGTH (1024) dim embeddings.
+        // If this fails, the models are misconfigured — do not call the API.
+        const descriptor = Array.from(primaryVerification.detection.descriptor)
+        if (descriptor.length !== DESCRIPTOR_LENGTH) {
+          setKioskState('unknown')
+          showAlertAndResume(`Face capture error — unexpected descriptor length ${descriptor.length}. Expected ${DESCRIPTOR_LENGTH}. Check model configuration.`, 3000)
+          confirmRef.current = 0
+          return
+        }
+
         const coordinates = locationState?.coords || null
         const timing = buildAttendanceEntryTiming(now)
         let attendanceAccepted = false
@@ -424,7 +419,7 @@ export default function KioskView({
             time: timing.time,
             latitude: coordinates?.latitude ?? null,
             longitude: coordinates?.longitude ?? null,
-            descriptor: Array.from(primaryVerification.detection.descriptor),
+            descriptor,
           })
 
           if (result.entry) {
@@ -487,7 +482,7 @@ export default function KioskView({
             unknownTimer.current = null
           }, UNKNOWN_DEBOUNCE_MS)
         }
-      } else if (decisionCode === 'blocked_recent_duplicate') {
+      } else if (decisionCode === 'blocked_recent_duplicate' || decisionCode === 'blocked_day_complete') {
         setKioskState('blocked')
         setLastMeaningfulFailure(safeDecision.detail)
         setCurrentMatch({
@@ -529,9 +524,6 @@ export default function KioskView({
     scheduleNext()
   }, [runScan])
 
-  // resumeKey is included in deps: incrementing it (from scheduleResume) causes this
-  // effect to re-run, which calls stopLoop() then startLoop() — restarting the scan loop
-  // after any failure or success that paused it. This is the kiosk freeze fix.
   useEffect(() => {
     if (!workspaceReady || !modelsReady || !camera.camOn) return () => {}
     stopLoop()

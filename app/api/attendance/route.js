@@ -42,13 +42,15 @@ function normalizeEntry(body) {
 }
 
 function validateEntry(entry) {
-  if (entry.descriptor.length !== 128 || entry.descriptor.some(value => !Number.isFinite(value))) {
-    return 'Face descriptor is required for attendance verification.'
+  // FIXED: was hardcoded 128 — @vladmandic/human v3 outputs 1024-dim FaceNet embeddings
+  if (entry.descriptor.length !== DESCRIPTOR_LENGTH || entry.descriptor.some(value => !Number.isFinite(value))) {
+    return `Face descriptor is invalid. Expected ${DESCRIPTOR_LENGTH} values.`
   }
 
+  // Unit-normalized 1024-dim vectors have norm ≈ 1.0; allow a small tolerance range
   const norm = Math.sqrt(entry.descriptor.reduce((sum, value) => sum + value * value, 0))
   if (norm < 0.5 || norm > 2.0) {
-    return 'Face descriptor is not valid.'
+    return 'Face descriptor is not valid (norm out of range).'
   }
 
   if ((entry.latitude == null) !== (entry.longitude == null)) {
@@ -340,8 +342,7 @@ export async function POST(request) {
       )
     }
 
-    // --- Passive Liveness Check ---
-    // Only block on confirmed static face (photo spoof). Insufficient frames = assume live.
+    // Passive liveness — only block confirmed static face (photo spoof). Insufficient frames = assume live.
     if (entry.landmarks && entry.landmarks.length > 0) {
       const livenessResult = analyzeLiveness(entry.landmarks)
       if (!livenessResult.live && livenessResult.reason === 'static_face') {
@@ -385,6 +386,7 @@ export async function POST(request) {
       }
     }
 
+    // Fallback: full scan for candidate offices (handles stale/missing index)
     if (!personMatch) {
       const candidatePersons = await getPersonsForOfficeIds(db, candidateOfficeIds)
       personMatch = matchPersonFromDescriptor(candidatePersons, entry.descriptor)
@@ -449,6 +451,19 @@ export async function POST(request) {
     const legacyDateLabel = toLegacyAttendanceDate(entry.dateKey)
     const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.dateKey, legacyDateLabel)
     const nextAction = getNextAttendanceAction(dailyLogs, office)
+
+    // FIXED: Block further scans after a complete AM+PM day
+    if (nextAction === 'complete') {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Full day attendance already recorded.',
+          decisionCode: 'blocked_day_complete',
+        },
+        { status: 409 },
+      )
+    }
+
     entry.action = nextAction
     const cooldownMinutes = getCooldownForActionMinutes(office, nextAction)
     const cooldownMs = cooldownMinutes * 60 * 1000
@@ -508,7 +523,7 @@ export async function POST(request) {
     })
 
     // attendance_daily is a derived cache — write after the atomic attendance record.
-    // If this write fails, the audit record is still intact; the cron job rebuilds it at EOD.
+    // If this write fails the record is still intact; the cron job rebuilds it at EOD.
     await db.collection('attendance_daily').doc(`${entry.employeeId}_${entry.dateKey}`).set({
       ...dailyRecord,
       updatedAt: FieldValue.serverTimestamp(),

@@ -17,6 +17,8 @@ export async function GET(request) {
   const dateKey = formatAttendanceDateKey(yesterday)
 
   const offices = await listOfficeRecords(db)
+  const officesById = new Map(offices.map(o => [o.id, o]))
+
   const snapshot = await db.collection('attendance')
     .where('dateKey', '==', dateKey)
     .get()
@@ -25,21 +27,29 @@ export async function GET(request) {
   snapshot.docs.forEach(doc => {
     const log = doc.data()
     const key = log.employeeId
+    if (!key) return
     if (!logsByEmployee[key]) logsByEmployee[key] = []
     logsByEmployee[key].push(log)
   })
 
   const batch = db.batch()
+  let rebuilt = 0
+
   for (const [employeeId, logs] of Object.entries(logsByEmployee)) {
-    const office = offices.find(o => o.id === logs[0].officeId) || null
-    const record = deriveDailyAttendanceRecord({ logs, person: null, office, targetDateKey: dateKey })
+    const officeId = logs[0]?.officeId
+    const office = officesById.get(officeId) || null
+    const record = deriveDailyAttendanceRecord({
+      logs,
+      person: null,
+      office,
+      targetDateKey: dateKey,
+    })
     const ref = db.collection('attendance_daily').doc(`${employeeId}_${dateKey}`)
     batch.set(ref, record, { merge: true })
+    rebuilt++
   }
+
   await batch.commit()
 
-  return NextResponse.json({ ok: true, dateKey, employees: Object.keys(logsByEmployee).length })
+  return NextResponse.json({ ok: true, dateKey, rebuilt })
 }
-
-
-
