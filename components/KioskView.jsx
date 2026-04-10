@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { detectFaceBoxes, detectWithDescriptors } from '../lib/biometrics/face-api'
+import { detectFaceBoxes, detectWithDescriptors } from '../lib/biometrics/human'
 import {
   CONFIRM_FRAMES,
   SCAN_INTERVAL_MS,
@@ -304,6 +304,7 @@ export default function KioskView({
 
   const captureBestVerificationFrame = useCallback(async () => {
     let bestCapture = null
+    const landmarksBuffer = []
 
     for (let attempt = 0; attempt < VERIFICATION_BURST_FRAMES; attempt += 1) {
       const canvas = camera.captureImageData({
@@ -312,6 +313,9 @@ export default function KioskView({
       })
       const detections = await detectWithDescriptors(canvas)
       const primary = selectPrimaryFace(detections, canvas.width, canvas.height)
+      if (primary?.detection?.landmarks) {
+        landmarksBuffer.push(primary.detection.landmarks.positions)
+      }
       const primaryBox = primary?.box
       const frameArea = Math.max(1, canvas.width * canvas.height)
       const boxArea = primaryBox ? primaryBox.width * primaryBox.height : 0
@@ -328,7 +332,7 @@ export default function KioskView({
       if (attempt < VERIFICATION_BURST_FRAMES - 1) await wait(VERIFICATION_BURST_INTERVAL_MS)
     }
 
-    return bestCapture
+	return { ...bestCapture, landmarks: landmarksBuffer }
   }, [camera, wait])
 
   const runScan = useCallback(async () => {
@@ -430,6 +434,7 @@ export default function KioskView({
             attendanceMode: '',
             geofenceStatus: '',
             confidence: 0,
+            landmarks: bestCapture.landmarks || [],
             timestamp: timing.timestamp,
             dateKey: timing.dateKey,
             dateLabel: timing.dateLabel,
@@ -669,3 +674,4 @@ export default function KioskView({
     </AppShell>
   )
 }
+

@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useCamera } from '../hooks/useCamera'
-import { areModelsReady, getModelLoadStatus, loadModels } from '../lib/biometrics/face-api'
+import { areModelsReady, getModelLoadStatus, loadModels } from '../lib/biometrics/human'
 import {
   LOCATION_BOOT_TIMEOUT_MS,
   LOCATION_CACHE_MAX_AGE_MS,
@@ -239,3 +239,4 @@ export function useBiometricRuntime() {
   }
   return context
 }
+

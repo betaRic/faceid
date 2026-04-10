@@ -5,6 +5,7 @@ import * as adminAuth from '../../../lib/admin-auth'
 import { DUPLICATE_FACE_THRESHOLD } from '../../../lib/config'
 import { writeAuditLog } from '../../../lib/audit-log'
 import { syncPersonBiometricIndex } from '../../../lib/biometric-index'
+import { uploadEnrollmentPhoto } from '../../../lib/storage'
 import {
   normalizeEnrollmentDescriptorBatch,
   validateEnrollmentDescriptorBatch,
@@ -536,3 +537,4 @@ export async function POST(request) {
     )
   }
 }
+

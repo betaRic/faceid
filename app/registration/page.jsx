@@ -1,9 +1,5 @@
-import dynamic from 'next/dynamic'
-
-const FaceAttendanceApp = dynamic(() => import('../../components/FaceAttendanceApp'), {
-  ssr: false,
-})
+import DynamicFaceAttendanceApp from '@/components/DynamicFaceAttendanceApp.jsx'
 
 export default function RegistrationPage() {
-  return <FaceAttendanceApp initialPage="register" loadPersons={false} loadAttendance={false} showRegistrationAction={false} />
+  return <DynamicFaceAttendanceApp initialPage='register' loadPersons={false} loadAttendance={false} showRegistrationAction={false} />
 }

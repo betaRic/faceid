@@ -1,9 +1,5 @@
-import dynamic from 'next/dynamic'
-
-const AdminLogin = dynamic(() => import('../../../components/AdminLogin'), {
-  ssr: false,
-})
+import DynamicAdminLogin from '@/components/DynamicAdminLogin.jsx'
 
 export default function AdminLoginPage() {
-  return <AdminLogin />
+  return <DynamicAdminLogin />
 }

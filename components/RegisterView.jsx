@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { detectFaceBoxes, detectSingleDescriptor } from '../lib/biometrics/face-api'
+import { detectFaceBoxes, detectSingleDescriptor } from '../lib/biometrics/human'
 import { DETECTION_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, REGISTRATION_SCAN_INTERVAL_MS } from '../lib/config'
 import {
   ENROLLMENT_BURST_CAPTURE_ATTEMPTS,
@@ -260,6 +260,7 @@ export default function RegisterView({
           employeeId: employeeId.trim(),
           officeId,
           officeName: selectedOffice?.name || 'Unassigned',
+          photoDataUrl: previewUrl,
         },
         pendingDescriptors,
       )
@@ -873,3 +874,4 @@ function InfoCard({ title, text, tone = 'default' }) {
     </section>
   )
 }
+

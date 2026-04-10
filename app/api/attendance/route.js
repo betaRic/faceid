@@ -9,6 +9,7 @@ import { euclideanDistance, matchBiometricIndexCandidates, queryBiometricIndexCa
 import { buildAttendanceEntryTiming, toLegacyAttendanceDate } from '../../../lib/attendance-time'
 import { getOfficeRecord, listOfficeRecords } from '../../../lib/office-directory'
 import { isPersonApproved } from '../../../lib/person-approval'
+import { analyzeLiveness } from '../../../lib/biometrics/liveness'
 
 function normalizeStoredDescriptors(value) {
   return (Array.isArray(value) ? value : [])
@@ -39,6 +40,7 @@ function normalizeEntry(body) {
     latitude: body?.latitude == null ? null : Number(body.latitude),
     longitude: body?.longitude == null ? null : Number(body.longitude),
     descriptor: Array.isArray(body?.descriptor) ? body.descriptor.map(Number) : [],
+    landmarks: Array.isArray(body?.landmarks) ? body.landmarks : [],
   }
 }
 
@@ -170,7 +172,7 @@ function buildAttendanceDocId(employeeId, timestamp) {
 }
 
 function buildStoredAttendanceEntry(entry) {
-  const { descriptor, ...storedEntry } = entry
+  const { descriptor, landmarks, ...storedEntry } = entry
   return storedEntry
 }
 
@@ -294,7 +296,7 @@ function matchPersonFromDescriptor(persons, descriptor) {
     return {
       ok: false,
       decisionCode: 'blocked_ambiguous_match',
-      message: `Face match is too close between ${best.person.name} and ${second.person.name}.`,
+      message: `Face match is too close between ${best.person?.name} and ${second.person?.name}.`,
       debug,
     }
   }
@@ -360,6 +362,23 @@ export async function POST(request) {
         { status: 429 },
       )
     }
+
+    // --- Passive Liveness Check ---
+    if (entry.landmarks && entry.landmarks.length > 0) {
+      const livenessResult = analyzeLiveness(entry.landmarks)
+      if (!livenessResult.live) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: 'Liveness check failed. Please ensure you are a real person and hold still.',
+            decisionCode: 'blocked_liveness_failed',
+            debug: { liveness: livenessResult },
+          },
+          { status: 403 },
+        )
+      }
+    }
+    // -----------------------------
 
     const { candidateOfficeIds, onsiteOfficeIds, wfhOfficeIds } = await getCandidateAttendanceContext(db, entry)
 
@@ -483,13 +502,13 @@ export async function POST(request) {
 
       if (distanceMeters > office.gps.radiusMeters) {
         return NextResponse.json(
-          { ok: false, message: `Outside ${office.name} geofence.`, decisionCode: 'blocked_geofence' },
+          { ok: false, message: 'Outside:geofence.', decisionCode: 'blocked_geofence' },
           { status: 403 },
         )
       }
 
       entry.attendanceMode = 'On-site'
-      entry.geofenceStatus = `Inside office radius (${Math.round(distanceMeters)}m)`
+      entry.geofenceStatus = 'Inside office radius (m)'
       entry.decisionCode = 'accepted_onsite'
     }
 
@@ -550,3 +569,13 @@ export async function POST(request) {
     )
   }
 }
+
+
+
+
+
+
+
+
+
+

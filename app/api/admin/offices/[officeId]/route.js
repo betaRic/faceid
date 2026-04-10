@@ -93,7 +93,7 @@ export async function PUT(request, { params }) {
       ...office,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
-    await clearOfficeRecordCache()
+    await await clearOfficeRecordCache()
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -122,4 +122,5 @@ export async function PUT(request, { params }) {
     )
   }
 }
+
 
