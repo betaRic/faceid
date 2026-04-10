@@ -29,13 +29,13 @@ export default function SummaryPanel({
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-dark">Summary</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Summary</div>
           <h2 className="mt-2 font-display text-3xl text-ink">Daily attendance report</h2>
         </div>
         <div className="grid w-full gap-3 sm:grid-cols-4">
           <Field label="Summary date">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => setSummaryDate(event.target.value)}
               type="date"
               value={summaryDate}
@@ -43,7 +43,7 @@ export default function SummaryPanel({
           </Field>
           <Field label="Office filter">
             <select
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => setSummaryOfficeFilter(event.target.value)}
               value={summaryOfficeFilter}
             >
@@ -55,7 +55,7 @@ export default function SummaryPanel({
           </Field>
           <Field label="Employee filter">
             <select
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               disabled={summaryLoading}
               onChange={event => setSummaryEmployeeFilter(event.target.value)}
               value={summaryEmployeeFilter}
@@ -72,7 +72,7 @@ export default function SummaryPanel({
             <ActionButton
               busy={isPending('summary-export')}
               busyLabel="Exporting..."
-              className="w-full bg-brand text-white hover:bg-brand-dark"
+              className="w-full bg-navy text-white hover:bg-navy-dark"
               label="Export CSV"
               onClick={handleExportSummary}
             />
@@ -149,6 +149,7 @@ export default function SummaryPanel({
     </motion.section>
   )
 }
+
 
 
 

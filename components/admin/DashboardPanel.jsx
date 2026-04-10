@@ -74,7 +74,7 @@ export default function DashboardPanel({
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-dark">Dashboard</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Dashboard</div>
           <h2 className="mt-2 font-display text-3xl text-ink sm:text-4xl">Regional super admin overview</h2>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-muted">
             This layout replaces the old stacked admin page with a clearer workspace. Use the sidebar to move between sections without scrolling through the entire admin tool.
@@ -92,7 +92,7 @@ export default function DashboardPanel({
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px] xl:min-h-0 xl:flex-1">
         <section className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-50 xl:flex xl:min-h-0 xl:flex-col">
           <div className="border-b border-black/5 px-5 py-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Office snapshot</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Office snapshot</div>
             <h3 className="mt-2 text-xl font-semibold text-ink">Region XII offices</h3>
           </div>
           <div className="overflow-x-auto xl:min-h-0 xl:flex-1 xl:overflow-auto">
@@ -117,7 +117,7 @@ export default function DashboardPanel({
                       setActivePanel('office')
                     }}
                   >
-                    <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-brand-dark">{office.code || office.shortName}</td>
+                    <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">{office.code || office.shortName}</td>
                     <td className="px-5 py-4 font-semibold text-ink">{office.name}</td>
                     <td className="px-5 py-4 text-muted">{office.provinceOrCity || office.location}</td>
                     <td className="px-5 py-4 text-muted">{office.officeType}</td>
@@ -144,7 +144,7 @@ export default function DashboardPanel({
 
         <div className="grid gap-5 xl:min-h-0 xl:grid-rows-[minmax(0,1fr)_auto]">
           <section className="rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 xl:min-h-0 xl:overflow-auto">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Live summary</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Live summary</div>
             <h3 className="mt-2 text-xl font-semibold text-ink">{baseOffice?.name || 'Office record'}</h3>
             <div className="mt-4 grid gap-3">
               <InfoRow label="Schedule" value={baseOffice?.workPolicy.schedule || '--'} />
@@ -160,7 +160,7 @@ export default function DashboardPanel({
 
           {roleScope === 'regional' ? (
             <section className="rounded-[1.5rem] border border-black/5 bg-white p-5">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">System maintenance</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">System maintenance</div>
               <h3 className="mt-2 text-xl font-semibold text-ink">Firestore indexes</h3>
               <p className="mt-2 text-sm leading-7 text-muted">
                 This stays in the admin workspace on purpose. Public pages should not be able to mutate Firestore infrastructure.
@@ -172,7 +172,7 @@ export default function DashboardPanel({
                 <ActionButton
                   busy={isPending('firestore-index-sync')}
                   busyLabel="Submitting..."
-                  className="bg-brand text-white hover:bg-brand-dark"
+                  className="bg-navy text-white hover:bg-navy-dark"
                   label="Apply required indexes"
                   onClick={handleApplyFirestoreIndexes}
                 />
@@ -184,3 +184,4 @@ export default function DashboardPanel({
     </motion.section>
   )
 }
+

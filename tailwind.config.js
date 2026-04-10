@@ -25,6 +25,7 @@ module.exports = {
           800: '#01162B',
           900: '#000D1B',
         },
+        brand: { DEFAULT: '#032D57', light: '#0A4278', dark: '#021E3A' },
         // Accent orange
         amber: {
           DEFAULT: '#EA921F',
@@ -128,3 +129,4 @@ module.exports = {
   },
   plugins: [],
 }
+

@@ -6,3 +6,4 @@ const AdminDashboard = dynamic(() => import('./AdminDashboard'), { ssr: false })
 export default function DynamicAdminDashboard(props) {
   return <AdminDashboard {...props} />
 }
+

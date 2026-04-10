@@ -151,3 +151,4 @@ async function createScopedResponse(db, decoded, email, adminProfile) {
 
   return response
 }
+

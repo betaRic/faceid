@@ -43,27 +43,27 @@ export default function AdminsPanel({
       transition={{ duration: 0.35, ease: 'easeOut' }}
     >
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-dark">Admins</div>
+        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Admins</div>
         <h2 className="mt-2 font-display text-3xl text-ink">Regional and office admins</h2>
       </div>
 
       <div className="mt-6 grid gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_220px]">
         <input
-          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
           onChange={event => setAdminEmail(event.target.value)}
           placeholder="Admin email"
           type="email"
           value={adminEmail}
         />
         <input
-          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
           onChange={event => setAdminDisplayName(event.target.value)}
           placeholder="Display name"
           type="text"
           value={adminDisplayName}
         />
         <select
-          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
           onChange={event => setAdminScope(event.target.value)}
           value={adminScope}
         >
@@ -71,7 +71,7 @@ export default function AdminsPanel({
           <option value="regional">Regional admin</option>
         </select>
         <select
-          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
           disabled={adminScope !== 'office'}
           onChange={event => setAdminOfficeId(event.target.value)}
           value={adminOfficeId}
@@ -85,7 +85,7 @@ export default function AdminsPanel({
           <ActionButton
             busy={isPending('admin-create')}
             busyLabel="Creating..."
-            className="bg-brand text-white hover:bg-brand-dark"
+            className="bg-navy text-white hover:bg-navy-dark"
             label="Add admin"
             onClick={() => {
               handleCreateAdmin({ email: adminEmail, displayName: adminDisplayName, scope: adminScope, officeId: adminOfficeId })
@@ -131,7 +131,7 @@ export default function AdminsPanel({
                     </td>
                     <td className="px-5 py-4">
                       <select
-                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                         onChange={event => {
                           const nextScope = event.target.value
                           handleUpdateAdmin(admin, {
@@ -147,7 +147,7 @@ export default function AdminsPanel({
                     </td>
                     <td className="px-5 py-4">
                       <select
-                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                         disabled={admin.scope !== 'office'}
                         onChange={event => handleUpdateAdmin(admin, { officeId: event.target.value })}
                         value={admin.scope === 'office' ? admin.officeId : ''}
@@ -191,6 +191,7 @@ export default function AdminsPanel({
     </motion.section>
   )
 }
+
 
 
 

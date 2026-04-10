@@ -6,3 +6,4 @@ const FaceAttendanceApp = dynamic(() => import('./FaceAttendanceApp'), { ssr: fa
 export default function DynamicFaceAttendanceApp(props) {
   return <FaceAttendanceApp {...props} />
 }
+

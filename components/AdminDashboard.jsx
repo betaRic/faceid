@@ -351,7 +351,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                         <input
                           name="name"
                           defaultValue={employeeEditor.name}
-                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm uppercase text-ink outline-none transition focus:border-brand"
+                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm uppercase text-ink outline-none transition focus:border-navy"
                           required
                         />
                       </Field>
@@ -360,7 +360,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                         <input
                           name="employeeId"
                           defaultValue={employeeEditor.employeeId}
-                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                           required
                         />
                       </Field>
@@ -369,7 +369,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                         <select
                           name="officeId"
                           defaultValue={employeeEditor.officeId}
-                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                           required
                         >
                           {visibleOffices.map(office => (
@@ -382,7 +382,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                         <select
                           name="active"
                           defaultValue={employeeEditor.active !== false ? 'true' : 'false'}
-                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                         >
                           <option value="true">Active</option>
                           <option value="false">Inactive</option>
@@ -393,7 +393,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                         <select
                           name="approvalStatus"
                           defaultValue={getEffectivePersonApprovalStatus(employeeEditor)}
-                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                         >
                           <option value={PERSON_APPROVAL_PENDING}>Pending Review</option>
                           <option value={PERSON_APPROVAL_APPROVED}>Approved</option>
@@ -422,7 +422,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                       <button
                         type="submit"
                         disabled={isPending(`employee-update-${employeeEditor.id}`)}
-                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {isPending(`employee-update-${employeeEditor.id}`) ? (
                           <>

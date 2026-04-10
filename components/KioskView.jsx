@@ -630,7 +630,7 @@ export default function KioskView({
               <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
 
               <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/35 via-transparent to-black/25" />
-              {kioskState === 'scanning' ? <div className="absolute inset-0 z-[3] border-2 border-brand/80 shadow-[inset_0_0_60px_rgba(12,108,88,0.25)]" /> : null}
+              {kioskState === 'scanning' ? <div className="absolute inset-0 z-[3] border-2 border-navy/80 shadow-[inset_0_0_60px_rgba(12,108,88,0.25)]" /> : null}
               {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
               {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
 
@@ -674,4 +674,5 @@ export default function KioskView({
     </AppShell>
   )
 }
+
 

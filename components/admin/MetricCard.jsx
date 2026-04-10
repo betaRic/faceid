@@ -6,3 +6,4 @@ export default function MetricCard({ label, value, subtle = false }) {
     </div>
   )
 }
+

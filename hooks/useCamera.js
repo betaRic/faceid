@@ -169,3 +169,4 @@ async function requestPreferredCameraStream() {
 
   throw lastError || new Error('Unable to access camera')
 }
+

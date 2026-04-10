@@ -60,7 +60,7 @@ export default function EmployeesPanel({
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-dark">Employees</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Employees</div>
           <h2 className="mt-2 font-display text-3xl text-ink">Employee directory</h2>
           <p className="mt-2 text-sm leading-7 text-muted">
             Review public enrollment submissions, approve or reject intake records, and maintain employee assignments from one table.
@@ -69,7 +69,7 @@ export default function EmployeesPanel({
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="Search">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => {
                 const value = event.target.value
                 startTransition(() => setEmployeeQuery(value))
@@ -80,7 +80,7 @@ export default function EmployeesPanel({
           </Field>
           <Field label="Office">
             <select
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => setEmployeeOfficeFilter(event.target.value)}
               value={employeeOfficeFilter}
             >
@@ -92,7 +92,7 @@ export default function EmployeesPanel({
           </Field>
           <Field label="Status">
             <select
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => setEmployeeStatusFilter(event.target.value)}
               value={employeeStatusFilter}
             >
@@ -103,7 +103,7 @@ export default function EmployeesPanel({
           </Field>
           <Field label="Approval">
             <select
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => setEmployeeApprovalFilter(event.target.value)}
               value={employeeApprovalFilter}
             >
@@ -194,7 +194,7 @@ export default function EmployeesPanel({
                           {formatApprovalLabel(person.approvalStatus)}
                         </span>
                         <select
-                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                           disabled={Boolean(isPending)}
                           onChange={event => {
                             const nextApprovalStatus = event.target.value
@@ -220,7 +220,7 @@ export default function EmployeesPanel({
                     </td>
                     <td className="px-5 py-4">
                       <select
-                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                         disabled={Boolean(isPending)}
                         onChange={event => {
                           const office = offices.find(item => item.id === event.target.value)
@@ -275,6 +275,7 @@ export default function EmployeesPanel({
     </motion.section>
   )
 }
+
 
 
 

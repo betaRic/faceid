@@ -274,14 +274,14 @@ function BiometricWorkspaceGate({
     <div className="mx-auto flex h-full min-h-[calc(100dvh-8.25rem)] max-w-4xl items-center justify-center xl:min-h-[calc(100dvh-10.5rem)]">
       <div className="w-full rounded-[2rem] border border-black/5 bg-[linear-gradient(180deg,rgba(12,108,88,0.08),rgba(255,255,255,0.98))] p-6 shadow-glow backdrop-blur sm:p-8">
         <div className="mx-auto max-w-2xl text-center">
-          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-dark">{statusLabel}</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-navy-dark">{statusLabel}</div>
           <h1 className="mt-4 font-display text-4xl text-ink sm:text-5xl">{title}</h1>
           <p className="mt-4 text-sm leading-8 text-muted sm:text-base">
             {detail}
           </p>
 
           <div className="mt-8 rounded-[1.5rem] border border-black/5 bg-white/90 p-5 shadow-sm">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand/10 text-brand-dark">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-navy/10 text-navy-dark">
               <span className={`h-6 w-6 rounded-full border-2 border-current border-t-transparent ${errorMessage ? '' : 'animate-spin'}`} />
             </div>
             <div className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted">Runtime status</div>
@@ -296,7 +296,7 @@ function BiometricWorkspaceGate({
           {errorMessage ? (
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button
-                className="inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                className="inline-flex items-center justify-center rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark"
                 onClick={onRetry}
                 type="button"
               >
@@ -318,3 +318,4 @@ function BiometricWorkspaceGate({
     </div>
   )
 }
+

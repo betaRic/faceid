@@ -21,3 +21,4 @@ export default async function AdminPage() {
 
   return <DynamicAdminDashboard initialOfficeId={resolvedSession.officeId} initialRoleScope={resolvedSession.scope} />
 }
+

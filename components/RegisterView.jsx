@@ -353,14 +353,14 @@ export default function RegisterView({
       contentClassName="px-3 py-3 sm:px-5 lg:px-8 xl:overflow-hidden"
     >
       {toast ? (
-        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-brand-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
+        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-navy-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
           {toast}
         </div>
       ) : null}
       {savingEnrollment ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/35 px-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-[1.8rem] border border-black/5 bg-white px-6 py-6 text-center shadow-2xl">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand/10 text-brand-dark">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-navy/10 text-navy-dark">
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
             </div>
             <h2 className="mt-4 font-display text-2xl text-ink">
@@ -478,7 +478,7 @@ export default function RegisterView({
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Enrollment workspace</span>
                 <h2 className="mt-1 font-display text-xl text-ink sm:text-2xl">{STEPS[stepIndex]?.title}</h2>
               </div>
-              <div className="max-w-full rounded-[1rem] bg-white px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm sm:max-w-[22rem] sm:rounded-full">
+              <div className="max-w-full rounded-[1rem] bg-white px-4 py-2 text-sm font-semibold text-navy-dark shadow-sm sm:max-w-[22rem] sm:rounded-full">
                 {statusMsg}
               </div>
             </div>
@@ -502,7 +502,7 @@ export default function RegisterView({
                 <div className="grid content-start gap-3">
                   <div className="grid gap-3">
                     <button
-                      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark sm:rounded-full"
+                      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1rem] bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark sm:rounded-full"
                       disabled={savingEnrollment}
                       onClick={goToDetails}
                       type="button"
@@ -542,7 +542,7 @@ export default function RegisterView({
                   <Field label="Full name">
                     <input
                       ref={nameRef}
-                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm uppercase text-ink outline-none transition focus:border-brand"
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm uppercase text-ink outline-none transition focus:border-navy"
                       onChange={event => setName(event.target.value.toUpperCase())}
                       onKeyDown={event => {
                         if (event.key === 'Enter') handleRegister()
@@ -555,7 +555,7 @@ export default function RegisterView({
 
                   <Field label="Employee ID">
                     <input
-                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                       onChange={event => setEmployeeId(event.target.value)}
                       placeholder="Enter employee ID"
                       type="text"
@@ -565,7 +565,7 @@ export default function RegisterView({
 
                   <Field label="Assigned office">
                     <select
-                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
                       onChange={event => setOfficeId(event.target.value)}
                       value={officeId}
                     >
@@ -585,7 +585,7 @@ export default function RegisterView({
                       Back to review
                     </button>
                     <button
-                      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40 sm:rounded-full"
+                      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1rem] bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-40 sm:rounded-full"
                       disabled={savingEnrollment || pendingSampleCount === 0 || !name.trim() || !employeeId.trim() || !officeId}
                       onClick={handleRegister}
                       type="button"
@@ -669,7 +669,7 @@ export default function RegisterView({
                     />
                   ) : null}
                   <button
-                    className="inline-flex w-full items-center justify-center rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-full"
+                    className="inline-flex w-full items-center justify-center rounded-[1rem] bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-full"
                     disabled={savingEnrollment}
                     onClick={handleAddAnotherSample}
                     type="button"
@@ -706,9 +706,9 @@ function Field({ label, children }) {
 
 function WizardStep({ active, complete, number, title, description }) {
   return (
-    <div className={`rounded-[1.1rem] border px-3 py-3 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-brand/30 bg-brand/8' : 'border-black/5 bg-stone-50'}`}>
+    <div className={`rounded-[1.1rem] border px-3 py-3 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-navy/30 bg-navy/8' : 'border-black/5 bg-stone-50'}`}>
       <div className="flex items-center gap-3">
-        <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-brand text-white' : 'bg-white text-muted'}`}>
+        <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-navy text-white' : 'bg-white text-muted'}`}>
           {number}
         </span>
         <div className="min-w-0">
@@ -874,4 +874,5 @@ function InfoCard({ title, text, tone = 'default' }) {
     </section>
   )
 }
+
 

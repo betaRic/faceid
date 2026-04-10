@@ -29,7 +29,7 @@ export default function OfficePanel({
       <section className="overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 shadow-glow backdrop-blur xl:flex xl:min-h-0 xl:flex-col">
         <div className="flex flex-col gap-3 border-b border-black/5 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-dark">Office</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Office</div>
             <h2 className="mt-2 font-display text-3xl text-ink">Office list</h2>
             <p className="mt-2 text-sm leading-7 text-muted">
               Regional admins can switch across the regional, provincial, and HUC offices and update each office record from the same workspace.
@@ -56,10 +56,10 @@ export default function OfficePanel({
                 return (
                   <tr
                     key={office.id}
-                    className={`cursor-pointer transition ${selected ? 'bg-brand/5' : ''}`}
+                    className={`cursor-pointer transition ${selected ? 'bg-navy/5' : ''}`}
                     onClick={() => setSelectedOfficeId(office.id)}
                   >
-                    <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-brand-dark">
+                    <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
                       {office.code || office.shortName || office.id}
                     </td>
                     <td className="px-5 py-4">
@@ -111,3 +111,4 @@ export default function OfficePanel({
     </motion.section>
   )
 }
+

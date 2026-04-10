@@ -63,21 +63,21 @@ export default function AdminOfficePanel({
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Office name">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => updateDraft('name', event.target.value)}
               value={activeOffice.name}
             />
           </Field>
           <Field label="Short name">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => updateDraft('shortName', event.target.value)}
               value={activeOffice.shortName || ''}
             />
           </Field>
           <Field label="Office type">
             <select
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => updateDraft('officeType', event.target.value)}
               value={activeOffice.officeType}
             >
@@ -88,7 +88,7 @@ export default function AdminOfficePanel({
           </Field>
           <Field label="Location">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand"
+              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
               onChange={event => updateDraft('location', event.target.value)}
               value={activeOffice.location}
             />
@@ -102,7 +102,7 @@ export default function AdminOfficePanel({
                 key={tab.id}
                 className={`rounded-[1rem] border px-4 py-2.5 text-sm font-semibold transition sm:rounded-full ${
                   activeTab === tab.id
-                    ? 'border-brand/30 bg-brand/10 text-brand-dark'
+                    ? 'border-navy/30 bg-navy/10 text-navy-dark'
                     : 'border-black/10 bg-white text-ink hover:bg-stone-50'
                 }`}
                 onClick={() => setActiveTab(tab.id)}
@@ -113,7 +113,7 @@ export default function AdminOfficePanel({
             ))}
           </div>
           <button
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[1rem] bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-full"
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[1rem] bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-full"
             disabled={savePending}
             onClick={handleSaveOffice}
             type="button"
@@ -155,7 +155,7 @@ export default function AdminOfficePanel({
               >
                 {locationLoading ? 'Getting location...' : 'Use my location'}
               </button>
-              <div className="rounded-[1rem] bg-brand/8 px-4 py-3 text-sm text-brand-dark sm:rounded-full">
+              <div className="rounded-[1rem] bg-navy/8 px-4 py-3 text-sm text-navy-dark sm:rounded-full">
                 Click on the map to place the office pin and adjust the geofence.
               </div>
             </div>
@@ -171,17 +171,17 @@ export default function AdminOfficePanel({
               {
                 label: 'Latitude',
                 description: 'Geofence center latitude.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('gps.latitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.latitude} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('gps.latitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.latitude} />,
               },
               {
                 label: 'Longitude',
                 description: 'Geofence center longitude.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('gps.longitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.longitude} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('gps.longitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.longitude} />,
               },
               {
                 label: 'Radius meters',
                 description: 'Allowed on-site radius for kiosk scans.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('gps.radiusMeters', Number(event.target.value))} type="number" value={activeOffice.gps.radiusMeters} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('gps.radiusMeters', Number(event.target.value))} type="number" value={activeOffice.gps.radiusMeters} />,
               },
             ]}
             title="Location data"
@@ -214,27 +214,27 @@ export default function AdminOfficePanel({
               {
                 label: 'Grace period',
                 description: 'Allowed late buffer before tardiness counts.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.gracePeriodMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.gracePeriodMinutes} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.gracePeriodMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.gracePeriodMinutes} />,
               },
               {
                 label: 'AM in',
                 description: 'Morning expected check-in time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.morningIn', event.target.value)} type="time" value={activeOffice.workPolicy.morningIn} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.morningIn', event.target.value)} type="time" value={activeOffice.workPolicy.morningIn} />,
               },
               {
                 label: 'AM out',
                 description: 'Morning expected check-out time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.morningOut', event.target.value)} type="time" value={activeOffice.workPolicy.morningOut} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.morningOut', event.target.value)} type="time" value={activeOffice.workPolicy.morningOut} />,
               },
               {
                 label: 'PM in',
                 description: 'Afternoon expected check-in time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.afternoonIn', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonIn} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.afternoonIn', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonIn} />,
               },
               {
                 label: 'PM out',
                 description: 'Afternoon expected check-out time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.afternoonOut', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonOut} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.afternoonOut', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonOut} />,
               },
             ]}
             title="Schedule data"
@@ -263,19 +263,19 @@ export default function AdminOfficePanel({
               {
                 label: 'Check-in cooldown',
                 description: 'Blocks repeated successful IN scans for the same employee.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.checkInCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkInCooldownMinutes ?? 30} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.checkInCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkInCooldownMinutes ?? 30} />,
               },
               {
                 label: 'Check-out cooldown',
                 description: 'Blocks repeated successful OUT scans for the same employee.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-brand" onChange={event => updateDraft('workPolicy.checkOutCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} />,
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.checkOutCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} />,
               },
             ]}
             title="Scan rules"
           />
 
           <div className="rounded-[1.4rem] border border-black/5 bg-stone-50 p-4">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-dark">Current scan policy</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Current scan policy</span>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <PolicyBadge label="Check-in wait" value={`${activeOffice.workPolicy.checkInCooldownMinutes ?? 30} min`} />
               <PolicyBadge label="Check-out wait" value={`${activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} min`} />
@@ -323,7 +323,7 @@ function DataTable({ title, rows }) {
 function TagEditor({ label, activeValues, onToggle, tone = 'brand' }) {
   const activeClass = tone === 'accent'
     ? 'border-accent/40 bg-accent/10 text-ink'
-    : 'border-brand/40 bg-brand/10 text-brand-dark'
+    : 'border-navy/40 bg-navy/10 text-navy-dark'
 
   return (
     <section className="rounded-[1.4rem] border border-black/5 bg-white p-4">
@@ -347,7 +347,7 @@ function TagEditor({ label, activeValues, onToggle, tone = 'brand' }) {
 function PolicyBadge({ label, value }) {
   return (
     <div className="rounded-2xl border border-black/5 bg-white px-4 py-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-dark">{label}</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">{label}</div>
       <div className="mt-2 text-lg font-semibold text-ink">{value}</div>
     </div>
   )
@@ -365,7 +365,7 @@ function Field({ label, children }) {
 function InfoCard({ label, value }) {
   return (
     <div className="rounded-2xl border border-black/5 bg-white px-4 py-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-dark">{label}</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">{label}</div>
       <div className="mt-2 text-sm font-semibold text-ink">{value}</div>
     </div>
   )
@@ -389,3 +389,4 @@ function formatTime(value) {
   const displayHours = ((numericHours + 11) % 12) + 1
   return `${displayHours}:${minutes} ${suffix}`
 }
+

@@ -16,3 +16,4 @@ export async function GET() {
       : 'Set the missing environment variables before deployment.',
   })
 }
+

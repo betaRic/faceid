@@ -6,3 +6,4 @@ const AdminLogin = dynamic(() => import('./AdminLogin'), { ssr: false })
 export default function DynamicAdminLogin() {
   return <AdminLogin />
 }
+

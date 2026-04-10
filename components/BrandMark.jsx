@@ -26,3 +26,4 @@ export default function BrandMark({ compact = false, className = '', inverted = 
     </div>
   )
 }
+
