@@ -42,17 +42,13 @@ function normalizeEntry(body) {
 }
 
 function validateEntry(entry) {
-  // Length and numeric validity are sufficient. Norm check removed:
-  // @vladmandic/human produces non-unit-normalized embeddings whose L2 norm
-  // varies significantly by device and model version (~1 to ~32+). Checking
-  // the norm here causes false rejections and provides zero security benefit —
-  // a malicious actor can trivially craft a descriptor with any norm they want.
-  if (
-    !Array.isArray(entry.descriptor) ||
-    entry.descriptor.length !== DESCRIPTOR_LENGTH ||
-    entry.descriptor.some(value => !Number.isFinite(value))
-  ) {
-    return `Face descriptor must be a ${DESCRIPTOR_LENGTH}-dimensional numeric array.`
+  if (entry.descriptor.length !== 128 || entry.descriptor.some(value => !Number.isFinite(value))) {
+    return 'Face descriptor is required for attendance verification.'
+  }
+
+  const norm = Math.sqrt(entry.descriptor.reduce((sum, value) => sum + value * value, 0))
+  if (norm < 0.5 || norm > 2.0) {
+    return 'Face descriptor is not valid.'
   }
 
   if ((entry.latitude == null) !== (entry.longitude == null)) {
@@ -344,7 +340,8 @@ export async function POST(request) {
       )
     }
 
-    // Passive liveness check
+    // --- Passive Liveness Check ---
+    // Only block on confirmed static face (photo spoof). Insufficient frames = assume live.
     if (entry.landmarks && entry.landmarks.length > 0) {
       const livenessResult = analyzeLiveness(entry.landmarks)
       if (!livenessResult.live && livenessResult.reason === 'static_face') {
@@ -375,7 +372,6 @@ export async function POST(request) {
       )
     }
 
-    // Identity matching via biometric index
     const indexedCandidates = await queryBiometricIndexCandidates(db, candidateOfficeIds, entry.descriptor)
     let personMatch = null
 
@@ -389,7 +385,6 @@ export async function POST(request) {
       }
     }
 
-    // Fallback: full scan when index misses. Should be rare — run backfill if frequent.
     if (!personMatch) {
       const candidatePersons = await getPersonsForOfficeIds(db, candidateOfficeIds)
       personMatch = matchPersonFromDescriptor(candidatePersons, entry.descriptor)
@@ -454,23 +449,11 @@ export async function POST(request) {
     const legacyDateLabel = toLegacyAttendanceDate(entry.dateKey)
     const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.dateKey, legacyDateLabel)
     const nextAction = getNextAttendanceAction(dailyLogs, office)
-
-    if (nextAction === 'complete') {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: 'Attendance for today is already complete. See you tomorrow.',
-          decisionCode: 'blocked_day_complete',
-        },
-        { status: 409 },
-      )
-    }
-
     entry.action = nextAction
     const cooldownMinutes = getCooldownForActionMinutes(office, nextAction)
     const cooldownMs = cooldownMinutes * 60 * 1000
 
-    if (officeMatchedWfh && !officeMatchedOnsite) {
+    if (officeMatchedWfh) {
       entry.attendanceMode = 'WFH'
       entry.geofenceStatus = hasCoordinates
         ? 'WFH — GPS location recorded'
@@ -524,6 +507,8 @@ export async function POST(request) {
       targetDateLabel: entry.dateLabel,
     })
 
+    // attendance_daily is a derived cache — write after the atomic attendance record.
+    // If this write fails, the audit record is still intact; the cron job rebuilds it at EOD.
     await db.collection('attendance_daily').doc(`${entry.employeeId}_${entry.dateKey}`).set({
       ...dailyRecord,
       updatedAt: FieldValue.serverTimestamp(),

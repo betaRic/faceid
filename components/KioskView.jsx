@@ -124,13 +124,15 @@ function getSafeDecisionMessage(decisionCode) {
     case 'blocked_ambiguous_match':
       return { name: 'Ambiguous match', detail: 'Face is too close to multiple enrolled employees.' }
     case 'blocked_recent_duplicate':
-      return { name: 'Already recorded', detail: 'Attendance already recorded recently.' }
-    case 'blocked_day_complete':
-      return { name: 'Day complete', detail: 'Full attendance for today is already recorded. See you tomorrow.' }
-    case 'blocked_liveness_failed':
-      return { name: 'Liveness check failed', detail: 'Move slightly and try again.' }
+      return {
+        name: 'Attendance already recorded',
+        detail: 'Attendance already recorded recently.',
+      }
     case 'blocked_missing_gps':
-      return { name: 'Attendance blocked', detail: 'GPS unavailable — ensure location is enabled.' }
+      return {
+        name: 'Attendance blocked',
+        detail: 'GPS unavailable - ensure location is enabled.',
+      }
     case 'blocked_geofence':
       return { name: 'Attendance blocked', detail: 'Device is outside the assigned office geofence.' }
     case 'blocked_rate_limited':
@@ -143,9 +145,10 @@ function getSafeDecisionMessage(decisionCode) {
       return { name: 'Attendance blocked', detail: 'Assigned office is not configured correctly.' }
     case 'blocked_no_candidate_office':
     case 'blocked_wrong_office_context':
-      return { name: 'Attendance blocked', detail: 'Current location does not match the assigned office.' }
-    case 'blocked_index_building':
-      return { name: 'System not ready', detail: 'Attendance index is still building. Try again in a minute.' }
+      return {
+        name: 'Attendance blocked',
+        detail: 'Current location does not match the assigned office context.',
+      }
     default:
       return { name: 'Attendance blocked', detail: 'Could not process attendance. Please try again or contact an administrator.' }
   }
