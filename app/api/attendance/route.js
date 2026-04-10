@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
 import { calculateDistanceMeters, isOfficeWfhDay } from '../../../lib/offices'
@@ -364,13 +364,14 @@ export async function POST(request) {
     }
 
     // --- Passive Liveness Check ---
+    // Only block on confirmed static face (photo spoof). Insufficient frames = assume live.
     if (entry.landmarks && entry.landmarks.length > 0) {
       const livenessResult = analyzeLiveness(entry.landmarks)
-      if (!livenessResult.live) {
+      if (!livenessResult.live && livenessResult.reason === 'static_face') {
         return NextResponse.json(
           {
             ok: false,
-            message: 'Liveness check failed. Please ensure you are a real person and hold still.',
+            message: 'Liveness check failed. Move slightly and try again.',
             decisionCode: 'blocked_liveness_failed',
             debug: { liveness: livenessResult },
           },

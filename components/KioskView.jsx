@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -114,8 +114,8 @@ function selectPrimaryFace(detections, sourceWidth, sourceHeight) {
     .sort((left, right) => right.score - left.score)[0] || null
 }
 
-const VERIFICATION_BURST_FRAMES = 4
-const VERIFICATION_BURST_INTERVAL_MS = 80
+const VERIFICATION_BURST_FRAMES = 8
+const VERIFICATION_BURST_INTERVAL_MS = 70
 
 function getSafeDecisionMessage(decisionCode) {
   switch (decisionCode) {
