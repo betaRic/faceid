@@ -23,6 +23,19 @@ function getApprovalBadgeClass(status) {
   return 'bg-rose-100 text-rose-700'
 }
 
+function formatRelativeDate(value) {
+  if (!value) return null
+  try {
+    const date = value?.toDate ? value.toDate() : new Date(value)
+    const days = Math.floor((Date.now() - date.getTime()) / 86400000)
+    if (days === 0) return 'Submitted today'
+    if (days === 1) return 'Submitted yesterday'
+    return `Submitted ${days} days ago`
+  } catch {
+    return null
+  }
+}
+
 export default function EmployeesPanel({
   persons,
   personsLoaded,
@@ -63,7 +76,7 @@ export default function EmployeesPanel({
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Employees</div>
           <h2 className="mt-2 font-display text-3xl text-ink">Employee directory</h2>
           <p className="mt-2 text-sm leading-7 text-muted">
-            Review public enrollment submissions, approve or reject intake records, and maintain employee assignments from one table.
+            Review submissions, approve or reject enrollment records, and manage employee assignments.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -126,7 +139,7 @@ export default function EmployeesPanel({
       <div className="mt-4 flex flex-col gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 px-4 py-3 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
         <div>
           {personsLoaded
-            ? `Showing ${employeeDirectoryTotal} employee records from a server-filtered directory query.`
+            ? `Showing ${employeeDirectoryTotal} employee records.`
             : 'Preparing employee directory query.'}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -141,13 +154,13 @@ export default function EmployeesPanel({
           <ActionButton
             className="border border-black/10 bg-white text-ink hover:bg-stone-100"
             disabled={employeeDirectoryHistory.length === 0 || !personsLoaded}
-            label="Previous"
+            label="← Previous"
             onClick={handlePreviousEmployeePage}
           />
           <ActionButton
             className="border border-black/10 bg-white text-ink hover:bg-stone-100"
             disabled={!employeeDirectoryHasMore || !personsLoaded}
-            label="Next"
+            label="Next →"
             onClick={handleNextEmployeePage}
           />
         </div>
@@ -156,11 +169,11 @@ export default function EmployeesPanel({
       <div className="mt-6 overflow-x-auto xl:min-h-0 xl:flex-1 xl:overflow-auto">
         {!personsLoaded ? (
           <LoadingPanel
-            body="Fetching paginated employee records for the current workspace."
+            body="Fetching employee records for the current workspace."
             title="Loading employees"
           />
         ) : (
-          <table className="min-w-[1180px] text-left text-sm">
+          <table className="min-w-[860px] text-left text-sm">
             <thead className="bg-stone-50 text-xs uppercase tracking-[0.16em] text-muted">
               <tr>
                 <th className="px-5 py-4">Employee</th>
@@ -168,105 +181,99 @@ export default function EmployeesPanel({
                 <th className="px-5 py-4">Samples</th>
                 <th className="px-5 py-4">Approval</th>
                 <th className="px-5 py-4">Status</th>
-                <th className="px-5 py-4">Transfer</th>
                 <th className="px-5 py-4">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5">
               {persons.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-10 text-center text-sm text-muted" colSpan={7}>
+                  <td className="px-5 py-10 text-center text-sm text-muted" colSpan={6}>
                     No employees match the current filters.
                   </td>
                 </tr>
               ) : (
-                persons.map(person => (
-                  <tr key={person.id} className="bg-white">
-                    <td className="px-5 py-4">
-                      <div className="font-semibold text-ink">{person.name}</div>
-                      <div className="text-xs uppercase tracking-[0.12em] text-muted">{person.employeeId}</div>
-                    </td>
-                    <td className="px-5 py-4 text-muted">{person.officeName}</td>
-                    <td className="px-5 py-4 text-muted">{person.sampleCount ?? 0}</td>
-                    <td className="px-5 py-4">
-                      <div className="grid gap-2">
-                        <span className={`inline-flex w-fit rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${getApprovalBadgeClass(person.approvalStatus)}`}>
-                          {formatApprovalLabel(person.approvalStatus)}
+                persons.map(person => {
+                  const approvalStatus = getEffectivePersonApprovalStatus(person)
+                  const submittedLabel = approvalStatus === PERSON_APPROVAL_PENDING
+                    ? formatRelativeDate(person.submittedAt)
+                    : null
+
+                  return (
+                    <tr key={person.id} className="bg-white">
+                      {/* Employee: photo thumbnail + name + ID + submission date */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          {person.photoUrl ? (
+                            <img
+                              alt={person.name}
+                              className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-black/5"
+                              src={person.photoUrl}
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy/10 text-xs font-bold text-navy-dark">
+                              {String(person.name || '?')[0]}
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-semibold text-ink">{person.name}</div>
+                            <div className="text-xs uppercase tracking-[0.12em] text-muted">{person.employeeId}</div>
+                            {submittedLabel ? (
+                              <div className="mt-0.5 text-xs text-amber-600">{submittedLabel}</div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Office */}
+                      <td className="px-5 py-4 text-muted">{person.officeName}</td>
+
+                      {/* Samples */}
+                      <td className="px-5 py-4 text-muted">{person.sampleCount ?? 0}</td>
+
+                      {/* Approval — badge only. Full approval change is in the Edit modal. */}
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${getApprovalBadgeClass(approvalStatus)}`}>
+                          {formatApprovalLabel(approvalStatus)}
                         </span>
-                        <select
-                          className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-                          disabled={Boolean(isPending)}
-                          onChange={event => {
-                            const nextApprovalStatus = event.target.value
-                            if (nextApprovalStatus === getEffectivePersonApprovalStatus(person)) return
-                            handleEmployeeUpdate(
-                              person,
-                              { approvalStatus: nextApprovalStatus },
-                             `${person.name} marked ${nextApprovalStatus}`,
-                            )
-                          }}
-                          value={getEffectivePersonApprovalStatus(person)}
-                        >
-                          <option value={PERSON_APPROVAL_PENDING}>Pending review</option>
-                          <option value={PERSON_APPROVAL_APPROVED}>Approved</option>
-                          <option value={PERSON_APPROVAL_REJECTED}>Rejected</option>
-                        </select>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${person.active === false ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                        {person.active === false ? 'Inactive' : 'Active'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <select
-                        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-                        disabled={Boolean(isPending)}
-                        onChange={event => {
-                          const office = offices.find(item => item.id === event.target.value)
-                          if (!office || office.id === person.officeId) return
-                          handleEmployeeUpdate(
-                            person,
-                            {
-                              officeId: office.id,
-                              officeName: office.name,
-                            },
-                            `${person.name} transferred to ${office.name}`,
-                          )
-                        }}
-                        value={person.officeId}
-                      >
-                        {visibleOffices.map(office => (
-                          <option key={`employee-office-${office.id}`} value={office.id}>{office.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        <ActionButton
-                          busy={isPending(`employee-update-${person.id}`)}
-                          busyLabel="Updating..."
-                          className="border border-black/10 bg-white text-ink hover:bg-stone-100"
-                          label={person.approvalStatus === PERSON_APPROVAL_PENDING ? 'Review' : 'Edit'}
-                          onClick={() => openEmployeeEditor(person)}
-                        />
-                        <ActionButton
-                          busy={isPending(`employee-update-${person.id}`)}
-                          busyLabel={person.active === false ? 'Reactivating...' : 'Updating...'}
-                          className={person.active === false ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'}
-                          label={person.active === false ? 'Reactivate' : 'Set inactive'}
-                          onClick={() => {
-                            handleEmployeeUpdate(
-                              person,
-                              { active: person.active === false },
-                              person.active === false ? `${person.name} reactivated` : `${person.name} set to inactive`,
-                            )
-                          }}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      {/* Status badge */}
+                      <td className="px-5 py-4">
+                        <span className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${person.active === false ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                          {person.active === false ? 'Inactive' : 'Active'}
+                        </span>
+                      </td>
+
+                      {/* Actions: Edit (all changes via modal) + Activate/Deactivate quick toggle */}
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          <ActionButton
+                            busy={isPending(`employee-update-${person.id}`)}
+                            busyLabel="..."
+                            className="border border-black/10 bg-white text-ink hover:bg-stone-100"
+                            label={approvalStatus === PERSON_APPROVAL_PENDING ? 'Review' : 'Edit'}
+                            onClick={() => openEmployeeEditor(person)}
+                          />
+                          <ActionButton
+                            busy={isPending(`employee-update-${person.id}`)}
+                            busyLabel="..."
+                            className={person.active === false
+                              ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                              : 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'}
+                            label={person.active === false ? 'Reactivate' : 'Deactivate'}
+                            onClick={() => {
+                              handleEmployeeUpdate(
+                                person,
+                                { active: person.active === false },
+                                person.active === false ? `${person.name} reactivated` : `${person.name} set inactive`,
+                              )
+                            }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -275,9 +282,3 @@ export default function EmployeesPanel({
     </motion.section>
   )
 }
-
-
-
-
-
-

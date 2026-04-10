@@ -1,27 +1,24 @@
-﻿import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '../../../lib/firebase-admin'
 import { calculateDistanceMeters, isOfficeWfhDay } from '../../../lib/offices'
-import { AMBIGUOUS_MATCH_MARGIN, DISTANCE_THRESHOLD } from '../../../lib/config'
+import {
+  AMBIGUOUS_MATCH_MARGIN,
+  DESCRIPTOR_LENGTH,
+  DISTANCE_THRESHOLD,
+} from '../../../lib/config'
 import { deriveDailyAttendanceRecord, getNextAttendanceAction } from '../../../lib/daily-attendance'
 import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
-import { euclideanDistance, matchBiometricIndexCandidates, queryBiometricIndexCandidates } from '../../../lib/biometric-index'
+import {
+  euclideanDistance,
+  matchBiometricIndexCandidates,
+  queryBiometricIndexCandidates,
+} from '../../../lib/biometric-index'
 import { buildAttendanceEntryTiming, toLegacyAttendanceDate } from '../../../lib/attendance-time'
 import { getOfficeRecord, listOfficeRecords } from '../../../lib/office-directory'
 import { isPersonApproved } from '../../../lib/person-approval'
 import { analyzeLiveness } from '../../../lib/biometrics/liveness'
-
-function normalizeStoredDescriptors(value) {
-  return (Array.isArray(value) ? value : [])
-    .map(sample => {
-      if (Array.isArray(sample)) return sample.map(Number)
-      if (sample && typeof sample === 'object' && Array.isArray(sample.vector)) {
-        return sample.vector.map(Number)
-      }
-      return null
-    })
-    .filter(sample => Array.isArray(sample) && sample.length > 0)
-}
+import { normalizeStoredDescriptors } from '../../../lib/biometrics/descriptor-utils'
 
 function normalizeEntry(body) {
   return {
@@ -45,13 +42,17 @@ function normalizeEntry(body) {
 }
 
 function validateEntry(entry) {
-  if (entry.descriptor.length !== 128 || entry.descriptor.some(value => !Number.isFinite(value))) {
-    return 'Face descriptor is required for attendance verification.'
-  }
-
-  const norm = Math.sqrt(entry.descriptor.reduce((sum, value) => sum + value * value, 0))
-  if (norm < 0.5 || norm > 2.0) {
-    return 'Face descriptor is not valid.'
+  // Length and numeric validity are sufficient. Norm check removed:
+  // @vladmandic/human produces non-unit-normalized embeddings whose L2 norm
+  // varies significantly by device and model version (~1 to ~32+). Checking
+  // the norm here causes false rejections and provides zero security benefit —
+  // a malicious actor can trivially craft a descriptor with any norm they want.
+  if (
+    !Array.isArray(entry.descriptor) ||
+    entry.descriptor.length !== DESCRIPTOR_LENGTH ||
+    entry.descriptor.some(value => !Number.isFinite(value))
+  ) {
+    return `Face descriptor must be a ${DESCRIPTOR_LENGTH}-dimensional numeric array.`
   }
 
   if ((entry.latitude == null) !== (entry.longitude == null)) {
@@ -104,24 +105,21 @@ function getCandidateOfficeIds(offices, entry) {
     .map(office => office.id)
 
   if (!Number.isFinite(entry.latitude) || !Number.isFinite(entry.longitude)) {
-    return {
-      candidateOfficeIds: wfhOfficeIds,
-      onsiteOfficeIds: [],
-      wfhOfficeIds,
-    }
+    return { candidateOfficeIds: wfhOfficeIds, onsiteOfficeIds: [], wfhOfficeIds }
   }
 
   const onsiteOfficeIds = offices
     .filter(office => {
-      if (!Number.isFinite(office?.gps?.latitude) || !Number.isFinite(office?.gps?.longitude) || !Number.isFinite(office?.gps?.radiusMeters)) {
-        return false
-      }
+      if (
+        !Number.isFinite(office?.gps?.latitude) ||
+        !Number.isFinite(office?.gps?.longitude) ||
+        !Number.isFinite(office?.gps?.radiusMeters)
+      ) return false
 
       const distanceMeters = calculateDistanceMeters(
         { latitude: entry.latitude, longitude: entry.longitude },
         office.gps,
       )
-
       return distanceMeters <= office.gps.radiusMeters
     })
     .map(office => office.id)
@@ -136,11 +134,7 @@ function getCandidateOfficeIds(offices, entry) {
 async function getCandidateAttendanceContext(db, entry) {
   const offices = await listOfficeRecords(db)
   const candidateContext = getCandidateOfficeIds(offices, entry)
-
-  return {
-    offices,
-    ...candidateContext,
-  }
+  return { offices, ...candidateContext }
 }
 
 async function getAttendanceLogsForDate(db, employeeId, dateKey, legacyDateLabel = '') {
@@ -178,7 +172,6 @@ function buildStoredAttendanceEntry(entry) {
 
 function buildAttendanceEntryPreview(entry) {
   if (!entry) return null
-
   return {
     id: entry.id || buildAttendanceDocId(entry.employeeId, entry.timestamp),
     name: entry.name || '',
@@ -243,12 +236,7 @@ async function writeAttendanceAtomically(db, entry, cooldownMs) {
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
 
-    return {
-      ok: true,
-      attendanceId,
-      storedEntry,
-      entryPreview,
-    }
+    return { ok: true, attendanceId, storedEntry, entryPreview }
   })
 }
 
@@ -257,7 +245,6 @@ function getCooldownForActionMinutes(office, action) {
   const raw = action === 'checkin'
     ? Number(policy.checkInCooldownMinutes ?? 30)
     : Number(policy.checkOutCooldownMinutes ?? 5)
-
   return Number.isFinite(raw) && raw >= 0 ? raw : action === 'checkin' ? 30 : 5
 }
 
@@ -310,16 +297,10 @@ function matchPersonFromDescriptor(persons, descriptor) {
   }
 }
 
-function getLegacyDateLabel(dateKey) {
-  return toLegacyAttendanceDate(dateKey)
-}
-
 async function resolveMatchedPerson(db, matchResult) {
   if (!matchResult.ok) return matchResult
 
-  if (matchResult.person) {
-    return matchResult
-  }
+  if (matchResult.person) return matchResult
 
   const record = await db.collection('persons').doc(matchResult.personId).get()
   if (!record.exists) {
@@ -363,8 +344,7 @@ export async function POST(request) {
       )
     }
 
-    // --- Passive Liveness Check ---
-    // Only block on confirmed static face (photo spoof). Insufficient frames = assume live.
+    // Passive liveness check
     if (entry.landmarks && entry.landmarks.length > 0) {
       const livenessResult = analyzeLiveness(entry.landmarks)
       if (!livenessResult.live && livenessResult.reason === 'static_face') {
@@ -379,7 +359,6 @@ export async function POST(request) {
         )
       }
     }
-    // -----------------------------
 
     const { candidateOfficeIds, onsiteOfficeIds, wfhOfficeIds } = await getCandidateAttendanceContext(db, entry)
 
@@ -396,6 +375,7 @@ export async function POST(request) {
       )
     }
 
+    // Identity matching via biometric index
     const indexedCandidates = await queryBiometricIndexCandidates(db, candidateOfficeIds, entry.descriptor)
     let personMatch = null
 
@@ -404,12 +384,12 @@ export async function POST(request) {
         db,
         matchBiometricIndexCandidates(indexedCandidates, entry.descriptor, DISTANCE_THRESHOLD, AMBIGUOUS_MATCH_MARGIN),
       )
-
       if (indexedMatch.ok) {
         personMatch = indexedMatch
       }
     }
 
+    // Fallback: full scan when index misses. Should be rare — run backfill if frequent.
     if (!personMatch) {
       const candidatePersons = await getPersonsForOfficeIds(db, candidateOfficeIds)
       personMatch = matchPersonFromDescriptor(candidatePersons, entry.descriptor)
@@ -443,14 +423,9 @@ export async function POST(request) {
     }
 
     const office = await getOfficeRecord(db, person.officeId)
-
     if (!office) {
       return NextResponse.json(
-        {
-          ok: false,
-          message: 'Assigned office was not found.',
-          decisionCode: 'blocked_missing_office_config',
-        },
+        { ok: false, message: 'Assigned office was not found.', decisionCode: 'blocked_missing_office_config' },
         { status: 404 },
       )
     }
@@ -475,21 +450,34 @@ export async function POST(request) {
     entry.officeName = office.name
     entry.confidence = personMatch.confidence ?? entry.confidence
     entry.id = buildAttendanceDocId(entry.employeeId, entry.timestamp)
-    entry.action = ''
 
-    const legacyDateLabel = getLegacyDateLabel(entry.dateKey)
+    const legacyDateLabel = toLegacyAttendanceDate(entry.dateKey)
     const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.dateKey, legacyDateLabel)
     const nextAction = getNextAttendanceAction(dailyLogs, office)
+
+    if (nextAction === 'complete') {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Attendance for today is already complete. See you tomorrow.',
+          decisionCode: 'blocked_day_complete',
+        },
+        { status: 409 },
+      )
+    }
+
     entry.action = nextAction
     const cooldownMinutes = getCooldownForActionMinutes(office, nextAction)
     const cooldownMs = cooldownMinutes * 60 * 1000
 
-    if (officeMatchedWfh) {
+    if (officeMatchedWfh && !officeMatchedOnsite) {
       entry.attendanceMode = 'WFH'
-      entry.geofenceStatus = 'WFH office day'
+      entry.geofenceStatus = hasCoordinates
+        ? 'WFH — GPS location recorded'
+        : 'WFH — no GPS confirmation'
       entry.decisionCode = 'accepted_wfh'
     } else {
-      if (!Number.isFinite(entry.latitude) || !Number.isFinite(entry.longitude)) {
+      if (!hasCoordinates) {
         return NextResponse.json(
           { ok: false, message: 'GPS coordinates are required for on-site attendance.', decisionCode: 'blocked_missing_gps' },
           { status: 400 },
@@ -503,13 +491,13 @@ export async function POST(request) {
 
       if (distanceMeters > office.gps.radiusMeters) {
         return NextResponse.json(
-          { ok: false, message: 'Outside:geofence.', decisionCode: 'blocked_geofence' },
+          { ok: false, message: 'Outside office geofence.', decisionCode: 'blocked_geofence' },
           { status: 403 },
         )
       }
 
       entry.attendanceMode = 'On-site'
-      entry.geofenceStatus = 'Inside office radius (m)'
+      entry.geofenceStatus = 'Inside office radius'
       entry.decisionCode = 'accepted_onsite'
     }
 
@@ -539,7 +527,7 @@ export async function POST(request) {
     await db.collection('attendance_daily').doc(`${entry.employeeId}_${entry.dateKey}`).set({
       ...dailyRecord,
       updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
+    }, { merge: true }).catch(() => null)
 
     return NextResponse.json({
       ok: true,
@@ -555,10 +543,7 @@ export async function POST(request) {
           ok: false,
           message: 'Attendance index is still building in Firestore. Try again after the index finishes.',
           decisionCode: 'blocked_index_building',
-          debug: {
-            source: 'firestore',
-            detail: message,
-          },
+          debug: { source: 'firestore', detail: message },
         },
         { status: 503 },
       )
@@ -570,14 +555,3 @@ export async function POST(request) {
     )
   }
 }
-
-
-
-
-
-
-
-
-
-
-

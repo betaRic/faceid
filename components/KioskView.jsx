@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -120,74 +120,45 @@ const VERIFICATION_BURST_INTERVAL_MS = 70
 function getSafeDecisionMessage(decisionCode) {
   switch (decisionCode) {
     case 'blocked_no_reliable_match':
-      return {
-        name: 'Not recognized',
-        detail: 'Face could not be matched reliably.',
-      }
+      return { name: 'Not recognized', detail: 'Face could not be matched reliably.' }
     case 'blocked_ambiguous_match':
-      return {
-        name: 'Ambiguous match',
-        detail: 'Face is too close to multiple enrolled employees.',
-      }
+      return { name: 'Ambiguous match', detail: 'Face is too close to multiple enrolled employees.' }
     case 'blocked_recent_duplicate':
-      return {
-        name: 'Attendance already recorded',
-        detail: 'Attendance already recorded recently.',
-      }
+      return { name: 'Already recorded', detail: 'Attendance already recorded recently.' }
+    case 'blocked_day_complete':
+      return { name: 'Day complete', detail: 'Full attendance for today is already recorded. See you tomorrow.' }
+    case 'blocked_liveness_failed':
+      return { name: 'Liveness check failed', detail: 'Move slightly and try again.' }
     case 'blocked_missing_gps':
-      return {
-        name: 'Attendance blocked',
-        detail: 'GPS unavailable - ensure location is enabled.',
-      }
+      return { name: 'Attendance blocked', detail: 'GPS unavailable — ensure location is enabled.' }
     case 'blocked_geofence':
-      return {
-        name: 'Attendance blocked',
-        detail: 'Device is outside the assigned office geofence.',
-      }
+      return { name: 'Attendance blocked', detail: 'Device is outside the assigned office geofence.' }
     case 'blocked_rate_limited':
-      return {
-        name: 'Attendance blocked',
-        detail: 'Too many attempts. Wait a moment and try again.',
-      }
+      return { name: 'Attendance blocked', detail: 'Too many attempts. Wait a moment and try again.' }
     case 'blocked_inactive':
-      return {
-        name: 'Attendance blocked',
-        detail: 'Employee account is inactive.',
-      }
+      return { name: 'Attendance blocked', detail: 'Employee account is inactive.' }
     case 'blocked_pending_approval':
-      return {
-        name: 'Pending approval',
-        detail: 'Enrollment exists but still needs admin approval.',
-      }
+      return { name: 'Pending approval', detail: 'Enrollment is awaiting admin approval.' }
     case 'blocked_missing_office_config':
-      return {
-        name: 'Attendance blocked',
-        detail: 'Assigned office is not configured correctly.',
-      }
+      return { name: 'Attendance blocked', detail: 'Assigned office is not configured correctly.' }
     case 'blocked_no_candidate_office':
     case 'blocked_wrong_office_context':
-      return {
-        name: 'Attendance blocked',
-        detail: 'Current location does not match the assigned office context.',
-      }
+      return { name: 'Attendance blocked', detail: 'Current location does not match the assigned office.' }
+    case 'blocked_index_building':
+      return { name: 'System not ready', detail: 'Attendance index is still building. Try again in a minute.' }
     default:
-      return {
-        name: 'Attendance blocked',
-        detail: 'Attendance could not be processed. Please try again or contact an administrator.',
-      }
+      return { name: 'Attendance blocked', detail: 'Could not process attendance. Please try again or contact an administrator.' }
   }
 }
 
 function formatDebugDetail(debug) {
   if (!debug) return ''
-
   const parts = []
   if (debug.source) parts.push(`src ${debug.source}`)
   if (Number.isFinite(debug.bestDistance)) parts.push(`best ${debug.bestDistance.toFixed(3)}`)
   if (Number.isFinite(debug.threshold)) parts.push(`th ${debug.threshold.toFixed(3)}`)
-  if (Number.isFinite(debug.secondDistance)) parts.push(`second ${debug.secondDistance.toFixed(3)}`)
+  if (Number.isFinite(debug.secondDistance)) parts.push(`2nd ${debug.secondDistance.toFixed(3)}`)
   if (Number.isFinite(debug.candidateCount)) parts.push(`cand ${debug.candidateCount}`)
-
   return parts.join(' | ')
 }
 
@@ -208,6 +179,14 @@ export default function KioskView({
   const [alertState, setAlertState] = useState(null)
   const [alertDebug, setAlertDebug] = useState('')
   const [, setLastMeaningfulFailure] = useState('')
+
+  // resumeKey: incrementing this triggers the scan loop useEffect to restart startLoop().
+  // This is the fix for the kiosk freeze bug: when pausedRef is set true during verification,
+  // the self-rescheduling scan loop exits. scheduleResume() was resetting pausedRef but not
+  // restarting the loop. Now incrementing resumeKey causes the useEffect to re-run →
+  // stopLoop() → startLoop(). Works for both the success path and the failure path.
+  const [resumeKey, setResumeKey] = useState(0)
+
   const playAudioCue = useAudioCue()
 
   const scanRef = useRef(null)
@@ -259,6 +238,10 @@ export default function KioskView({
       setAlertDebug('')
       setKioskState('idle')
       camera.clearOverlay()
+      // Increment resumeKey to trigger the scan loop useEffect to restart startLoop().
+      // Without this, pausedRef resets to false but the self-rescheduling loop is already
+      // dead — nothing calls scheduleNext again. This is the freeze fix.
+      setResumeKey(k => k + 1)
     }, delay)
   }, [camera])
 
@@ -322,17 +305,13 @@ export default function KioskView({
       const score = detections.length + (boxArea / frameArea)
 
       if (detections.length && (!bestCapture || score > bestCapture.score)) {
-        bestCapture = {
-          canvas,
-          detections,
-          score,
-        }
+        bestCapture = { canvas, detections, score }
       }
 
       if (attempt < VERIFICATION_BURST_FRAMES - 1) await wait(VERIFICATION_BURST_INTERVAL_MS)
     }
 
-	return { ...bestCapture, landmarks: landmarksBuffer }
+    return { ...bestCapture, landmarks: landmarksBuffer }
   }, [camera, wait])
 
   const runScan = useCallback(async () => {
@@ -547,12 +526,15 @@ export default function KioskView({
     scheduleNext()
   }, [runScan])
 
+  // resumeKey is included in deps: incrementing it (from scheduleResume) causes this
+  // effect to re-run, which calls stopLoop() then startLoop() — restarting the scan loop
+  // after any failure or success that paused it. This is the kiosk freeze fix.
   useEffect(() => {
     if (!workspaceReady || !modelsReady || !camera.camOn) return () => {}
     stopLoop()
     startLoop()
     return stopLoop
-  }, [camera.camOn, modelsReady, startLoop, stopLoop, workspaceReady])
+  }, [camera.camOn, modelsReady, resumeKey, startLoop, stopLoop, workspaceReady])
 
   useEffect(() => {
     const previous = previousStateRef.current
@@ -575,6 +557,7 @@ export default function KioskView({
     : locationState?.bypassed
       ? 'WFH fallback'
       : 'Location pending'
+
   return (
     <AppShell
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
@@ -591,7 +574,7 @@ export default function KioskView({
             <div className="absolute inset-0 z-[6] flex items-center justify-center px-4 py-6 sm:px-6">
               <div className="w-full max-w-xl rounded-[2rem] border border-black/5 bg-white/85 px-6 py-8 text-center shadow-2xl backdrop-blur sm:px-10 sm:py-10">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
                 </div>
@@ -624,7 +607,7 @@ export default function KioskView({
             <>
               <video ref={camera.setVideoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
               {capturedFrameUrl ? (
-                <img alt="Captured verification frame" className="absolute inset-0 z-[1] h-full w-full object-cover" src={capturedFrameUrl} />
+                <img alt="Verification frame" className="absolute inset-0 z-[1] h-full w-full object-cover" src={capturedFrameUrl} />
               ) : null}
               <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
               <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
@@ -634,12 +617,12 @@ export default function KioskView({
               {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
               {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
 
-              <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
+              <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:px-5 sm:py-3">
                 <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
-                <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs sm:tracking-[0.18em]">{dateStr}</div>
+                <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs">{dateStr}</div>
               </div>
-              <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:rounded-[1.1rem] sm:px-5 sm:py-3">
-                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs sm:tracking-[0.18em]">{locationBadgeLabel}</div>
+              <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:px-5 sm:py-3">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs">{locationBadgeLabel}</div>
                 <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
               </div>
 
@@ -657,9 +640,7 @@ export default function KioskView({
                 <div className="text-sm font-semibold uppercase tracking-[0.18em] text-warn">Scan result</div>
                 <div className="mt-3 text-base font-semibold text-ink sm:text-lg">{alertState}</div>
                 {alertDebug ? (
-                  <div className="mt-3 rounded-[0.9rem] bg-stone-100 px-3 py-2 text-xs text-muted">
-                    {alertDebug}
-                  </div>
+                  <div className="mt-3 rounded-[0.9rem] bg-stone-100 px-3 py-2 text-xs text-muted">{alertDebug}</div>
                 ) : null}
               </div>
             </div>
@@ -674,5 +655,3 @@ export default function KioskView({
     </AppShell>
   )
 }
-
-

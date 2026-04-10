@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { motion } from 'framer-motion'
 import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
@@ -559,13 +559,12 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                       disabled={disabled}
                       onClick={() => startTransition(() => setActivePanel(item.id))}
                       type="button"
-                      className={`flex items-center rounded-[1.1rem] px-4 py-3 text-left text-sm font-semibold transition ${
-                        active
+                      className={`flex items-center rounded-[1.1rem] px-4 py-3 text-left text-sm font-semibold transition ${active
                           ? 'bg-navy text-white shadow-sm'
                           : disabled
-                          ? 'cursor-not-allowed text-muted opacity-40'
-                          : 'text-ink hover:bg-stone-100'
-                      }`}
+                            ? 'cursor-not-allowed text-muted opacity-40'
+                            : 'text-ink hover:bg-stone-100'
+                        }`}
                     >
                       {item.label}
                     </button>
@@ -696,13 +695,45 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
           <motion.div
             animate={{ opacity: 1, scale: 1 }}
             initial={{ opacity: 0, scale: 0.95 }}
-            className="w-full max-w-md rounded-[2rem] border border-black/5 bg-white p-6 shadow-2xl"
+            className="w-full max-w-lg rounded-[2rem] border border-black/5 bg-white p-6 shadow-2xl"
           >
-            <h2 className="text-xl font-bold text-ink">Edit Employee</h2>
-            <p className="mt-1 text-sm text-muted">{employeeEditor.name} · {employeeEditor.employeeId}</p>
+            {/* Header */}
+            <div className="flex items-start gap-4">
+              {employeeEditor.photoUrl ? (
+                <img
+                  alt={employeeEditor.name}
+                  className="h-16 w-16 shrink-0 rounded-2xl object-cover ring-2 ring-black/5"
+                  src={employeeEditor.photoUrl}
+                />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-navy/10 text-xl font-bold text-navy-dark">
+                  {String(employeeEditor.name || '?')[0]}
+                </div>
+              )}
+              <div className="min-w-0">
+                <h2 className="text-xl font-bold text-ink">{employeeEditor.name}</h2>
+                <p className="mt-0.5 text-sm text-muted">{employeeEditor.employeeId}</p>
+                {employeeEditor.submittedAt ? (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Submitted {(() => {
+                      try {
+                        const d = employeeEditor.submittedAt?.toDate
+                          ? employeeEditor.submittedAt.toDate()
+                          : new Date(employeeEditor.submittedAt)
+                        const days = Math.floor((Date.now() - d.getTime()) / 86400000)
+                        if (days === 0) return 'today'
+                        if (days === 1) return 'yesterday'
+                        return `${days} days ago`
+                      } catch { return '' }
+                    })()}
+                  </p>
+                ) : null}
+              </div>
+            </div>
 
+            {/* Fields */}
             <div className="mt-5 grid gap-4">
-              <Field label="Assigned Office">
+              <Field label="Transfer to office">
                 <select
                   id="editor-officeId"
                   defaultValue={employeeEditor.officeId}
@@ -712,7 +743,19 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 </select>
               </Field>
 
-              <Field label="Account Status">
+              <Field label="Approval status">
+                <select
+                  id="editor-approval"
+                  defaultValue={getEffectivePersonApprovalStatus(employeeEditor)}
+                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
+                >
+                  <option value={PERSON_APPROVAL_PENDING}>Pending review</option>
+                  <option value={PERSON_APPROVAL_APPROVED}>Approved</option>
+                  <option value={PERSON_APPROVAL_REJECTED}>Rejected</option>
+                </select>
+              </Field>
+
+              <Field label="Account status">
                 <select
                   id="editor-active"
                   defaultValue={employeeEditor.active !== false ? 'true' : 'false'}
@@ -723,18 +766,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 </select>
               </Field>
 
-              <Field label="Approval Status">
-                <select
-                  id="editor-approval"
-                  defaultValue={getEffectivePersonApprovalStatus(employeeEditor)}
-                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-                >
-                  <option value={PERSON_APPROVAL_PENDING}>Pending Review</option>
-                  <option value={PERSON_APPROVAL_APPROVED}>Approved</option>
-                  <option value={PERSON_APPROVAL_REJECTED}>Rejected</option>
-                </select>
-              </Field>
-
               {employeeEditor.sampleCount > 0 && (
                 <div className="rounded-2xl border border-black/5 bg-stone-50 px-4 py-3 text-sm text-muted">
                   {employeeEditor.sampleCount} biometric sample(s) enrolled.
@@ -742,6 +773,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
               )}
             </div>
 
+            {/* Actions */}
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
@@ -769,7 +801,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
               >
                 {isPending(`employee-update-${employeeEditor.id}`) ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                ) : 'Save Changes'}
+                ) : 'Save changes'}
               </button>
             </div>
           </motion.div>
