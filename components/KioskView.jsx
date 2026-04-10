@@ -134,10 +134,20 @@ function getSafeDecisionMessage(decisionCode) {
         name: 'Attendance already recorded',
         detail: 'Attendance already recorded recently.',
       }
+    case 'blocked_day_complete':
+      return {
+        name: 'Day already complete',
+        detail: 'Full attendance for today is already recorded. See you tomorrow.',
+      }
+    case 'blocked_liveness_failed':
+      return {
+        name: 'Liveness check failed',
+        detail: 'Move slightly and try again.',
+      }
     case 'blocked_missing_gps':
       return {
         name: 'Attendance blocked',
-        detail: 'GPS unavailable - ensure location is enabled.',
+        detail: 'GPS unavailable — ensure location is enabled.',
       }
     case 'blocked_geofence':
       return {
@@ -169,6 +179,11 @@ function getSafeDecisionMessage(decisionCode) {
       return {
         name: 'Attendance blocked',
         detail: 'Current location does not match the assigned office context.',
+      }
+    case 'blocked_index_building':
+      return {
+        name: 'System not ready',
+        detail: 'Attendance index is still building. Try again in a minute.',
       }
     default:
       return {

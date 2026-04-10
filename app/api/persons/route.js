@@ -10,6 +10,11 @@ import {
   normalizeEnrollmentDescriptorBatch,
   validateEnrollmentDescriptorBatch,
 } from '../../../lib/biometrics/enrollment-burst'
+import {
+  euclideanDistance,
+  findClosestPerson,
+  normalizeStoredDescriptors,
+} from '../../../lib/biometrics/descriptor-utils'
 import { enforceRateLimit, getRequestIp } from '../../../lib/rate-limit'
 import { getOfficeRecord } from '../../../lib/office-directory'
 import {
@@ -27,56 +32,8 @@ import {
   normalizePersonDirectorySearchValue,
 } from '../../../lib/person-directory'
 
-function safeArray(value) {
-  return Array.isArray(value) ? value : []
-}
-
-function normalizeStoredDescriptors(value) {
-  return safeArray(value)
-    .map(sample => {
-      if (Array.isArray(sample)) return sample.map(Number)
-      if (sample && typeof sample === 'object' && Array.isArray(sample.vector)) {
-        return sample.vector.map(Number)
-      }
-      return null
-    })
-    .filter(sample => Array.isArray(sample) && sample.length > 0)
-}
-
 function serializeDescriptorSample(descriptor) {
-  return { vector: safeArray(descriptor).map(Number) }
-}
-
-function euclideanDistance(left, right) {
-  let total = 0
-
-  for (let index = 0; index < left.length; index += 1) {
-    const diff = left[index] - right[index]
-    total += diff * diff
-  }
-
-  return Math.sqrt(total)
-}
-
-function findDuplicateFace(persons, employeeId, descriptor) {
-  let bestMatch = null
-
-  persons.forEach(person => {
-    if (employeeId && person.employeeId === employeeId) return
-
-    normalizeStoredDescriptors(person.descriptors).forEach(sample => {
-      const distance = euclideanDistance(sample, descriptor)
-      if (!bestMatch || distance < bestMatch.distance) {
-        bestMatch = {
-          person,
-          distance,
-        }
-      }
-    })
-  })
-
-  if (!bestMatch || bestMatch.distance > DUPLICATE_FACE_THRESHOLD) return null
-  return bestMatch
+  return { vector: Array.from(descriptor).map(Number) }
 }
 
 function normalizeBody(body) {
@@ -85,6 +42,7 @@ function normalizeBody(body) {
     employeeId: String(body?.profile?.employeeId || '').trim(),
     officeId: String(body?.profile?.officeId || '').trim(),
     officeName: String(body?.profile?.officeName || '').trim(),
+    photoDataUrl: typeof body?.profile?.photoDataUrl === 'string' ? body.profile.photoDataUrl : null,
     descriptors: normalizeEnrollmentDescriptorBatch(body?.descriptors ?? body?.descriptor),
   }
 }
@@ -141,6 +99,8 @@ function mapPersonDirectoryRecord(record) {
     active: data.active !== false,
     approvalStatus: getEffectivePersonApprovalStatus(data),
     sampleCount: descriptors.length,
+    photoUrl: data.photoUrl || null,
+    submittedAt: data.submittedAt || null,
   }
 }
 
@@ -154,15 +114,9 @@ function buildDirectoryQuery(db, resolvedSession, params, overrides = {}) {
 
   let query = db.collection('persons')
 
-  if (scopedOfficeId) {
-    query = query.where('officeId', '==', scopedOfficeId)
-  }
-
-  if (activeStatus === 'active') {
-    query = query.where('active', '==', true)
-  } else if (activeStatus === 'inactive') {
-    query = query.where('active', '==', false)
-  }
+  if (scopedOfficeId) query = query.where('officeId', '==', scopedOfficeId)
+  if (activeStatus === 'active') query = query.where('active', '==', true)
+  else if (activeStatus === 'inactive') query = query.where('active', '==', false)
 
   if (approvalStatus === PERSON_APPROVAL_PENDING || approvalStatus === PERSON_APPROVAL_REJECTED) {
     query = query.where('approvalStatus', '==', approvalStatus)
@@ -197,11 +151,9 @@ async function loadDirectoryPage(db, resolvedSession, params) {
 
   if (params.approval !== PERSON_APPROVAL_APPROVED) {
     let pageQuery = query.limit(params.limit + 1)
-
     if (params.cursor) {
       pageQuery = pageQuery.startAfter(params.cursor.primary, params.cursor.secondary)
     }
-
     const snapshot = await pageQuery.get()
     return {
       docs: snapshot.docs.slice(0, params.limit),
@@ -230,11 +182,7 @@ async function loadDirectoryPage(db, resolvedSession, params) {
       }
     })
 
-    if (collected.length > params.limit) {
-      hasMore = true
-      break
-    }
-
+    if (collected.length > params.limit) { hasMore = true; break }
     if (snapshot.size < batchSize) break
 
     const lastRecord = snapshot.docs[snapshot.docs.length - 1]
@@ -264,13 +212,7 @@ async function handleDirectoryGet(request, db, resolvedSession) {
         : params.approval === PERSON_APPROVAL_PENDING
           ? pending
           : rejected
-
-    return {
-      total,
-      approved,
-      pending,
-      rejected,
-    }
+    return { total, approved, pending, rejected }
   })
 
   const [pageResult, metrics] = await Promise.all([
@@ -357,10 +299,7 @@ export async function POST(request) {
     const office = await getOfficeRecord(db, body.officeId)
 
     if (!office) {
-      return NextResponse.json(
-        { ok: false, message: 'Assigned office was not found.' },
-        { status: 400 },
-      )
+      return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 400 })
     }
 
     if (resolvedSession && !adminAuth.adminSessionAllowsOffice(resolvedSession, office.id)) {
@@ -384,12 +323,26 @@ export async function POST(request) {
       )
     }
 
-    const snapshot = await db.collection('persons').get()
-    const persons = snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
+    // Duplicate face check via biometric index (fast, no full table scan).
+    // Falls back to a full scan only if the index is empty, which shouldn't happen after backfill.
+    const { queryBiometricIndexCandidates, matchBiometricIndexCandidates } = await import('../../../lib/biometric-index')
+    let duplicateFace = null
 
-    const duplicateFace = body.descriptors
-      .map(descriptor => findDuplicateFace(persons, body.employeeId, descriptor))
-      .find(Boolean)
+    for (const descriptor of body.descriptors) {
+      const indexCandidates = await queryBiometricIndexCandidates(db, [body.officeId], descriptor)
+
+      if (indexCandidates.length > 0) {
+        const match = matchBiometricIndexCandidates(indexCandidates, descriptor, DUPLICATE_FACE_THRESHOLD, 0.02)
+        if (match.ok && match.personId) {
+          const personRecord = await db.collection('persons').doc(match.personId).get()
+          const personData = personRecord.exists ? { id: personRecord.id, ...personRecord.data() } : null
+          if (personData && personData.employeeId !== body.employeeId) {
+            duplicateFace = { person: personData, distance: match.distance }
+            break
+          }
+        }
+      }
+    }
 
     if (duplicateFace) {
       return NextResponse.json(
@@ -428,6 +381,7 @@ export async function POST(request) {
       const nextApprovalStatus = existing
         ? (resolvedSession ? existingApprovalStatus : PERSON_APPROVAL_PENDING)
         : (resolvedSession ? PERSON_APPROVAL_APPROVED : PERSON_APPROVAL_PENDING)
+
       const nextPerson = existing
         ? {
             ...existing,
@@ -435,7 +389,7 @@ export async function POST(request) {
             active: existing.active !== false,
             approvalStatus: nextApprovalStatus,
             descriptors: [
-              ...safeArray(existing.descriptors),
+              ...(existing.descriptors || []),
               ...body.descriptors.map(serializeDescriptorSample),
             ],
             lastSubmittedAt: FieldValue.serverTimestamp(),
@@ -456,66 +410,74 @@ export async function POST(request) {
         personId: personRef.id,
       }, { merge: true })
 
-      return {
-        existing,
-        personId: personRef.id,
-        nextPerson,
-      }
+      return { existing, personId: personRef.id, nextPerson }
     })
 
     await syncPersonBiometricIndex(db, transactionResult.personId, transactionResult.nextPerson)
 
+    // Store the enrollment photo for pending submissions so admins can review visually.
+    // Requires Firebase Storage bucket and service account with Storage Object Admin role.
+    if (body.photoDataUrl && transactionResult.nextPerson.approvalStatus === PERSON_APPROVAL_PENDING) {
+      const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+      if (storageBucket) {
+        const photoUrl = await uploadEnrollmentPhoto(
+          storageBucket,
+          transactionResult.personId,
+          body.photoDataUrl,
+        ).catch(err => {
+          console.error('Enrollment photo upload failed (non-fatal):', err?.message)
+          return null
+        })
+
+        if (photoUrl) {
+          await db.collection('persons').doc(transactionResult.personId)
+            .update({ photoUrl })
+            .catch(() => null)
+        }
+      }
+    }
+
+    // Audit log
+    const sampleCount = normalizeStoredDescriptors(transactionResult.nextPerson.descriptors).length
+    const auditBase = {
+      targetType: 'person',
+      targetId: transactionResult.personId,
+      officeId: office.id,
+      metadata: {
+        employeeId: body.employeeId,
+        officeName: office.name,
+        approvalStatus: transactionResult.nextPerson.approvalStatus,
+        savedSampleCount: body.descriptors.length,
+      },
+    }
+
     if (resolvedSession && transactionResult.existing) {
       await writeAuditLog(db, {
+        ...auditBase,
         actorRole: resolvedSession.role,
         actorScope: resolvedSession.scope,
         actorOfficeId: resolvedSession.officeId,
         action: 'person_sample_add',
-        targetType: 'person',
-        targetId: transactionResult.personId,
-        officeId: office.id,
         summary: `Added enrollment sample for ${body.name}`,
-        metadata: {
-          employeeId: body.employeeId,
-          officeName: office.name,
-          approvalStatus: transactionResult.nextPerson.approvalStatus,
-          savedSampleCount: body.descriptors.length,
-        },
       })
     } else if (resolvedSession) {
       await writeAuditLog(db, {
+        ...auditBase,
         actorRole: resolvedSession.role,
         actorScope: resolvedSession.scope,
         actorOfficeId: resolvedSession.officeId,
         action: 'person_create',
-        targetType: 'person',
-        targetId: transactionResult.personId,
-        officeId: office.id,
         summary: `Created employee record for ${body.name}`,
-        metadata: {
-          employeeId: body.employeeId,
-          officeName: office.name,
-          approvalStatus: transactionResult.nextPerson.approvalStatus,
-          savedSampleCount: body.descriptors.length,
-        },
       })
     } else {
       await writeAuditLog(db, {
+        ...auditBase,
         actorRole: 'public',
         actorScope: 'public',
         action: transactionResult.existing ? 'person_submission_update' : 'person_submission_create',
-        targetType: 'person',
-        targetId: transactionResult.personId,
-        officeId: office.id,
         summary: transactionResult.existing
           ? `Public enrollment resubmitted for ${body.name}`
           : `Public enrollment submitted for ${body.name}`,
-        metadata: {
-          employeeId: body.employeeId,
-          officeName: office.name,
-          approvalStatus: transactionResult.nextPerson.approvalStatus,
-          savedSampleCount: body.descriptors.length,
-        },
       })
     }
 
@@ -523,7 +485,7 @@ export async function POST(request) {
       ok: true,
       personId: transactionResult.personId,
       approvalStatus: transactionResult.nextPerson.approvalStatus,
-      sampleCount: normalizeStoredDescriptors(transactionResult.nextPerson.descriptors).length,
+      sampleCount,
       savedSampleCount: body.descriptors.length,
       message: transactionResult.nextPerson.approvalStatus === PERSON_APPROVAL_PENDING
         ? 'Enrollment submitted for admin approval.'
@@ -537,5 +499,3 @@ export async function POST(request) {
     )
   }
 }
-
-
