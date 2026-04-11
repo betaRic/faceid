@@ -3,10 +3,6 @@
     {
       "path": "/api/cron/rebuild-daily-summary",
       "schedule": "30 9 * * *"
-    },
-    {
-      "path": "/api/cron/warm-biometric-cache",
-      "schedule": "*/30 * * * *"
     }
   ]
 }
