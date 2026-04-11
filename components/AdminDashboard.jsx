@@ -22,6 +22,7 @@ import SummaryPanel from './admin/SummaryPanel'
 import AdminsPanel from './admin/AdminsPanel'
 import ActionButton from './admin/ActionButton'
 import Field from './admin/Field'
+import EmployeeEditorModal from './admin/EmployeeEditorModal'
 
 const EMPLOYEE_PAGE_SIZE = 24
 
@@ -560,10 +561,10 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                       onClick={() => startTransition(() => setActivePanel(item.id))}
                       type="button"
                       className={`flex items-center rounded-[1.1rem] px-4 py-3 text-left text-sm font-semibold transition ${active
-                          ? 'bg-navy text-white shadow-sm'
-                          : disabled
-                            ? 'cursor-not-allowed text-muted opacity-40'
-                            : 'text-ink hover:bg-stone-100'
+                        ? 'bg-navy text-white shadow-sm'
+                        : disabled
+                          ? 'cursor-not-allowed text-muted opacity-40'
+                          : 'text-ink hover:bg-stone-100'
                         }`}
                     >
                       {item.label}
@@ -689,123 +690,17 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
         </div>
       </div>
 
-      {/* Employee editor modal */}
       {employeeEditor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-          <motion.div
-            animate={{ opacity: 1, scale: 1 }}
-            initial={{ opacity: 0, scale: 0.95 }}
-            className="w-full max-w-lg rounded-[2rem] border border-black/5 bg-white p-6 shadow-2xl"
-          >
-            {/* Header */}
-            <div className="flex items-start gap-4">
-              {employeeEditor.photoUrl ? (
-                <img
-                  alt={employeeEditor.name}
-                  className="h-16 w-16 shrink-0 rounded-2xl object-cover ring-2 ring-black/5"
-                  src={employeeEditor.photoUrl}
-                />
-              ) : (
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-navy/10 text-xl font-bold text-navy-dark">
-                  {String(employeeEditor.name || '?')[0]}
-                </div>
-              )}
-              <div className="min-w-0">
-                <h2 className="text-xl font-bold text-ink">{employeeEditor.name}</h2>
-                <p className="mt-0.5 text-sm text-muted">{employeeEditor.employeeId}</p>
-                {employeeEditor.submittedAt ? (
-                  <p className="mt-1 text-xs text-amber-600">
-                    Submitted {(() => {
-                      try {
-                        const d = employeeEditor.submittedAt?.toDate
-                          ? employeeEditor.submittedAt.toDate()
-                          : new Date(employeeEditor.submittedAt)
-                        const days = Math.floor((Date.now() - d.getTime()) / 86400000)
-                        if (days === 0) return 'today'
-                        if (days === 1) return 'yesterday'
-                        return `${days} days ago`
-                      } catch { return '' }
-                    })()}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Fields */}
-            <div className="mt-5 grid gap-4">
-              <Field label="Transfer to office">
-                <select
-                  id="editor-officeId"
-                  defaultValue={employeeEditor.officeId}
-                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-                >
-                  {visibleOffices.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-                </select>
-              </Field>
-
-              <Field label="Approval status">
-                <select
-                  id="editor-approval"
-                  defaultValue={getEffectivePersonApprovalStatus(employeeEditor)}
-                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-                >
-                  <option value={PERSON_APPROVAL_PENDING}>Pending review</option>
-                  <option value={PERSON_APPROVAL_APPROVED}>Approved</option>
-                  <option value={PERSON_APPROVAL_REJECTED}>Rejected</option>
-                </select>
-              </Field>
-
-              <Field label="Account status">
-                <select
-                  id="editor-active"
-                  defaultValue={employeeEditor.active !== false ? 'true' : 'false'}
-                  className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-                >
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </select>
-              </Field>
-
-              {employeeEditor.sampleCount > 0 && (
-                <div className="rounded-2xl border border-black/5 bg-stone-50 px-4 py-3 text-sm text-muted">
-                  {employeeEditor.sampleCount} biometric sample(s) enrolled.
-                </div>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setEmployeeEditor(null)}
-                className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isPending(`employee-update-${employeeEditor.id}`)}
-                className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-60"
-                onClick={() => {
-                  const officeId = document.getElementById('editor-officeId').value
-                  const active = document.getElementById('editor-active').value === 'true'
-                  const approvalStatus = document.getElementById('editor-approval').value
-                  const office = offices.find(o => o.id === officeId)
-                  handleEmployeeUpdate(
-                    employeeEditor,
-                    { officeId, officeName: office?.name || employeeEditor.officeName, active, approvalStatus },
-                    `${employeeEditor.name} updated`,
-                  )
-                  setEmployeeEditor(null)
-                }}
-              >
-                {isPending(`employee-update-${employeeEditor.id}`) ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                ) : 'Save changes'}
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <EmployeeEditorModal
+          person={employeeEditor}
+          offices={visibleOffices}
+          isSaving={isPending(`employee-update-${employeeEditor.id}`)}
+          onSave={(person, updates) => {
+            handleEmployeeUpdate(person, updates, `${person.name} updated`)
+            setEmployeeEditor(null)
+          }}
+          onCancel={() => setEmployeeEditor(null)}
+        />
       )}
     </AppShell>
   )
