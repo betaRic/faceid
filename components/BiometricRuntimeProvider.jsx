@@ -2,13 +2,13 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { useCamera } from '../hooks/useCamera'
-import { areModelsReady, getModelLoadStatus, loadModels } from '../lib/biometrics/human'
+import { useCamera } from '@/hooks/useCamera'
+import { areModelsReady, getModelLoadStatus, loadModels } from '@/lib/biometrics/human'
 import {
   LOCATION_BOOT_TIMEOUT_MS,
   LOCATION_CACHE_MAX_AGE_MS,
   LOCATION_REFRESH_INTERVAL_MS,
-} from '../lib/config'
+} from '@/lib/config'
 
 const BiometricRuntimeContext = createContext(null)
 
@@ -136,15 +136,9 @@ export function BiometricRuntimeProvider({ children }) {
       try {
         if (!areModelsReady()) {
           setBootStage('models')
-          setModelStatus(getModelLoadStatus())
-          await loadModels(message => {
-            if (!active) return
-            setBootStage('models')
-            setModelStatus(message)
-          })
+          setModelStatus('Loading models...')
+          await loadModels()
         }
-
-        if (!active) return
 
         setModelsReady(true)
         setModelStatus('Ready')
@@ -154,15 +148,11 @@ export function BiometricRuntimeProvider({ children }) {
           const locationResolved = await resolveLocation({ boot: true })
 
           if (!active) return
-
           if (!locationResolved && !locationBypassed) {
-            setRuntimeError('Enable location before starting the kiosk. If the employee is on WFH today, continue without GPS and the kiosk will allow WFH-only attendance attempts.')
+            setRuntimeError('Location required for kiosk. For WFH, continue without GPS.')
             return
           }
-
-          refreshInterval = window.setInterval(() => {
-            resolveLocation().catch(() => {})
-          }, LOCATION_REFRESH_INTERVAL_MS)
+          refreshInterval = window.setInterval(() => resolveLocation().catch(() => {}), LOCATION_REFRESH_INTERVAL_MS)
         }
 
         setBootStage('camera')
@@ -172,7 +162,8 @@ export function BiometricRuntimeProvider({ children }) {
         setBootStage('ready')
       } catch (error) {
         if (!active) return
-        setRuntimeError(error?.message || 'Unable to prepare the biometric workspace.')
+        setRuntimeError(error?.message || 'Workspace failed')
+        setModelStatus('Error: ' + error?.message)
         setBootStage('error')
       }
     }

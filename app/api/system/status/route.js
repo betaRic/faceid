@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getRuntimeReadiness } from '../../../../lib/runtime-readiness'
+import { getRuntimeReadiness } from '@/lib/runtime-readiness'
 
 export const dynamic = 'force-dynamic'
 

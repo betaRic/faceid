@@ -1,8 +1,10 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '../../../../lib/firebase-admin'
-import { deriveDailyAttendanceRecord } from '../../../../lib/daily-attendance'
-import { formatAttendanceDateKey } from '../../../../lib/attendance-time'
-import { listOfficeRecords } from '../../../../lib/office-directory'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
+import { formatAttendanceDateKey } from '@/lib/attendance-time'
+import { listOfficeRecords } from '@/lib/office-directory'
 
 export const runtime = 'nodejs'
 

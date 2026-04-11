@@ -1,12 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { enhanceImage } from '@/lib/biometrics/image-enhance'
 
 export function useCamera() {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const overlayRef = useRef(null)
   const streamRef = useRef(null)
+  const pendingStreamRef = useRef(null)
   const startPromiseRef = useRef(null)
 
   const [camOn, setCamOn] = useState(false)
@@ -20,24 +22,41 @@ export function useCamera() {
   const attachStreamToVideo = useCallback(async () => {
     const video = videoRef.current
     const stream = streamRef.current
-    if (!video || !stream) return
+    if (!stream) return
+
+    if (!video) {
+      pendingStreamRef.current = stream
+      return
+    }
 
     if (video.srcObject !== stream) {
       video.srcObject = stream
     }
 
     if (video.paused) {
-      await video.play()
+      try {
+        await video.play()
+      } catch (e) {
+        console.warn('[Camera] video.play() failed:', e.message)
+      }
     }
   }, [])
 
   const setVideoRef = useCallback(node => {
     videoRef.current = node
 
-    if (node && streamRef.current) {
-      attachStreamToVideo().catch(() => {})
+    if (node) {
+      const pendingStream = pendingStreamRef.current
+      if (pendingStream) {
+        pendingStreamRef.current = null
+        streamRef.current = pendingStream
+        node.srcObject = pendingStream
+        node.play().catch(() => {})
+      } else if (streamRef.current) {
+        node.srcObject = streamRef.current
+      }
     }
-  }, [attachStreamToVideo])
+  }, [])
 
   const start = useCallback(async () => {
     if (startPromiseRef.current) return startPromiseRef.current
@@ -60,15 +79,25 @@ export function useCamera() {
     startPromiseRef.current = (async () => {
       try {
         const stream = await requestPreferredCameraStream()
-
+        
+        const track = stream.getVideoTracks()[0]
+        if (track) {
+          const settings = track.getSettings()
+          if (settings.width && settings.width < 640) {
+            console.warn('[Camera] Low resolution detected:', settings.width, 'x', settings.height)
+          }
+          if (settings.frameRate && settings.frameRate < 15) {
+            console.warn('[Camera] Low frame rate detected:', settings.frameRate, 'fps')
+          }
+        }
+        
         streamRef.current = stream
         await attachStreamToVideo()
-
         setCamOn(true)
         return stream
       } catch (error) {
         const message = error?.message || 'Unable to access camera'
-        const interrupted = message.toLowerCase().includes('interrupted by a new load request')
+        const interrupted = message.toLowerCase().includes('interrupted')
         setCamError(interrupted ? 'Camera restarted. Retrying...' : message)
         setCamOn(false)
         throw error
@@ -83,6 +112,7 @@ export function useCamera() {
   const stop = useCallback(() => {
     if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop())
     streamRef.current = null
+    pendingStreamRef.current = null
     startPromiseRef.current = null
 
     if (videoRef.current) {
@@ -98,21 +128,33 @@ export function useCamera() {
   const captureImageData = useCallback((options = {}) => {
     const video = videoRef.current
     const canvas = canvasRef.current
-    const sourceWidth = video.videoWidth || 640
-    const sourceHeight = video.videoHeight || 480
+    
+    if (!video || video.readyState < 2) {
+      return null
+    }
+    
+    const sourceWidth = video.videoWidth || video.offsetWidth || 640
+    const sourceHeight = video.videoHeight || video.offsetHeight || 480
     const maxWidth = options.maxWidth || sourceWidth
     const maxHeight = options.maxHeight || sourceHeight
     const scale = Math.min(1, maxWidth / sourceWidth, maxHeight / sourceHeight)
 
     canvas.width = Math.max(1, Math.round(sourceWidth * scale))
     canvas.height = Math.max(1, Math.round(sourceHeight * scale))
-    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+    
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    
+    if (options.enhanced) {
+      return enhanceImage(canvas)
+    }
+    
     return canvas
   }, [])
 
   useEffect(() => () => stop(), [stop])
 
-  return useMemo(() => ({
+  return {
     videoRef,
     setVideoRef,
     canvasRef,
@@ -123,7 +165,7 @@ export function useCamera() {
     stop,
     captureImageData,
     clearOverlay,
-  }), [camError, camOn, captureImageData, clearOverlay, setVideoRef, start, stop])
+  }
 }
 
 async function requestPreferredCameraStream() {
@@ -132,23 +174,38 @@ async function requestPreferredCameraStream() {
       audio: false,
       video: {
         facingMode: 'user',
-        width: { ideal: 960 },
-        height: { ideal: 540 },
-        frameRate: { ideal: 24, max: 24 },
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 },
+        frameRate: { ideal: 30, min: 15 },
+        aspectRatio: { ideal: 16 / 9 },
+        resizeMode: 'none',
       },
     },
     {
       audio: false,
       video: {
         facingMode: 'user',
-        width: { ideal: 640 },
-        height: { ideal: 480 },
+        width: { ideal: 960, max: 1280 },
+        height: { ideal: 720, max: 960 },
+        frameRate: { ideal: 30, min: 15 },
+        resizeMode: 'none',
       },
     },
     {
       audio: false,
       video: {
         facingMode: 'user',
+        width: { ideal: 640, min: 480 },
+        height: { ideal: 480, min: 360 },
+        frameRate: { ideal: 30, min: 15 },
+        resizeMode: 'none',
+      },
+    },
+    {
+      audio: false,
+      video: {
+        facingMode: 'user',
+        resizeMode: 'none',
       },
     },
     {
@@ -161,7 +218,8 @@ async function requestPreferredCameraStream() {
 
   for (const constraints of preferredConstraints) {
     try {
-      return await navigator.mediaDevices.getUserMedia(constraints)
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      return stream
     } catch (error) {
       lastError = error
     }
@@ -169,4 +227,3 @@ async function requestPreferredCameraStream() {
 
   throw lastError || new Error('Unable to access camera')
 }
-

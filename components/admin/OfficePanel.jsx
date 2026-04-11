@@ -1,24 +1,43 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import AdminOfficePanel from '../AdminOfficePanel'
+import { useAdminStore } from '@/lib/admin/store'
+import AdminOfficePanel from '@/components/AdminOfficePanel'
 
-export default function OfficePanel({
-  visibleOffices,
-  selectedOfficeId,
-  setSelectedOfficeId,
-  persons,
-  activeOffice,
-  handleSaveOffice,
-  handleUseMyLocation,
-  highlightLocationPin,
-  locationLoading,
-  locationNotice,
-  officeDraftWarning,
-  isPending,
-  toggleDay,
-  updateDraft,
-}) {
+export default function OfficePanel() {
+  const {
+    offices,
+    officesLoaded,
+    selectedOfficeId,
+    setSelectedOfficeId,
+    employees,
+    employeesLoaded,
+  } = useAdminStore()
+
+  const getVisibleOffices = () => {
+    return offices
+  }
+
+  const getSelectedOffice = () => {
+    return offices.find(o => o.id === selectedOfficeId) || offices[0] || null
+  }
+
+  if (!officesLoaded) {
+    return (
+      <motion.section
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-center py-20"
+        initial={{ opacity: 0, y: 18 }}
+        transition={{ duration: 0.35 }}
+      >
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
+      </motion.section>
+    )
+  }
+
+  const visibleOffices = getVisibleOffices()
+  const activeOffice = getSelectedOffice()
+
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
@@ -37,8 +56,8 @@ export default function OfficePanel({
           </div>
         </div>
 
-        <div className="overflow-x-auto xl:min-h-0 xl:flex-1 xl:overflow-auto">
-          <table className="min-w-[980px] text-left text-sm">
+        <div className="overflow-auto xl:min-h-0 xl:flex-1 xl:overflow-auto">
+          <table className="w-full text-left text-sm">
             <thead className="bg-stone-50 text-xs uppercase tracking-[0.16em] text-muted">
               <tr>
                 <th className="px-5 py-4">Code</th>
@@ -53,6 +72,9 @@ export default function OfficePanel({
             <tbody className="divide-y divide-black/5">
               {visibleOffices.map(office => {
                 const selected = office.id === selectedOfficeId
+                const empCount = employeesLoaded 
+                  ? employees.filter(p => p.officeId === office.id).length 
+                  : (office.employees || 0)
                 return (
                   <tr
                     key={office.id}
@@ -68,7 +90,7 @@ export default function OfficePanel({
                     </td>
                     <td className="px-5 py-4 text-muted">{office.officeType}</td>
                     <td className="px-5 py-4 text-muted">{office.provinceOrCity || office.location}</td>
-                    <td className="px-5 py-4 text-muted">{office.employees ?? persons.filter(person => person.officeId === office.id).length}</td>
+                    <td className="px-5 py-4 text-muted">{empCount}</td>
                     <td className="px-5 py-4">
                       <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${(office.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                         {(office.status || 'active') === 'active' ? 'Active' : 'Inactive'}
@@ -97,15 +119,6 @@ export default function OfficePanel({
       <section className="rounded-[2rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur sm:p-6 xl:min-h-0 xl:overflow-auto">
         <AdminOfficePanel
           activeOffice={activeOffice}
-          handleSaveOffice={handleSaveOffice}
-          handleUseMyLocation={handleUseMyLocation}
-          highlightLocationPin={highlightLocationPin}
-          locationLoading={locationLoading}
-          locationNotice={locationNotice}
-          officeDraftWarning={officeDraftWarning}
-          savePending={isPending('office-save')}
-          toggleDay={toggleDay}
-          updateDraft={updateDraft}
         />
       </section>
     </motion.section>

@@ -1,17 +1,25 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '../../../../../lib/firebase-admin'
+import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   isRegionalAdminSession,
   parseAdminSessionCookieValue,
   resolveAdminSession,
-} from '../../../../../lib/admin-auth'
-import { writeAuditLog } from '../../../../../lib/audit-log'
-import { summarizeFirestoreIndexSync, syncFirestoreIndexes } from '../../../../../lib/firestore-index-admin'
+} from '@/lib/admin-auth'
+import { writeAuditLog } from '@/lib/audit-log'
+import { summarizeFirestoreIndexSync, syncFirestoreIndexes } from '@/lib/firestore-index-admin'
+import { createOriginGuard } from '@/lib/csrf'
 
 export const runtime = 'nodejs'
 
 export async function POST(request) {
+  const guard = createOriginGuard(request)
+  if (!guard.valid) {
+    return NextResponse.json({ ok: false, message: 'Invalid origin.' }, { status: 403 })
+  }
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })

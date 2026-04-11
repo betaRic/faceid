@@ -1,9 +1,12 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '../../../lib/firebase-admin'
-import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '../../../lib/admin-auth'
-import { listAdminProfiles } from '../../../lib/admin-directory'
-import { writeAuditLog } from '../../../lib/audit-log'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { listAdminProfiles } from '@/lib/admin-directory'
+import { writeAuditLog } from '@/lib/audit-log'
+import { createOriginGuard } from '@/lib/csrf'
 
 function normalizeBody(body) {
   return {
@@ -48,6 +51,10 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })

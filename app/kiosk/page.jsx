@@ -1,6 +1,9 @@
-import DynamicFaceAttendanceApp from '@/components/DynamicFaceAttendanceApp.jsx'
+'use client'
+
+import dynamic from 'next/dynamic'
+
+const FaceAttendanceApp = dynamic(() => import('@/components/FaceAttendanceApp'), { ssr: false })
 
 export default function KioskPage() {
-  return <DynamicFaceAttendanceApp initialPage='kiosk' loadPersons={false} loadAttendance={false} />
+  return <FaceAttendanceApp initialPage="kiosk" loadPersons={false} loadAttendance={false} />
 }
-

@@ -1,29 +1,22 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '../../../../../lib/firebase-admin'
+import { DESCRIPTOR_LENGTH } from '@/lib/config'
+import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   isRegionalAdminSession,
   parseAdminSessionCookieValue,
   resolveAdminSession,
-} from '../../../../../lib/admin-auth'
-import { syncPersonBiometricIndex } from '../../../../../lib/biometric-index'
-import { writeAuditLog } from '../../../../../lib/audit-log'
+} from '@/lib/admin-auth'
+import { syncPersonBiometricIndex } from '@/lib/biometric-index'
+import { writeAuditLog } from '@/lib/audit-log'
+import { normalizeStoredDescriptors } from '@/lib/biometrics/descriptor-utils'
+import { createOriginGuard } from '@/lib/csrf'
 
 function safeArray(value) {
   return Array.isArray(value) ? value : []
-}
-
-function normalizeStoredDescriptors(value) {
-  return safeArray(value)
-    .map(sample => {
-      if (Array.isArray(sample)) return sample.map(Number)
-      if (sample && typeof sample === 'object' && Array.isArray(sample.vector)) {
-        return sample.vector.map(Number)
-      }
-      return null
-    })
-    .filter(sample => Array.isArray(sample) && sample.length === 128 && sample.every(Number.isFinite))
 }
 
 function serializeDescriptorSample(descriptor) {
@@ -31,6 +24,11 @@ function serializeDescriptorSample(descriptor) {
 }
 
 export async function POST(request) {
+  const guard = createOriginGuard(request)
+  if (!guard.valid) {
+    return NextResponse.json({ ok: false, message: 'Invalid origin.' }, { status: 403 })
+  }
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
@@ -52,14 +50,15 @@ export async function POST(request) {
 
     for (const record of snapshot.docs) {
       const data = record.data()
-      const normalizedDescriptors = normalizeStoredDescriptors(data.descriptors)
+      const allDescriptors = normalizeStoredDescriptors(data.descriptors)
+      const validDescriptors = allDescriptors.filter(d => d.length === DESCRIPTOR_LENGTH && d.every(Number.isFinite))
       const currentDescriptors = safeArray(data.descriptors)
       const name = String(data.name || '').trim().toUpperCase()
       const nextPerson = {
         ...data,
         name,
         nameLower: name.toLowerCase(),
-        descriptors: normalizedDescriptors.map(serializeDescriptorSample),
+        descriptors: validDescriptors.map(serializeDescriptorSample),
         updatedAt: FieldValue.serverTimestamp(),
       }
 

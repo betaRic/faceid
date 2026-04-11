@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth'
 import BrandMark from './BrandMark'
 import AppShell from './AppShell'
-import { auth } from '../lib/firebase/client'
+import { auth } from '@/lib/firebase/client'
 
 export default function AdminLogin() {
   const router = useRouter()

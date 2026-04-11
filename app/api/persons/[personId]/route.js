@@ -1,22 +1,25 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '../../../../lib/firebase-admin'
+import { getAdminDb } from '@/lib/firebase-admin'
 import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
   resolveAdminSession,
-} from '../../../../lib/admin-auth'
-import { writeAuditLog } from '../../../../lib/audit-log'
-import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '../../../../lib/biometric-index'
-import { getOfficeRecord } from '../../../../lib/office-directory'
+} from '@/lib/admin-auth'
+import { writeAuditLog } from '@/lib/audit-log'
+import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biometric-index'
+import { getOfficeRecord } from '@/lib/office-directory'
+import { createOriginGuard } from '@/lib/csrf'
 import {
   getEffectivePersonApprovalStatus,
   PERSON_APPROVAL_APPROVED,
   PERSON_APPROVAL_PENDING,
   PERSON_APPROVAL_REJECTED,
   normalizePersonApprovalStatus,
-} from '../../../../lib/person-approval'
+} from '@/lib/person-approval'
 
 function normalizeBody(body) {
   return {
@@ -42,7 +45,10 @@ function validateBody(body) {
 }
 
 export async function PUT(request, { params }) {
-  // Next.js 15+ made route handler params async — always await.
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const { personId } = await params
 
   if (!personId) {
@@ -95,6 +101,7 @@ export async function PUT(request, { params }) {
           : existingData.approvedAt
       : existingData.approvedAt
 
+    const officeChanged = existingData.officeId !== office.id
     const nextPerson = {
       ...existingData,
       ...body,
@@ -117,14 +124,19 @@ export async function PUT(request, { params }) {
         : nextApprovalStatus === PERSON_APPROVAL_REJECTED
           ? 'person_reject'
           : 'person_review_reset'
-      : 'person_update'
+      : officeChanged
+        ? 'person_transfer'
+        : 'person_update'
+
     const summary = approvalChanged
       ? nextApprovalStatus === PERSON_APPROVAL_APPROVED
         ? `Approved employee enrollment for ${body.name}`
         : nextApprovalStatus === PERSON_APPROVAL_REJECTED
           ? `Rejected employee enrollment for ${body.name}`
           : `Returned employee enrollment to pending review for ${body.name}`
-      : `Updated employee record for ${body.name}`
+      : officeChanged
+        ? `Transferred ${body.name} from ${existingData.officeName || 'unknown'} to ${office.name}`
+        : `Updated employee record for ${body.name}`
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -140,6 +152,10 @@ export async function PUT(request, { params }) {
         officeName: office.name,
         active: body.active,
         approvalStatus: nextApprovalStatus,
+        ...(officeChanged && {
+          previousOffice: existingData.officeName || existingData.officeId || 'unknown',
+          previousOfficeId: existingData.officeId || '',
+        }),
       },
     })
 
@@ -153,6 +169,10 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const { personId } = await params
 
   if (!personId) {

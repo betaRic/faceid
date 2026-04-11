@@ -1,15 +1,22 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import {
   createAdminSessionCookieValue,
   getAdminSessionCookieName,
   getAdminSessionMaxAge,
   getRegionalPin,
-} from '../../../../lib/admin-auth'
-import { getAdminDb } from '../../../../lib/firebase-admin'
-import { enforceRateLimit, getRequestIp } from '../../../../lib/rate-limit'
-import { writeAuditLog } from '../../../../lib/audit-log'
+} from '@/lib/admin-auth'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
+import { writeAuditLog } from '@/lib/audit-log'
+import { createOriginGuard } from '@/lib/csrf'
 
 export async function POST(request) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const body = await request.json().catch(() => null)
   const pin = String(body?.pin || '').trim()
   const configuredPin = getRegionalPin()
@@ -41,7 +48,7 @@ export async function POST(request) {
       )
     }
 
-    if (pin !== configuredPin) {
+if (pin !== configuredPin) {
       return NextResponse.json({ ok: false, message: 'Invalid regional PIN.' }, { status: 401 })
     }
 
@@ -60,7 +67,9 @@ export async function POST(request) {
           loginMethod: 'pin',
         },
       })
-    } catch {}
+    } catch (err) {
+      console.error('Audit log failed:', err)
+    }
 
     const response = NextResponse.json({ ok: true })
     response.cookies.set({

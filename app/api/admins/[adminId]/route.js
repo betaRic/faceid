@@ -1,9 +1,12 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '../../../../lib/firebase-admin'
-import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '../../../../lib/admin-auth'
-import { writeAuditLog } from '../../../../lib/audit-log'
-import { getActiveRegionalAdminCount } from '../../../../lib/admin-directory'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { writeAuditLog } from '@/lib/audit-log'
+import { getActiveRegionalAdminCount } from '@/lib/admin-directory'
+import { createOriginGuard } from '@/lib/csrf'
 
 function normalizeBody(body) {
   return {
@@ -22,6 +25,10 @@ function validateBody(body) {
 }
 
 export async function PUT(request, { params }) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const { adminId } = await params
 
   if (!adminId) {
@@ -109,6 +116,10 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const { adminId } = await params
 
   if (!adminId) {

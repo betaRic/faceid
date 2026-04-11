@@ -1,14 +1,17 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import {
   createAdminSessionCookieValue,
   getAdminSessionCookieName,
   getAdminSessionMaxAge,
-} from '../../../../lib/admin-auth'
-import { getAdminAuth, getAdminDb } from '../../../../lib/firebase-admin'
-import { writeAuditLog } from '../../../../lib/audit-log'
-import { getAdminCount, getAdminProfileByEmail } from '../../../../lib/admin-directory'
+} from '@/lib/admin-auth'
+import { getAdminAuth, getAdminDb } from '@/lib/firebase-admin'
+import { writeAuditLog } from '@/lib/audit-log'
+import { getAdminCount, getAdminProfileByEmail } from '@/lib/admin-directory'
 import { FieldValue } from 'firebase-admin/firestore'
-import { enforceRateLimit, getRequestIp } from '../../../../lib/rate-limit'
+import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
+import { createOriginGuard } from '@/lib/csrf'
 
 function getAllowedEmails() {
   return String(process.env.ADMIN_ALLOWED_EMAILS || '')
@@ -18,6 +21,10 @@ function getAllowedEmails() {
 }
 
 export async function POST(request) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const body = await request.json().catch(() => null)
   const idToken = String(body?.idToken || '').trim()
 
@@ -131,7 +138,9 @@ async function createScopedResponse(db, decoded, email, adminProfile) {
         adminRecordId: adminProfile.id || '',
       },
     })
-  } catch {}
+  } catch (err) {
+    console.error('Audit log failed:', err)
+  }
 
   const response = NextResponse.json({ ok: true })
   response.cookies.set({

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { Circle, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { divIcon } from 'leaflet'
 
@@ -12,7 +12,10 @@ export default function OfficeLocationPicker({
   radiusMeters,
   onChange,
   highlightPin = false,
+  officeId,
 }) {
+  const mapRef = useRef(null)
+  
   const center = useMemo(() => (
     Number.isFinite(latitude) && Number.isFinite(longitude)
       ? [latitude, longitude]
@@ -26,9 +29,24 @@ export default function OfficeLocationPicker({
     iconAnchor: [9, 9],
   }), [highlightPin])
 
+  if (!officeId) {
+    return (
+      <div className="flex h-[320px] items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-100 text-sm text-muted">
+        Select an office to configure location
+      </div>
+    )
+  }
+
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-100">
-      <MapContainer center={center} className="h-[320px] w-full" scrollWheelZoom zoom={15}>
+      <MapContainer 
+        key={`map-${officeId}`}
+        center={center} 
+        className="h-[320px] w-full" 
+        scrollWheelZoom 
+        zoom={15}
+        whenCreated={(map) => { mapRef.current = map }}
+      >
         <TileLayer
           attribution='&copy; OpenStreetMap contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

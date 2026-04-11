@@ -1,8 +1,8 @@
-import DynamicAdminDashboard from '@/components/DynamicAdminDashboard.jsx'
+import DynamicAdminDashboard from '@/components/DynamicAdminDashboard'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth.js'
-import { getAdminDb } from '@/lib/firebase-admin.js'
+import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { getAdminDb } from '@/lib/firebase-admin'
 
 export default async function AdminPage() {
   const cookieStore = await cookies()
@@ -21,4 +21,3 @@ export default async function AdminPage() {
 
   return <DynamicAdminDashboard initialOfficeId={resolvedSession.officeId} initialRoleScope={resolvedSession.scope} />
 }
-

@@ -1,9 +1,16 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
-import { getAdminSessionCookieName, parseAdminSessionCookieValue } from '../../../../lib/admin-auth'
-import { getAdminDb } from '../../../../lib/firebase-admin'
-import { writeAuditLog } from '../../../../lib/audit-log'
+import { getAdminSessionCookieName, parseAdminSessionCookieValue } from '@/lib/admin-auth'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { writeAuditLog } from '@/lib/audit-log'
+import { createOriginGuard } from '@/lib/csrf'
 
 export async function POST(request) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (session) {
     try {
@@ -20,7 +27,9 @@ export async function POST(request) {
           ? `Office admin logout for ${session.officeId}`
           : 'Regional admin logout',
       })
-    } catch {}
+    } catch (err) {
+      console.error('Audit log failed on logout:', err)
+    }
   }
 
   const response = NextResponse.json({ ok: true })

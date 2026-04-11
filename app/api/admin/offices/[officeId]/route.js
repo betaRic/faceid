@@ -1,9 +1,12 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '../../../../../lib/firebase-admin'
-import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName, resolveAdminSession } from '../../../../../lib/admin-auth'
-import { writeAuditLog } from '../../../../../lib/audit-log'
-import { clearOfficeRecordCache } from '../../../../../lib/office-directory'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { adminSessionAllowsOffice, parseAdminSessionCookieValue, getAdminSessionCookieName, resolveAdminSession } from '@/lib/admin-auth'
+import { writeAuditLog } from '@/lib/audit-log'
+import { clearOfficeRecordCache } from '@/lib/office-directory'
+import { createOriginGuard } from '@/lib/csrf'
 
 function normalizeOfficePayload(officeId, payload) {
   return {
@@ -66,8 +69,12 @@ function validateOffice(office) {
 }
 
 export async function PUT(request, { params }) {
-  const { officeId } = await params
+  const guard = createOriginGuard(request)
+  if (!guard.valid) {
+    return NextResponse.json({ ok: false, message: 'Invalid origin.' }, { status: 403 })
+  }
 
+  const { officeId } = await params
   if (!officeId) {
     return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
   }

@@ -85,7 +85,7 @@ Admin features:
 - Framer Motion
 - Firebase Firestore
 - Firebase Admin SDK
-- `@vladmandic/face-api`
+- `@vladmandic/human` (biometric detection)
 
 ## Architecture
 

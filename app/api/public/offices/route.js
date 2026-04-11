@@ -1,6 +1,8 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '../../../../lib/firebase-admin'
-import { listOfficeRecords } from '../../../../lib/office-directory'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { listOfficeRecords } from '@/lib/office-directory'
 
 function toPublicOffice(office) {
   return {

@@ -1,6 +1,8 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '../../../../lib/firebase-admin'
-import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '../../../../lib/admin-auth'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 
 export async function GET(request) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)

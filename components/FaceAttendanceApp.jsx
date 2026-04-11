@@ -4,17 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import KioskView from './KioskView'
 import RegisterView from './RegisterView'
 import AppShell from './AppShell'
-import { firebaseEnabled, localFallbackAllowed, productionFirebaseRequired } from '../lib/firebase/client'
-import { formatAttendanceDateKey, formatAttendanceDateLabel } from '../lib/attendance-time'
+import { firebaseEnabled, localFallbackAllowed, productionFirebaseRequired } from '@/lib/firebase/client'
+import { formatAttendanceDateKey, formatAttendanceDateLabel } from '@/lib/attendance-time'
 import { useBiometricRuntime } from './BiometricRuntimeProvider'
-import { subscribeToPublicOffices } from '../lib/office-store'
+import { subscribeToPublicOffices } from '@/lib/office-store'
 import {
   deletePersonRecord,
   logAttendanceEntry,
   subscribeToAttendance,
   subscribeToPersons,
   upsertPersonSample,
-} from '../lib/data-store'
+} from '@/lib/data-store'
 
 function getDefaultDataStatus(loadPersons) {
   if (!firebaseEnabled) {

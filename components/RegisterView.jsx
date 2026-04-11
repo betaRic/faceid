@@ -46,6 +46,7 @@ export default function RegisterView({
 }) {
   const [name, setName] = useState('')
   const [employeeId, setEmployeeId] = useState('')
+  const [employeeIdError, setEmployeeIdError] = useState('')
   const [officeId, setOfficeId] = useState(offices[0]?.id || '')
   const [previewUrl, setPreviewUrl] = useState(null)
   const [pendingDescriptors, setPendingDescriptors] = useState([])
@@ -91,6 +92,13 @@ export default function RegisterView({
     window.setTimeout(() => setToast(null), duration)
   }, [])
 
+  const handleEmployeeIdChange = useCallback((value) => {
+    const sanitized = value.replace(/[^A-Za-z0-9-]/g, '')
+    const hadInvalidChars = value !== sanitized
+    setEmployeeId(sanitized)
+    setEmployeeIdError(hadInvalidChars ? 'Only letters, numbers, and dashes (-) are allowed' : '')
+  }, [])
+
   useEffect(() => {
     previewRef.current = previewUrl
   }, [previewUrl])
@@ -120,6 +128,7 @@ export default function RegisterView({
         const canvas = camera.captureImageData({
           maxWidth: PREVIEW_MAX_DIMENSION,
           maxHeight: PREVIEW_MAX_DIMENSION,
+          enhanced: true,
         })
         const croppedCanvas = buildOvalCaptureCanvas(canvas)
         const faceResult = await detectSingleDescriptor(croppedCanvas)
@@ -399,7 +408,7 @@ export default function RegisterView({
                   className="absolute inset-[2px] overflow-hidden bg-black"
                   style={OVAL_FRAME_STYLE}
                 >
-                  <video ref={camera.setVideoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+                  <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" />
                   <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
                 </div>
@@ -555,12 +564,15 @@ export default function RegisterView({
 
                   <Field label="Employee ID">
                     <input
-                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-                      onChange={event => setEmployeeId(event.target.value)}
+                      className={`w-full rounded-2xl border bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy ${employeeIdError ? 'border-amber-400' : 'border-black/10'}`}
+                      onChange={event => handleEmployeeIdChange(event.target.value)}
                       placeholder="Enter employee ID"
                       type="text"
                       value={employeeId}
                     />
+                    {employeeIdError ? (
+                      <p className="mt-1 text-xs text-amber-600">{employeeIdError}</p>
+                    ) : null}
                   </Field>
 
                   <Field label="Assigned office">

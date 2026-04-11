@@ -68,14 +68,10 @@ module.exports = {
           900: '#080B0D',
         },
 
-        // ─── MISSING SEMANTIC TOKENS ─────────────────────────────────────────
-        // These were used throughout the codebase but never defined.
-        // text-ink  = primary readable text (dark, high contrast)
-        // text-muted = secondary/label text
-        // Both are now real Tailwind utilities.
-        ink: '#252E34',    // slate-dark — primary text for names, values, labels
-        muted: '#5A6875',  // slate-light — secondary/helper text
-        warn: '#991B1B',   // used for error states (red-800 equivalent)
+        // Semantic tokens
+        ink: '#252E34',
+        muted: '#5A6875',
+        warn: '#991B1B',
       },
 
       fontFamily: {

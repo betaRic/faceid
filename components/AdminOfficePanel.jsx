@@ -144,6 +144,7 @@ export default function AdminOfficePanel({
                   updateDraft('gps.longitude', longitude)
                 }}
                 radiusMeters={activeOffice.gps.radiusMeters}
+                officeId={activeOffice.id}
               />
             </DataSection>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row">

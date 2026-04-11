@@ -19,7 +19,6 @@ const nextConfig = {
       '@tensorflow/tfjs-node': '@tensorflow/tfjs',
     },
   },
-  // Fallback for older bundler
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.alias['@tensorflow/tfjs-node'] = '@tensorflow/tfjs'
