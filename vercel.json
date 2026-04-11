@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/rebuild-daily-summary",
-      "schedule": "0 9 * * *"
+      "schedule": "30 9 * * *"
     }
   ]
 }
