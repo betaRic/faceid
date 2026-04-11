@@ -42,15 +42,16 @@ function normalizeEntry(body) {
 }
 
 function validateEntry(entry) {
-  // FIXED: was hardcoded 128 — @vladmandic/human v3 outputs 1024-dim FaceNet embeddings
-  if (entry.descriptor.length !== DESCRIPTOR_LENGTH || entry.descriptor.some(value => !Number.isFinite(value))) {
-    return `Face descriptor is invalid. Expected ${DESCRIPTOR_LENGTH} values.`
-  }
-
-  // Unit-normalized 1024-dim vectors have norm ≈ 1.0; allow a small tolerance range
-  const norm = Math.sqrt(entry.descriptor.reduce((sum, value) => sum + value * value, 0))
-  if (norm < 0.5 || norm > 2.0) {
-    return 'Face descriptor is not valid (norm out of range).'
+  // Validate descriptor length and that all values are real numbers.
+  // NOTE: We intentionally do NOT check the L2 norm here.
+  // @vladmandic/human v3 FaceNet embeddings are NOT guaranteed to be unit-normalized
+  // in all capture conditions. The norm check was blocking legitimate kiosk scans.
+  // The length check + NaN check is sufficient for input validation.
+  if (
+    entry.descriptor.length !== DESCRIPTOR_LENGTH ||
+    entry.descriptor.some(value => !Number.isFinite(value))
+  ) {
+    return `Face descriptor is invalid. Expected ${DESCRIPTOR_LENGTH} finite values.`
   }
 
   if ((entry.latitude == null) !== (entry.longitude == null)) {
@@ -452,7 +453,6 @@ export async function POST(request) {
     const dailyLogs = await getAttendanceLogsForDate(db, entry.employeeId, entry.dateKey, legacyDateLabel)
     const nextAction = getNextAttendanceAction(dailyLogs, office)
 
-    // FIXED: Block further scans after a complete AM+PM day
     if (nextAction === 'complete') {
       return NextResponse.json(
         {
@@ -523,7 +523,6 @@ export async function POST(request) {
     })
 
     // attendance_daily is a derived cache — write after the atomic attendance record.
-    // If this write fails the record is still intact; the cron job rebuilds it at EOD.
     await db.collection('attendance_daily').doc(`${entry.employeeId}_${entry.dateKey}`).set({
       ...dailyRecord,
       updatedAt: FieldValue.serverTimestamp(),

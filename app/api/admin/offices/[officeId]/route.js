@@ -66,13 +66,19 @@ function validateOffice(office) {
 }
 
 export async function PUT(request, { params }) {
+  const { officeId } = await params
+
+  if (!officeId) {
+    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
+  }
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
   }
 
   const body = await request.json().catch(() => null)
-  const office = normalizeOfficePayload(params.officeId, body?.office)
+  const office = normalizeOfficePayload(officeId, body?.office)
   const validationError = validateOffice(office)
 
   if (validationError) {
@@ -85,7 +91,7 @@ export async function PUT(request, { params }) {
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
-    if (!adminSessionAllowsOffice(resolvedSession, params.officeId)) {
+    if (!adminSessionAllowsOffice(resolvedSession, officeId)) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot edit that office.' }, { status: 403 })
     }
 
@@ -93,7 +99,7 @@ export async function PUT(request, { params }) {
       ...office,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
-    await await clearOfficeRecordCache()
+    await clearOfficeRecordCache()
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -122,5 +128,3 @@ export async function PUT(request, { params }) {
     )
   }
 }
-
-

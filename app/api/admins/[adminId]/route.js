@@ -22,6 +22,12 @@ function validateBody(body) {
 }
 
 export async function PUT(request, { params }) {
+  const { adminId } = await params
+
+  if (!adminId) {
+    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
+  }
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
@@ -43,14 +49,14 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const ref = db.collection('admins').doc(params.adminId)
+    const ref = db.collection('admins').doc(adminId)
     const existing = await ref.get()
     if (!existing.exists) {
       return NextResponse.json({ ok: false, message: 'Admin record was not found.' }, { status: 404 })
     }
 
     const duplicate = await db.collection('admins').where('email', '==', body.email).limit(2).get()
-    if (duplicate.docs.some(record => record.id !== params.adminId)) {
+    if (duplicate.docs.some(record => record.id !== adminId)) {
       return NextResponse.json({ ok: false, message: 'Another admin record already uses that email.' }, { status: 409 })
     }
 
@@ -59,7 +65,7 @@ export async function PUT(request, { params }) {
     const willBeActiveRegional = body.active !== false && body.scope !== 'office'
 
     if (wasActiveRegional && !willBeActiveRegional) {
-      const remainingRegionalAdmins = await getActiveRegionalAdminCount(db, params.adminId)
+      const remainingRegionalAdmins = await getActiveRegionalAdminCount(db, adminId)
       if (remainingRegionalAdmins === 0) {
         return NextResponse.json(
           { ok: false, message: 'You cannot remove or demote the last active regional admin.' },
@@ -83,7 +89,7 @@ export async function PUT(request, { params }) {
       actorOfficeId: resolvedSession.officeId,
       action: 'admin_update',
       targetType: 'admin',
-      targetId: params.adminId,
+      targetId: adminId,
       officeId: body.scope === 'office' ? body.officeId : '',
       summary: `Updated admin record for ${body.email}`,
       metadata: {
@@ -103,6 +109,12 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+  const { adminId } = await params
+
+  if (!adminId) {
+    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
+  }
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
@@ -118,7 +130,7 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const ref = db.collection('admins').doc(params.adminId)
+    const ref = db.collection('admins').doc(adminId)
     const existing = await ref.get()
     if (!existing.exists) {
       return NextResponse.json({ ok: false, message: 'Admin record was not found.' }, { status: 404 })
@@ -127,7 +139,7 @@ export async function DELETE(request, { params }) {
     const existingData = existing.data() || {}
     const isActiveRegional = existingData.active !== false && String(existingData.scope || 'regional') !== 'office'
     if (isActiveRegional) {
-      const remainingRegionalAdmins = await getActiveRegionalAdminCount(db, params.adminId)
+      const remainingRegionalAdmins = await getActiveRegionalAdminCount(db, adminId)
       if (remainingRegionalAdmins === 0) {
         return NextResponse.json(
           { ok: false, message: 'You cannot delete the last active regional admin.' },
@@ -144,9 +156,9 @@ export async function DELETE(request, { params }) {
       actorOfficeId: resolvedSession.officeId,
       action: 'admin_delete',
       targetType: 'admin',
-      targetId: params.adminId,
+      targetId: adminId,
       officeId: existingData.officeId || '',
-      summary: `Deleted admin record for ${existingData.email || params.adminId}`,
+      summary: `Deleted admin record for ${existingData.email || adminId}`,
       metadata: {
         email: existingData.email || '',
       },

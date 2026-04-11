@@ -42,6 +42,13 @@ function validateBody(body) {
 }
 
 export async function PUT(request, { params }) {
+  // Next.js 15+ made route handler params async — always await.
+  const { personId } = await params
+
+  if (!personId) {
+    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
+  }
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required to update employees.' }, { status: 401 })
@@ -60,7 +67,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
-    const existing = await db.collection('persons').doc(params.personId).get()
+    const existing = await db.collection('persons').doc(personId).get()
     if (!existing.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
@@ -78,6 +85,8 @@ export async function PUT(request, { params }) {
     const previousApprovalStatus = getEffectivePersonApprovalStatus(existingData)
     const nextApprovalStatus = body.approvalStatus || previousApprovalStatus
     const approvalChanged = previousApprovalStatus !== nextApprovalStatus
+    const approvalUpdatedAt = approvalChanged ? FieldValue.serverTimestamp() : existingData.approvalUpdatedAt
+    const approvalUpdatedByEmail = approvalChanged ? resolvedSession.email : existingData.approvalUpdatedByEmail
     const approvedAt = approvalChanged
       ? nextApprovalStatus === PERSON_APPROVAL_APPROVED
         ? FieldValue.serverTimestamp()
@@ -85,8 +94,6 @@ export async function PUT(request, { params }) {
           ? FieldValue.delete()
           : existingData.approvedAt
       : existingData.approvedAt
-    const approvalUpdatedAt = approvalChanged ? FieldValue.serverTimestamp() : existingData.approvalUpdatedAt
-    const approvalUpdatedByEmail = approvalChanged ? resolvedSession.email : existingData.approvalUpdatedByEmail
 
     const nextPerson = {
       ...existingData,
@@ -101,8 +108,8 @@ export async function PUT(request, { params }) {
       approvedAt,
     }
 
-    await db.collection('persons').doc(params.personId).set(nextPerson, { merge: true })
-    await syncPersonBiometricIndex(db, params.personId, nextPerson)
+    await db.collection('persons').doc(personId).set(nextPerson, { merge: true })
+    await syncPersonBiometricIndex(db, personId, nextPerson)
 
     const action = approvalChanged
       ? nextApprovalStatus === PERSON_APPROVAL_APPROVED
@@ -125,7 +132,7 @@ export async function PUT(request, { params }) {
       actorOfficeId: resolvedSession.officeId,
       action,
       targetType: 'person',
-      targetId: params.personId,
+      targetId: personId,
       officeId: office.id,
       summary,
       metadata: {
@@ -146,6 +153,12 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+  const { personId } = await params
+
+  if (!personId) {
+    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
+  }
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
     return NextResponse.json({ ok: false, message: 'Admin login is required to delete employees.' }, { status: 401 })
@@ -158,7 +171,7 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
-    const existing = await db.collection('persons').doc(params.personId).get()
+    const existing = await db.collection('persons').doc(personId).get()
     if (!existing.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
@@ -167,17 +180,17 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot delete that employee.' }, { status: 403 })
     }
 
-    await db.collection('persons').doc(params.personId).delete()
-    await deletePersonBiometricIndex(db, params.personId)
+    await db.collection('persons').doc(personId).delete()
+    await deletePersonBiometricIndex(db, personId)
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
       actorScope: resolvedSession.scope,
       actorOfficeId: resolvedSession.officeId,
       action: 'person_delete',
       targetType: 'person',
-      targetId: params.personId,
+      targetId: personId,
       officeId: existing.data().officeId || '',
-      summary: `Deleted employee record for ${existing.data().name || params.personId}`,
+      summary: `Deleted employee record for ${existing.data().name || personId}`,
       metadata: {
         employeeId: existing.data().employeeId || '',
         officeName: existing.data().officeName || '',
