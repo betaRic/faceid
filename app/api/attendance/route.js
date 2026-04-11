@@ -19,6 +19,7 @@ import { getOfficeRecord, listOfficeRecords } from '../../../lib/office-director
 import { isPersonApproved } from '../../../lib/person-approval'
 import { analyzeLiveness } from '../../../lib/biometrics/liveness'
 import { normalizeStoredDescriptors } from '../../../lib/biometrics/descriptor-utils'
+import { getNormalizedDescriptors } from '../../../lib/biometrics/descriptor-utils';
 
 function normalizeEntry(body) {
   return {
@@ -248,17 +249,21 @@ function getCooldownForActionMinutes(office, action) {
 }
 
 function matchPersonFromDescriptor(persons, descriptor) {
+  const queryDescriptor = normalizeDescriptor(descriptor);
+
   const scored = persons
     .map(personRecord => ({
       person: personRecord,
-      descriptors: normalizeStoredDescriptors(personRecord.descriptors),
+      normalizedSamples: getNormalizedDescriptors(personRecord),
     }))
-    .filter(candidate => candidate.descriptors.length > 0)
+    .filter(candidate => candidate.normalizedSamples.length > 0)
     .map(candidate => ({
       person: candidate.person,
-      distance: Math.min(...candidate.descriptors.map(sample => euclideanDistance(sample, descriptor))),
+      distance: Math.min(...candidate.normalizedSamples.map(sample => 
+        euclideanDistance(sample, queryDescriptor)
+      )),
     }))
-    .sort((left, right) => left.distance - right.distance)
+    .sort((left, right) => left.distance - right.distance);
 
   const best = scored[0]
   const second = scored[1] || null

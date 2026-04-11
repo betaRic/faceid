@@ -31,9 +31,11 @@ import {
   inferPersonDirectorySearchMode,
   normalizePersonDirectorySearchValue,
 } from '../../../lib/person-directory'
+import { normalizeDescriptor } from '../../../lib/biometrics/descriptor-utils';
 
 function serializeDescriptorSample(descriptor) {
-  return { vector: Array.from(descriptor).map(Number) }
+  const normalized = normalizeDescriptor(descriptor);
+  return { vector: normalized };
 }
 
 function normalizeBody(body) {
