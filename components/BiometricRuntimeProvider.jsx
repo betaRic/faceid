@@ -28,7 +28,13 @@ function getDefaultLocationState() {
     ready: false,
     status: 'Location idle',
     updatedAt: 0,
+    wifiSsid: null,
   }
+}
+
+function getWifiSsid() {
+  if (typeof navigator === 'undefined' || !navigator.connection) return null
+  return navigator.connection.ssid || null
 }
 
 function requestDeviceLocation(options = {}) {
@@ -102,6 +108,7 @@ export function BiometricRuntimeProvider({ children }) {
           ready: true,
           status: 'Location ready',
           updatedAt: Date.now(),
+          wifiSsid: getWifiSsid(),
         })
         setLocationBypassed(false)
         return true
@@ -124,6 +131,7 @@ export function BiometricRuntimeProvider({ children }) {
                 ? 'Location unavailable, WFH fallback active'
                 : 'Location unavailable',
             updatedAt: current.updatedAt,
+            wifiSsid: getWifiSsid(),
           }
         })
         return hadKnownLocation

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect } from 'react'
 import { startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from './AppShell'
@@ -21,83 +21,26 @@ const navItems = [
   { id: 'admins', label: 'Admins' },
 ]
 
-const SESSION_CHECK_INTERVAL_MS = 60 * 60 * 1000
-
-async function refreshSessionIfNeeded() {
-  try {
-    const res = await fetch('/api/admin/session')
-    const data = await res.json()
-    if (data.ok && data.refreshed) {
-      console.log('Session refreshed successfully')
-    }
-  } catch {
-    // Silent failure - session will be checked again next interval
-  }
-}
-
 export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '' }) {
   const router = useRouter()
   const { 
     roleScope, setRoleScope, 
     activePanel, setActivePanel, 
     editingEmployee, setEditingEmployee, 
-    officesLoaded, setOffices, setSelectedOfficeId,
-    setEmployees, setEmployeesLoaded
+    officesLoaded, setSelectedOfficeId
   } = useAdminStore()
-  const sessionCheckRef = useRef(null)
 
   useEffect(() => {
     setRoleScope(initialRoleScope)
-    if (initialOfficeId) {
-      setSelectedOfficeId(initialOfficeId)
-    }
+    if (initialOfficeId) setSelectedOfficeId(initialOfficeId)
   }, [initialRoleScope, initialOfficeId, setRoleScope, setSelectedOfficeId])
 
   useEffect(() => {
-    async function loadOffices() {
-      try {
-        const res = await fetch('/api/offices')
-        const data = await res.json()
-        if (data.ok && data.offices) {
-          setOffices(data.offices)
-        } else {
-          setOffices([])
-        }
-      } catch {
-        setOffices([])
-      }
-    }
-    loadOffices()
-  }, [setOffices])
-
-  useEffect(() => {
-    async function loadEmployees() {
-      try {
-        const params = new URLSearchParams({ mode: 'directory', limit: '50' })
-        const res = await fetch(`/api/persons?${params.toString()}`)
-        const data = await res.json()
-        if (data.ok) {
-          setEmployees(data)
-        } else {
-          setEmployees({ persons: [], page: {} })
-        }
-      } catch {
-        setEmployees({ persons: [], page: {} })
-      }
-    }
-    loadEmployees()
-  }, [setEmployees])
-
-  useEffect(() => {
-    refreshSessionIfNeeded()
-    sessionCheckRef.current = setInterval(refreshSessionIfNeeded, SESSION_CHECK_INTERVAL_MS)
-    return () => {
-      if (sessionCheckRef.current) clearInterval(sessionCheckRef.current)
-    }
-  }, [])
+    setRoleScope(initialRoleScope)
+    if (initialOfficeId) setSelectedOfficeId(initialOfficeId)
+  }, [initialRoleScope, initialOfficeId, setRoleScope, setSelectedOfficeId])
 
   const handleLogout = useCallback(async () => {
-    if (sessionCheckRef.current) clearInterval(sessionCheckRef.current)
     await fetch('/api/admin/logout', { method: 'POST' })
     router.push('/admin/login')
     router.refresh()

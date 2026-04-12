@@ -18,6 +18,7 @@ function SummaryPanelInner() {
   const {
     summaryDate, setSummaryDate,
     summaryOfficeFilter, setSummaryOfficeFilter,
+    summaryEmployeeFilter, setSummaryEmployeeFilter,
     summaryRows, summaryLoading,
     summaryEmployeeOptions,
     handleExport, isPending,
@@ -59,8 +60,8 @@ function SummaryPanelInner() {
             <select
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
               disabled={summaryLoading}
-              onChange={(e) => setSummaryOfficeFilter(e.target.value)}
-              value={summaryOfficeFilter}
+              onChange={(e) => setSummaryEmployeeFilter(e.target.value)}
+              value={summaryEmployeeFilter}
             >
               <option value="all">All employees</option>
               {summaryEmployeeOptions.map((p) => (

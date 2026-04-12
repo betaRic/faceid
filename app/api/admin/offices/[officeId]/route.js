@@ -17,7 +17,11 @@ function normalizeOfficePayload(officeId, payload) {
     officeType: String(payload?.officeType || '').trim(),
     location: String(payload?.location || '').trim(),
     provinceOrCity: String(payload?.provinceOrCity || '').trim(),
-    wifiSsid: String(payload?.wifiSsid || '').trim(),
+    wifiSsid: Array.isArray(payload?.wifiSsid) 
+      ? payload.wifiSsid.map(s => String(s || '').trim()).filter(Boolean)
+      : String(payload?.wifiSsid || '').trim() 
+        ? [String(payload?.wifiSsid || '').trim()]
+        : [],
     status: String(payload?.status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active',
     employees: Number(payload?.employees ?? 0),
     gps: {
@@ -69,10 +73,9 @@ function validateOffice(office) {
 }
 
 export async function PUT(request, { params }) {
-  const guard = createOriginGuard(request)
-  if (!guard.valid) {
-    return NextResponse.json({ ok: false, message: 'Invalid origin.' }, { status: 403 })
-  }
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
 
   const { officeId } = await params
   if (!officeId) {

@@ -359,7 +359,7 @@ export default function RegisterView({
           {persons.length} enrolled
         </div>
       )}
-      contentClassName="px-3 py-3 sm:px-5 lg:px-8 xl:overflow-hidden"
+      contentClassName="px-3 py-3 sm:px-5 lg:px-8 min-h-0 flex flex-col"
     >
       {toast ? (
         <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-navy-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
@@ -475,12 +475,12 @@ export default function RegisterView({
             </div>
           </motion.section>
 
-          <div className="grid min-h-0 flex-1 gap-4">
+          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto">
             <motion.section
               animate={{ opacity: 1, y: 0 }}
               initial={{ opacity: 0, y: 18 }}
               transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
-              className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow backdrop-blur sm:p-4"
+              className="shrink-0 flex min-h-0 min-w-0 flex-1 flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow backdrop-blur sm:p-4"
             >
             <div className="flex flex-col gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">

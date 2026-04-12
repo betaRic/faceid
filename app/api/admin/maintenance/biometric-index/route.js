@@ -24,10 +24,9 @@ function serializeDescriptorSample(descriptor) {
 }
 
 export async function POST(request) {
-  const guard = createOriginGuard(request)
-  if (!guard.valid) {
-    return NextResponse.json({ ok: false, message: 'Invalid origin.' }, { status: 403 })
-  }
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
 
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {

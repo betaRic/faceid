@@ -1,8 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef } from 'react'
-import { Circle, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
-import { divIcon } from 'leaflet'
+import { useMemo, useState } from 'react'
 
 const DEFAULT_CENTER = [6.3358, 124.7741]
 
@@ -14,20 +12,41 @@ export default function OfficeLocationPicker({
   highlightPin = false,
   officeId,
 }) {
-  const mapRef = useRef(null)
-  
-  const center = useMemo(() => (
-    Number.isFinite(latitude) && Number.isFinite(longitude)
-      ? [latitude, longitude]
-      : DEFAULT_CENTER
-  ), [latitude, longitude])
+  const [manualLat, setManualLat] = useState('')
+  const [manualLng, setManualLng] = useState('')
 
-  const markerIcon = useMemo(() => divIcon({
-    className: `office-map-marker${highlightPin ? ' office-map-marker-pulse' : ''}`,
-    html: '<span></span>',
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-  }), [highlightPin])
+  const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude)
+
+  const mapEmbedUrl = useMemo(() => {
+    if (!hasLocation) return null
+    const lat = latitude.toFixed(5)
+    const lng = longitude.toFixed(5)
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${Number(lng)-0.01}%2C${Number(lat)-0.01}%2C${Number(lng)+0.01}%2C${Number(lat)+0.01}&layer=mapnik&marker=${lat}%2C${lng}`
+  }, [hasLocation, latitude, longitude])
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) return
+    
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        onChange({
+          latitude: Number(pos.coords.latitude.toFixed(6)),
+          longitude: Number(pos.coords.longitude.toFixed(6)),
+        })
+      },
+      (err) => console.error('Geolocation error:', err),
+      { enableHighAccuracy: true }
+    )
+  }
+
+  const handleManualSubmit = (e) => {
+    e.preventDefault()
+    const lat = parseFloat(manualLat)
+    const lng = parseFloat(manualLng)
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      onChange({ latitude: lat, longitude: lng })
+    }
+  }
 
   if (!officeId) {
     return (
@@ -39,56 +58,78 @@ export default function OfficeLocationPicker({
 
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-100">
-      <MapContainer 
-        key={`map-${officeId}`}
-        center={center} 
-        className="h-[320px] w-full" 
-        scrollWheelZoom 
-        zoom={15}
-        whenCreated={(map) => { mapRef.current = map }}
-      >
-        <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      {mapEmbedUrl ? (
+        <iframe
+          title="Office Location"
+          width="100%"
+          height="320"
+          frameBorder="0"
+          src={mapEmbedUrl}
+          className="w-full"
         />
-        <MapViewport center={center} />
-        <MapClickHandler onChange={onChange} />
-        {Number.isFinite(latitude) && Number.isFinite(longitude) ? (
-          <>
-            <Marker icon={markerIcon} position={[latitude, longitude]} />
-            <Circle
-              center={[latitude, longitude]}
-              pathOptions={{ color: '#0c6c58', fillColor: '#0c6c58', fillOpacity: 0.12 }}
-              radius={Number(radiusMeters) || 50}
+      ) : (
+        <div className="flex h-[320px] items-center justify-center bg-stone-100 text-muted">
+          No location set - enter coordinates below
+        </div>
+      )}
+      
+      <div className="p-4 space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1">
+              Latitude
+            </label>
+            <input
+              type="number"
+              step="0.000001"
+              value={hasLocation ? latitude.toFixed(6) : ''}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value)
+                if (Number.isFinite(val)) {
+                  onChange({ latitude: val, longitude: longitude || 0 })
+                }
+              }}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-mono"
+              placeholder="7.22310"
             />
-          </>
-        ) : null}
-      </MapContainer>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1">
+              Longitude
+            </label>
+            <input
+              type="number"
+              step="0.000001"
+              value={hasLocation ? longitude.toFixed(6) : ''}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value)
+                if (Number.isFinite(val)) {
+                  onChange({ latitude: latitude || 0, longitude: val })
+                }
+              }}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-mono"
+              placeholder="124.24520"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleUseMyLocation}
+            className="flex-1 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+          >
+            📍 Use My Location
+          </button>
+        </div>
+
+        {hasLocation && (
+          <div className="text-xs text-muted bg-stone-50 p-2 rounded-lg">
+            <strong>Current:</strong> {latitude.toFixed(5)}, {longitude.toFixed(5)}
+            {radiusMeters && <span> • Radius: {radiusMeters}m</span>}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
-
-function MapViewport({ center }) {
-  const map = useMap()
-
-  useEffect(() => {
-    map.setView(center, map.getZoom(), { animate: true })
-    window.setTimeout(() => map.invalidateSize(), 100)
-  }, [center, map])
-
-  return null
-}
-
-function MapClickHandler({ onChange }) {
-  useMapEvents({
-    click(event) {
-      onChange({
-        latitude: Number(event.latlng.lat.toFixed(6)),
-        longitude: Number(event.latlng.lng.toFixed(6)),
-      })
-    },
-  })
-
-  return null
-}
-

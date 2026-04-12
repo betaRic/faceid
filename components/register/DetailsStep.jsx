@@ -19,7 +19,7 @@ export default function DetailsStep({
 }) {
   return (
     <section className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="grid min-h-0 content-start gap-4 overflow-auto rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
+      <div className="grid min-h-0 content-start gap-4 overflow-y-auto rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
         <Field label="Full name">
           <input
             ref={nameRef}

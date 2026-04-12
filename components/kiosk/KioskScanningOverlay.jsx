@@ -18,6 +18,10 @@ export default function KioskScanningOverlay({
       ? 'WFH fallback'
       : 'Location pending'
 
+  const wifiStatus = locationState?.wifiSsid
+    ? `WiFi: ${locationState.wifiSsid}`
+    : 'WiFi: not available'
+
   const isScanning = kioskState === 'scanning'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
   const videoRef = camera.videoRef.current
@@ -50,6 +54,7 @@ export default function KioskScanningOverlay({
       <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:px-5 sm:py-3">
         <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs">{locationBadgeLabel}</div>
         <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
+        <div className="mt-1 text-[9px] text-slate-100/70 sm:text-xs">{wifiStatus}</div>
       </div>
 
       {todaysCount != null && (

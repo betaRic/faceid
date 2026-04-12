@@ -22,18 +22,18 @@ function SummaryContent() {
 
     async function fetchData() {
       try {
-        const res = await fetch(`/api/attendance/daily?date=${new Date().toISOString().split('T')[0]}`)
+        const date = new Date().toISOString().split('T')[0]
+        const res = await fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`)
         const data = await res.json()
         
         if (data.ok) {
-          const myAttendance = data.records?.filter(r => r.employeeId === employeeId) || []
-          setAttendance(myAttendance)
+          setAttendance(data.entries || [])
           
-          if (myAttendance.length > 0) {
+          if (data.entries && data.entries.length > 0) {
             setPerson({
-              name: myAttendance[0].name,
-              employeeId: myAttendance[0].employeeId,
-              officeName: myAttendance[0].officeName,
+              name: data.entries[0].name,
+              employeeId: data.entries[0].employeeId,
+              officeName: data.entries[0].officeName,
             })
           }
         } else {

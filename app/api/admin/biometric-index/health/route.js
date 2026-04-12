@@ -55,16 +55,32 @@ export async function GET(request) {
 
     let cacheStats = { available: false }
     try {
-      const { kv } = await import('@vercel/kv')
-      const keys = await kv.keys('bioidx:*')
-      cacheStats = {
-        available: true,
-        cachedOffices: keys.length,
-        cachePrefix: 'bioidx:',
-        cacheTtlSeconds: 300,
+      const redisUrl = process.env.REDIS_URL
+      const kvUrl = process.env.KV_REST_API_URL
+      const kvToken = process.env.KV_REST_API_TOKEN
+      
+      let kv = null
+      if (redisUrl) {
+        const { Redis } = await import('@upstash/redis')
+        kv = new Redis({ url: redisUrl, token: 'dummy' })
+      } else if (kvUrl && kvToken) {
+        const { Redis } = await import('@upstash/redis')
+        kv = new Redis({ url: kvUrl, token: kvToken })
       }
-    } catch {
-      cacheStats = { available: false, reason: 'KV not available' }
+      
+      if (kv) {
+        const keys = await kv.keys('bioidx:*')
+        cacheStats = {
+          available: true,
+          cachedOffices: keys.length,
+          cachePrefix: 'bioidx:',
+          cacheTtlSeconds: 300,
+        }
+      } else {
+        cacheStats = { available: false, reason: 'No Redis client configured' }
+      }
+    } catch (err) {
+      cacheStats = { available: false, reason: err.message }
     }
 
     const health = {

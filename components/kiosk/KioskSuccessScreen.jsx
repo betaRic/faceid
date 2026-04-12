@@ -2,6 +2,9 @@ import { getGreeting, formatTime } from '@/lib/kiosk-utils'
 import { motion } from 'framer-motion'
 
 export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onViewSummary }) {
+  const attendanceMode = currentMatch?.attendanceMode || ''
+  const isWfh = attendanceMode.toLowerCase() === 'wfh'
+  
   return (
     <div className="absolute inset-0 z-[6] flex items-center justify-center px-4 py-6 sm:px-6">
       <motion.div
@@ -26,6 +29,25 @@ export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onV
         <div className="mt-2 text-sm text-muted sm:text-base">
           {currentMatch.officeName || 'Unassigned office'}
         </div>
+        {attendanceMode && (
+          <div className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
+            isWfh ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+          }`}>
+            {isWfh ? (
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                <polyline points="9,22 9,12 15,12 15,22" />
+              </svg>
+            ) : (
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="3" y1="9" x2="21" y2="9" />
+                <line x1="9" y1="21" x2="9" y2="9" />
+              </svg>
+            )}
+            {isWfh ? 'WFH' : 'On-site'}
+          </div>
+        )}
 
         <div className="mt-7 grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 text-left sm:grid-cols-2">
           <div>

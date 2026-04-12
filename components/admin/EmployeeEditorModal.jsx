@@ -136,9 +136,17 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         initial={{ opacity: 0, scale: 0.95 }}
       >
         <div className="flex items-start gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-navy/10 text-xl font-bold text-navy-dark">
-            {String(person.name || '?')[0]}
-          </div>
+          {person.photoUrl ? (
+            <img
+              alt={person.name}
+              className="h-16 w-16 shrink-0 rounded-2xl object-cover"
+              src={person.photoUrl}
+            />
+          ) : (
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-navy/10 text-xl font-bold text-navy-dark">
+              {String(person.name || '?')[0]}
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-bold text-ink">{person.name}</h2>
             <p className="mt-0.5 text-sm text-muted">{person.employeeId}</p>

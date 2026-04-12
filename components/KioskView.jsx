@@ -8,6 +8,7 @@ import { useVerificationBurst } from '@/hooks/useVerificationBurst'
 import { useKioskLoop } from '@/hooks/useKioskLoop'
 import AppShell from './AppShell'
 import KioskClock from './kiosk/KioskClock'
+import { useKioskClock } from '@/hooks/useKioskClock'
 import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
 import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
@@ -71,9 +72,10 @@ export default function KioskView({
     pausedRef,
     scheduleResume,
     showAlertAndResume,
+    offices,
   })
 
-  const { clock, dateStr } = KioskClock()
+  const { clock, dateStr } = useKioskClock()
 
   const handleRunScan = useCallback(() => {
     return runScan(captureVerificationBurst)

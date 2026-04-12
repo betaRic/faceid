@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server'
 import { parseAdminSessionCookieValue, createAdminSessionCookieValue, getAdminSessionCookieName, getAdminSessionMaxAge, sessionNeedsRefresh, sessionTimeRemaining, resolveAdminSession } from '@/lib/admin-auth'
 import { getAdminDb } from '@/lib/firebase-admin'
-import { createOriginGuard } from '@/lib/csrf'
 
 export async function GET(request) {
-  const guard = createOriginGuard()
-  const originError = await guard(request)
-  if (originError) return originError
-
   const session = parseAdminSessionCookieValue(
     request.cookies.get(getAdminSessionCookieName())?.value,
   )

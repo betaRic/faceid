@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import crypto from 'crypto'
 import {
   createAdminSessionCookieValue,
   getAdminSessionCookieName,
@@ -11,6 +12,16 @@ import { getAdminDb } from '@/lib/firebase-admin'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.isBuffer(left) ? left : Buffer.from(left)
+  const rightBuffer = Buffer.isBuffer(right) ? right : Buffer.from(right)
+  if (leftBuffer.length !== rightBuffer.length) return false
+  if (typeof crypto.timingSafeEqual === 'function') {
+    return crypto.timingSafeEqual(leftBuffer, rightBuffer)
+  }
+  return leftBuffer.equals(rightBuffer)
+}
 
 export async function POST(request) {
   const checkOrigin = createOriginGuard()
@@ -48,7 +59,7 @@ export async function POST(request) {
       )
     }
 
-if (pin !== configuredPin) {
+    if (!safeEqual(pin, configuredPin)) {
       return NextResponse.json({ ok: false, message: 'Invalid regional PIN.' }, { status: 401 })
     }
 

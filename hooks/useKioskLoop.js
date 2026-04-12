@@ -174,6 +174,7 @@ export function useKioskLoop({
 
         setCapturedFrameUrl(bestCanvas.toDataURL('image/jpeg', 0.82))
         const coordinates = locationState?.coords || null
+        const wifiSsid = locationState?.wifiSsid || null
         const timing = buildAttendanceEntryTiming(now)
         let attendanceAccepted = false
 
@@ -195,6 +196,7 @@ export function useKioskLoop({
             time: timing.time,
             latitude: coordinates?.latitude ?? null,
             longitude: coordinates?.longitude ?? null,
+            wifiSsid,
             descriptor,
           })
           const networkDuration = performance.now() - networkStart
@@ -211,10 +213,12 @@ export function useKioskLoop({
               name: result.entry.name || 'Attendance recorded',
               confidence: result.entry.confidence ?? 0,
               officeName: result.entry.officeName || null,
+              officeId: result.entry.officeId || null,
               employeeId: result.entry.employeeId || null,
               time: result.entry.time || timing.time,
               timestamp: Number(result.entry.timestamp ?? timing.timestamp),
               action: result.entry.action || '',
+              attendanceMode: result.entry.attendanceMode || '',
               detail: `${actionLabel} successfully`,
             })
             setKioskState('confirmed')
@@ -241,10 +245,10 @@ export function useKioskLoop({
             showAlertAndResume(safeDecision.detail, 4000)
           } else if (decisionCode === 'blocked_liveness_failed') {
             setKioskState('unknown')
-            showAlertAndResume('Move slightly and try again.', 3500, latestDebug)
+            showAlertAndResume('Move slightly and try again.', 3500)
           } else {
             setKioskState('blocked')
-            showAlertAndResume(safeDecision.detail, 4000, latestDebug)
+            showAlertAndResume(safeDecision.detail, 4000)
           }
         }
 

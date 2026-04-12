@@ -1,5 +1,4 @@
 import './globals.css'
-import 'leaflet/dist/leaflet.css'
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import AppProviders from '@/components/AppProviders'

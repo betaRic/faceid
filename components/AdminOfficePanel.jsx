@@ -1,11 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import dynamic from 'next/dynamic'
-
-const OfficeLocationPicker = dynamic(() => import('./OfficeLocationPicker'), {
-  ssr: false,
-})
+import OfficeLocationPicker from './OfficeLocationPicker'
 
 const dayOptions = [
   { value: 1, label: 'Mon' },
@@ -32,10 +28,10 @@ const officeTabs = [
 export default function AdminOfficePanel({
   activeOffice,
   officeDraftWarning,
-  updateDraft,
-  toggleDay,
+  updateDraft = () => {},
+  toggleDay = () => {},
   handleUseMyLocation,
-  handleSaveOffice,
+  handleSaveOffice = () => {},
   savePending = false,
   locationLoading = false,
   locationNotice = '',
@@ -183,6 +179,11 @@ export default function AdminOfficePanel({
                 label: 'Radius meters',
                 description: 'Allowed on-site radius for kiosk scans.',
                 control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('gps.radiusMeters', Number(event.target.value))} type="number" value={activeOffice.gps.radiusMeters} />,
+              },
+              {
+                label: 'WiFi SSIDs',
+                description: 'Accepts multiple networks separated by commas. Leave empty to skip WiFi validation.',
+                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('wifiSsid', event.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="DILG-Main, DILG-Guest, DILG-Staff" type="text" value={Array.isArray(activeOffice.wifiSsid) ? activeOffice.wifiSsid.join(', ') : String(activeOffice.wifiSsid || '')} />,
               },
             ]}
             title="Location data"

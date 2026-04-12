@@ -2,25 +2,24 @@
 
 import { motion } from 'framer-motion'
 import { useAdminStore } from '@/lib/admin/store'
+import { useOffices } from '@/lib/admin/hooks/useOffices'
 import AdminOfficePanel from '@/components/AdminOfficePanel'
 
 export default function OfficePanel() {
   const {
-    offices,
     officesLoaded,
+    visibleOffices,
     selectedOfficeId,
-    setSelectedOfficeId,
-    employees,
-    employeesLoaded,
-  } = useAdminStore()
-
-  const getVisibleOffices = () => {
-    return offices
-  }
-
-  const getSelectedOffice = () => {
-    return offices.find(o => o.id === selectedOfficeId) || offices[0] || null
-  }
+    activeOffice,
+    officeDraftWarning,
+    locationLoading,
+    locationNotice,
+    highlightLocationPin,
+    updateDraft,
+    toggleDay,
+    handleSaveOffice,
+    handleUseMyLocation,
+  } = useOffices()
 
   if (!officesLoaded) {
     return (
@@ -34,9 +33,6 @@ export default function OfficePanel() {
       </motion.section>
     )
   }
-
-  const visibleOffices = getVisibleOffices()
-  const activeOffice = getSelectedOffice()
 
   return (
     <motion.section
@@ -72,9 +68,6 @@ export default function OfficePanel() {
             <tbody className="divide-y divide-black/5">
               {visibleOffices.map(office => {
                 const selected = office.id === selectedOfficeId
-                const empCount = employeesLoaded 
-                  ? employees.filter(p => p.officeId === office.id).length 
-                  : (office.employees || 0)
                 return (
                   <tr
                     key={office.id}
@@ -90,7 +83,7 @@ export default function OfficePanel() {
                     </td>
                     <td className="px-5 py-4 text-muted">{office.officeType}</td>
                     <td className="px-5 py-4 text-muted">{office.provinceOrCity || office.location}</td>
-                    <td className="px-5 py-4 text-muted">{empCount}</td>
+                    <td className="px-5 py-4 text-muted">{office.employees || 0}</td>
                     <td className="px-5 py-4">
                       <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${(office.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                         {(office.status || 'active') === 'active' ? 'Active' : 'Inactive'}
@@ -119,6 +112,14 @@ export default function OfficePanel() {
       <section className="rounded-[2rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur sm:p-6 xl:min-h-0 xl:overflow-auto">
         <AdminOfficePanel
           activeOffice={activeOffice}
+          updateDraft={updateDraft}
+          toggleDay={toggleDay}
+          handleSaveOffice={handleSaveOffice}
+          handleUseMyLocation={handleUseMyLocation}
+          locationLoading={locationLoading}
+          locationNotice={locationNotice}
+          highlightLocationPin={highlightLocationPin}
+          officeDraftWarning={officeDraftWarning}
         />
       </section>
     </motion.section>

@@ -136,8 +136,25 @@ export async function POST(request) {
 
     if (officeMatchedWfh) {
       entry.attendanceMode = 'WFH'
-      entry.geofenceStatus = hasCoordinates ? 'WFH — GPS location recorded' : 'WFH — no GPS confirmation'
-      entry.decisionCode = 'accepted_wfh'
+      
+      if (entry.wifiSsid) {
+        const clientSsid = entry.wifiSsid.toLowerCase().trim()
+        const officeWifiSsid = Array.isArray(office.wifiSsid) ? office.wifiSsid : [office.wifiSsid].filter(Boolean)
+        const match = officeWifiSsid.some(ssid => ssid.toLowerCase().trim() === clientSsid)
+        if (match) {
+          entry.geofenceStatus = 'WFH — WiFi verified'
+          entry.decisionCode = 'accepted_wfh'
+        } else if (officeWifiSsid.length > 0) {
+          entry.geofenceStatus = 'WFH — WiFi not in office list'
+          entry.decisionCode = 'accepted_wfh_wifi_mismatch'
+        } else {
+          entry.geofenceStatus = hasCoordinates ? 'WFH — GPS location recorded' : 'WFH — no GPS confirmation'
+          entry.decisionCode = 'accepted_wfh'
+        }
+      } else {
+        entry.geofenceStatus = hasCoordinates ? 'WFH — GPS location recorded' : 'WFH — no GPS confirmation'
+        entry.decisionCode = 'accepted_wfh'
+      }
     } else {
       if (!hasCoordinates) {
         return NextResponse.json({ ok: false, message: 'GPS coordinates are required for on-site attendance.', decisionCode: 'blocked_missing_gps' }, { status: 400 })
@@ -146,6 +163,17 @@ export async function POST(request) {
       const distanceMeters = calculateDistanceMeters({ latitude: entry.latitude, longitude: entry.longitude }, office.gps)
       if (distanceMeters > office.gps.radiusMeters) {
         return NextResponse.json({ ok: false, message: 'Outside office geofence.', decisionCode: 'blocked_geofence' }, { status: 403 })
+      }
+
+      if (entry.wifiSsid) {
+        const clientSsid = entry.wifiSsid.toLowerCase().trim()
+        const officeWifiSsid = Array.isArray(office.wifiSsid) ? office.wifiSsid : [office.wifiSsid].filter(Boolean)
+        if (officeWifiSsid.length > 0) {
+          const match = officeWifiSsid.some(ssid => ssid.toLowerCase().trim() === clientSsid)
+          if (!match) {
+            return NextResponse.json({ ok: false, message: `Connected to "${entry.wifiSsid}". Use one of: ${officeWifiSsid.join(', ')}`, decisionCode: 'blocked_wifi_mismatch' }, { status: 403 })
+          }
+        }
       }
 
       entry.attendanceMode = 'On-site'
