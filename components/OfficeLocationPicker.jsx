@@ -1,133 +1,193 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import 'leaflet/dist/leaflet.css'
+import { useEffect, useRef, useState } from 'react'
 
-const DEFAULT_CENTER = [6.3358, 124.7741]
+// Region XII center (Koronadal / South Cotabato)
+const REGION_XII_CENTER = [6.5069, 124.8480]
+const DEFAULT_ZOOM = 11
+const PINNED_ZOOM = 17
 
 export default function OfficeLocationPicker({
   latitude,
   longitude,
   radiusMeters,
   onChange,
-  highlightPin = false,
   officeId,
 }) {
-  const [manualLat, setManualLat] = useState('')
-  const [manualLng, setManualLng] = useState('')
+  const containerRef = useRef(null)
+  const mapRef = useRef(null)
+  const markerRef = useRef(null)
+  const circleRef = useRef(null)
+  const LRef = useRef(null)
+  const [mapReady, setMapReady] = useState(false)
 
   const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude)
 
-  const mapEmbedUrl = useMemo(() => {
-    if (!hasLocation) return null
-    const lat = latitude.toFixed(5)
-    const lng = longitude.toFixed(5)
-    return `https://www.openstreetmap.org/export/embed.html?bbox=${Number(lng)-0.01}%2C${Number(lat)-0.01}%2C${Number(lng)+0.01}%2C${Number(lat)+0.01}&layer=mapnik&marker=${lat}%2C${lng}`
-  }, [hasLocation, latitude, longitude])
+  // ── Boot Leaflet once ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return
 
-  const handleUseMyLocation = () => {
-    if (!navigator.geolocation) return
-    
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    let cancelled = false
+
+    import('leaflet').then(mod => {
+      if (cancelled || !containerRef.current) return
+
+      const L = mod.default ?? mod
+
+      // Fix broken default icon paths in webpack/turbopack bundled environments
+      delete L.Icon.Default.prototype._getIconUrl
+      L.Icon.Default.mergeOptions({
+        iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+      })
+
+      const center = hasLocation ? [latitude, longitude] : REGION_XII_CENTER
+      const zoom   = hasLocation ? PINNED_ZOOM : DEFAULT_ZOOM
+
+      const map = L.map(containerRef.current, {
+        center,
+        zoom,
+        zoomControl: true,
+        attributionControl: true,
+      })
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(map)
+
+      // Click anywhere on the map → place / move the pin
+      map.on('click', e => {
         onChange({
-          latitude: Number(pos.coords.latitude.toFixed(6)),
-          longitude: Number(pos.coords.longitude.toFixed(6)),
+          latitude:  parseFloat(e.latlng.lat.toFixed(6)),
+          longitude: parseFloat(e.latlng.lng.toFixed(6)),
         })
-      },
-      (err) => console.error('Geolocation error:', err),
-      { enableHighAccuracy: true }
-    )
-  }
+      })
 
-  const handleManualSubmit = (e) => {
-    e.preventDefault()
-    const lat = parseFloat(manualLat)
-    const lng = parseFloat(manualLng)
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      onChange({ latitude: lat, longitude: lng })
+      LRef.current   = L
+      mapRef.current = map
+      setMapReady(true)
+    }).catch(err => {
+      console.error('[OfficeLocationPicker] Leaflet failed to load:', err)
+    })
+
+    return () => {
+      cancelled = true
+      if (mapRef.current) {
+        mapRef.current.remove()
+        mapRef.current  = null
+        markerRef.current = null
+        circleRef.current = null
+      }
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally once — coords handled in the effect below
 
+  // ── Sync marker + geofence circle whenever coords / radius change ──────
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !LRef.current) return
+
+    const L   = LRef.current
+    const map = mapRef.current
+
+    // Tear down old overlays
+    markerRef.current?.remove()
+    circleRef.current?.remove()
+    markerRef.current = null
+    circleRef.current = null
+
+    if (!hasLocation) return
+
+    const latlng = [latitude, longitude]
+
+    // Draggable pin
+    const marker = L.marker(latlng, { draggable: true }).addTo(map)
+    marker.on('dragend', e => {
+      const pos = e.target.getLatLng()
+      onChange({
+        latitude:  parseFloat(pos.lat.toFixed(6)),
+        longitude: parseFloat(pos.lng.toFixed(6)),
+      })
+    })
+    markerRef.current = marker
+
+    // Geofence radius circle
+    if (Number.isFinite(radiusMeters) && radiusMeters > 0) {
+      circleRef.current = L.circle(latlng, {
+        radius:      radiusMeters,
+        color:       '#032D57',
+        fillColor:   '#032D57',
+        fillOpacity: 0.10,
+        weight:      2,
+        dashArray:   '5 5',
+      }).addTo(map)
+    }
+
+    // Pan to new pin only if it is far from the current viewport center
+    const dist = map.distance(map.getCenter(), latlng)
+    if (dist > 300) {
+      map.setView(latlng, PINNED_ZOOM)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, hasLocation, latitude, longitude, radiusMeters])
+
+  // ── No office selected guard ───────────────────────────────────────────
   if (!officeId) {
     return (
-      <div className="flex h-[320px] items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-100 text-sm text-muted">
-        Select an office to configure location
+      <div className="flex h-[340px] items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-100 text-sm text-muted">
+        Select an office to configure its location
       </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-100">
-      {mapEmbedUrl ? (
-        <iframe
-          title="Office Location"
-          width="100%"
-          height="320"
-          frameBorder="0"
-          src={mapEmbedUrl}
-          className="w-full"
-        />
-      ) : (
-        <div className="flex h-[320px] items-center justify-center bg-stone-100 text-muted">
-          No location set - enter coordinates below
-        </div>
-      )}
-      
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1">
-              Latitude
-            </label>
-            <input
-              type="number"
-              step="0.000001"
-              value={hasLocation ? latitude.toFixed(6) : ''}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value)
-                if (Number.isFinite(val)) {
-                  onChange({ latitude: val, longitude: longitude || 0 })
-                }
-              }}
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-mono"
-              placeholder="7.22310"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1">
-              Longitude
-            </label>
-            <input
-              type="number"
-              step="0.000001"
-              value={hasLocation ? longitude.toFixed(6) : ''}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value)
-                if (Number.isFinite(val)) {
-                  onChange({ latitude: latitude || 0, longitude: val })
-                }
-              }}
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-mono"
-              placeholder="124.24520"
-            />
-          </div>
-        </div>
+    <div className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-white shadow-sm">
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleUseMyLocation}
-            className="flex-1 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-          >
-            📍 Use My Location
-          </button>
-        </div>
+      {/* Map canvas */}
+      <div className="relative">
+        <div ref={containerRef} style={{ height: 340, width: '100%' }} />
 
-        {hasLocation && (
-          <div className="text-xs text-muted bg-stone-50 p-2 rounded-lg">
-            <strong>Current:</strong> {latitude.toFixed(5)}, {longitude.toFixed(5)}
-            {radiusMeters && <span> • Radius: {radiusMeters}m</span>}
+        {/* Loading skeleton shown until Leaflet boots */}
+        {!mapReady && (
+          <div className="absolute inset-0 flex items-center justify-center bg-stone-100">
+            <div className="flex items-center gap-2 text-sm text-muted">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-navy border-t-transparent" />
+              Loading map…
+            </div>
           </div>
+        )}
+
+        {/* Hint banner — sits above Leaflet controls (z-[1000]) */}
+        {mapReady && (
+          <div className="pointer-events-none absolute bottom-8 left-1/2 z-[1000] -translate-x-1/2 whitespace-nowrap rounded-full bg-navy/80 px-4 py-1.5 text-xs font-medium text-white backdrop-blur">
+            Click map to place pin · Drag pin to reposition
+          </div>
+        )}
+      </div>
+
+      {/* Coordinate readout strip */}
+      <div className="border-t border-black/5 bg-stone-50 px-4 py-2.5">
+        {hasLocation ? (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+            <span className="text-muted">
+              <span className="font-semibold text-ink">Lat </span>
+              {latitude.toFixed(6)}
+            </span>
+            <span className="text-muted">
+              <span className="font-semibold text-ink">Lng </span>
+              {longitude.toFixed(6)}
+            </span>
+            {Number.isFinite(radiusMeters) && radiusMeters > 0 && (
+              <span className="text-muted">
+                <span className="font-semibold text-ink">Radius </span>
+                {radiusMeters} m
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-muted">No pin placed yet — click the map to set a location</span>
         )}
       </div>
     </div>

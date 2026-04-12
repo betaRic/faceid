@@ -5,6 +5,7 @@ import { startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from './AppShell'
 import { useAdminStore } from '@/lib/admin/store'
+import { useOffices } from '@/lib/admin/hooks/useOffices'   // ← pull in here
 import { ToastContainer } from '@/components/shared/ui'
 import { DashboardPanel } from './admin/DashboardPanel'
 import { EmployeesPanel } from './admin/EmployeesPanel'
@@ -23,17 +24,15 @@ const navItems = [
 
 export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '' }) {
   const router = useRouter()
-  const { 
-    roleScope, setRoleScope, 
-    activePanel, setActivePanel, 
-    editingEmployee, setEditingEmployee, 
-    officesLoaded, setSelectedOfficeId
+  const {
+    roleScope, setRoleScope,
+    activePanel, setActivePanel,
+    editingEmployee, setEditingEmployee,
+    officesLoaded, setSelectedOfficeId,
   } = useAdminStore()
 
-  useEffect(() => {
-    setRoleScope(initialRoleScope)
-    if (initialOfficeId) setSelectedOfficeId(initialOfficeId)
-  }, [initialRoleScope, initialOfficeId, setRoleScope, setSelectedOfficeId])
+  // ── Boot the office subscription here so it isn't gated behind officesLoaded ──
+  useOffices()
 
   useEffect(() => {
     setRoleScope(initialRoleScope)
@@ -121,8 +120,8 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       {editingEmployee && (
         <EmployeeEditorModal
           person={editingEmployee}
-          onSave={(person, updates) => {
-            useAdminStore.getState().addToast(`${person.name} updated`, 'success')
+          onSave={() => {
+            useAdminStore.getState().addToast(`${editingEmployee.name} updated`, 'success')
             setEditingEmployee(null)
           }}
           onCancel={() => setEditingEmployee(null)}

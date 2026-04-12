@@ -72,7 +72,6 @@ export default function KioskView({
     pausedRef,
     scheduleResume,
     showAlertAndResume,
-    offices,
   })
 
   const { clock, dateStr } = useKioskClock()
