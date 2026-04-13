@@ -214,6 +214,19 @@ export default function RegisterView({
     if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
 
     startDetect(result => {
+      if (persons.length === 0) return
+
+      const personsWithDescriptors = persons.filter(p => p.descriptors && p.descriptors.length > 0)
+      if (personsWithDescriptors.length === 0) {
+        setPendingDescriptors(result.descriptors)
+        setPreviewUrl(result.previewUrl)
+        setCaptureFeedback(result.qualitySummary)
+        setBurstSummary(result.burstSummary)
+        playAudioCue('notify')
+        setStep('review')
+        return
+      }
+
       for (const descriptor of result.descriptors) {
         const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
         if (dup) {
