@@ -420,7 +420,7 @@ export default function RegisterView({
             )}
 
             {duplicateError && (
-              <div className="absolute inset-x-3 bottom-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+              <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-red-600 px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
                 {duplicateError}
               </div>
             )}

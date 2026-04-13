@@ -350,6 +350,11 @@ export function useEnrollmentCapture(camera) {
 
         if (abortedRef.current) break
 
+        if (!poseResult) {
+          onStatusUpdate?.(`⚠️ ${phase.label} pose not achieved — please try again`)
+          return null
+        }
+
         if (phase.poseType === 'side_a' && poseResult?.yaw != null) {
           sideAYw = poseResult.yaw
         }
