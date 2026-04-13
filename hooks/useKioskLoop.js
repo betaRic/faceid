@@ -81,22 +81,38 @@ export function useKioskLoop({
       // Use oval filtering - same as registration
       const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
       
-      // Update distance info for UI
-      if (ovalReady?.faceAreaRatio) {
-        const ratio = ovalReady.faceAreaRatio
-        let status = 'too-far'
-        if (ratio >= 0.70) status = 'too-close'
-        else if (ratio >= 0.45) status = 'perfect'
-        else if (ratio >= 0.35) status = 'good'
-        setFaceDistanceInfo({ faceAreaRatio: ratio, status })
+      // Update distance info even for faces NOT in oval - show "Get closer" prompt
+      const largestFace = detections.length > 0 ? detections.reduce((best, curr) => {
+        const currBox = curr?.detection?.box || curr?.box
+        const bestBox = best?.detection?.box || best?.box
+        if (!currBox) return best
+        if (!bestBox) return curr
+        const currArea = currBox.width * currBox.height
+        const bestArea = bestBox.width * bestBox.height
+        return currArea > bestArea ? curr : best
+      }, null) : null
+
+      if (largestFace) {
+        const box = largestFace?.detection?.box || largestFace?.box
+        if (box) {
+          const frameArea = canvas.width * canvas.height
+          const faceArea = box.width * box.height
+          const ratio = faceArea / frameArea
+          let status = 'too-far'
+          if (ratio >= 0.70) status = 'too-close'
+          else if (ratio >= 0.45) status = 'perfect'
+          else if (ratio >= 0.35) status = 'good'
+          else status = 'too-far'
+          setFaceDistanceInfo({ faceAreaRatio: ratio, status })
+        }
       } else {
         setFaceDistanceInfo(null)
       }
       
-      // If face detected but NOT in oval - just don't progress (same as registration)
+      // If face detected but NOT in oval - show indicator but don't progress yet
       if (!ovalReady) {
         faceDetectedRef.current = false
-        // Keep scanning but don't increment confirmation - simple like registration
+        // Keep scanning but don't increment confirmation - show "get closer"
         if (!confirmedTimer.current && !faceLossTimerRef.current) {
           faceLossTimerRef.current = window.setTimeout(() => {
             window.clearTimeout(unknownTimer.current)
@@ -126,9 +142,32 @@ export function useKioskLoop({
       window.clearTimeout(unknownTimer.current)
       unknownTimer.current = null
 
+      // Add delay before starting confirmation to let user adjust distance
+      // Only start counting after face has been in good range for a moment
+      const faceAreaRatio = ovalReady.faceAreaRatio || 0
+      const isGoodPosition = faceAreaRatio >= 0.40 && faceAreaRatio <= 0.80
+      
+      // If not in good position, reset confirmation and give user time to adjust
+      if (!isGoodPosition) {
+        if (confirmRef.current > 0) {
+          // Reset but don't show as "face lost" - just pause
+          confirmRef.current = Math.max(0, confirmRef.current - 1)
+        }
+        // Add delay before next check
+        busyRef.current = false
+        return
+      }
+
       // Use the oval-ready face for confirmation
       const ovalBox = ovalReady.box
       drawOverlay({ detection: { box: ovalBox } }, canvas.width, canvas.height)
+      
+      // Add delay before incrementing confirmation counter
+      // This gives user time to reach perfect distance
+      if (!confirmRef.current) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+      
       confirmRef.current += 1
 
       if (!confirmedTimer.current) setKioskState('scanning')
