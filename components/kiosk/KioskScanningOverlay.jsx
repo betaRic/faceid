@@ -64,6 +64,7 @@ export default function KioskScanningOverlay({
           ? 'ring-2 ring-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.18)]'
           : 'ring-1 ring-white/18'
 
+  // Dynamic status messages - no more confusing "Align face"
   const statusMessage = isVerifying
     ? 'Verifying...'
     : isConfirmed
@@ -73,8 +74,10 @@ export default function KioskScanningOverlay({
         : isUnknown
           ? 'Face not recognized'
           : isScanning
-            ? 'Face detected'
-            : 'Align face in oval'
+            ? 'Face detected — hold steady'
+            : camera.camOn
+              ? 'Ready — look at camera'
+              : 'Camera offline'
 
   return (
     <>
