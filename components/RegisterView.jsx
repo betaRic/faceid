@@ -6,35 +6,119 @@ import { PERSON_APPROVAL_PENDING } from '../lib/person-approval'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '../lib/biometrics/oval-capture'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
 import { useAudioCue } from '../hooks/useAudioCue'
-import { useEnrollmentCapture, CAPTURE_PHASES } from '../hooks/useEnrollmentCapture'
+import { useEnrollmentCapture, CAPTURE_PHASES, classifyPose } from '../hooks/useEnrollmentCapture'
 import AppShell from './AppShell'
 
 const STEPS = [
-  { id: 'capture', number: '1', title: 'Capture face', description: '3-angle guided burst for accuracy.' },
-  { id: 'review', number: '2', title: 'Review photo', description: 'Retake if the preview is unclear.' },
-  { id: 'details', number: '3', title: 'Employee details', description: 'ID, name, and assigned office.' },
-  { id: 'complete', number: '4', title: 'Complete', description: 'Add more samples or enroll another.' },
+  { id: 'capture', number: '1', title: 'Capture face', description: '3-angle guided capture.' },
+  { id: 'review', number: '2', title: 'Review photo', description: 'Retake if unclear.' },
+  { id: 'details', number: '3', title: 'Employee details', description: 'ID, name, office.' },
+  { id: 'complete', number: '4', title: 'Complete', description: 'Add samples or enroll another.' },
 ]
 
-const OVAL_STYLE = { borderRadius: '50%' }
+const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
 
-// Subtle guide shown before face is detected — face outline, eye wells, nose
-function FaceGuide({ show }) {
+function PoseArcIndicator({ yaw, poseOk, phaseType, sideAYw }) {
+  if (phaseType === null || phaseType === undefined) return null
+
+  const isCenterPhase = phaseType === 'center'
+
+  let leftFill = 0
+  let rightFill = 0
+
+  if (yaw !== null) {
+    if (isCenterPhase) {
+      const deviation = Math.min(1, Math.abs(yaw) / 0.25) * 0.5
+      leftFill = deviation
+      rightFill = deviation
+    } else {
+      if (yaw > 0) {
+        rightFill = Math.min(1, (yaw - 0.08) / 0.20)
+      } else {
+        leftFill = Math.min(1, (-yaw - 0.08) / 0.20)
+      }
+    }
+  }
+
+  const color = poseOk
+    ? 'bg-emerald-400'
+    : yaw !== null && Math.abs(yaw) > 0.06
+      ? 'bg-amber-400'
+      : 'bg-white/30'
+
   return (
-    <svg
-      aria-hidden="true"
-      className={`absolute inset-0 h-full w-full pointer-events-none transition-opacity duration-500 ${show ? 'opacity-100' : 'opacity-0'}`}
-      viewBox="0 0 68 100"
-    >
-      <ellipse cx="34" cy="50" rx="22" ry="28"
-        fill="none" stroke="white" strokeOpacity="0.22" strokeWidth="1.2" strokeDasharray="4 3" />
-      <ellipse cx="24" cy="38" rx="7" ry="4"
-        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
-      <ellipse cx="44" cy="38" rx="7" ry="4"
-        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
-      <circle cx="34" cy="55" r="2.5"
-        fill="none" stroke="white" strokeOpacity="0.14" strokeWidth="0.9" />
-    </svg>
+    <div className="flex items-center gap-1.5 px-2">
+      <div className="h-1.5 w-12 overflow-hidden rounded-full bg-white/15">
+        <div
+          className={`h-full rounded-full transition-all duration-150 ${color}`}
+          style={{ width: `${leftFill * 100}%`, marginLeft: 'auto' }}
+        />
+      </div>
+      <div className={`h-2.5 w-2.5 rounded-full border-2 transition-all duration-150 ${
+        poseOk ? 'border-emerald-400 bg-emerald-400' : 'border-white/50 bg-transparent'
+      }`} />
+      <div className="h-1.5 w-12 overflow-hidden rounded-full bg-white/15">
+        <div
+          className={`h-full rounded-full transition-all duration-150 ${color}`}
+          style={{ width: `${rightFill * 100}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statusMsg }) {
+  if (capturePhase < 0) return null
+  const phase = CAPTURE_PHASES[capturePhase]
+
+  return (
+    <div className="absolute inset-x-0 bottom-16 z-[5] flex justify-center px-4">
+      <div className="rounded-[1.25rem] border border-white/20 bg-black/65 px-5 py-3.5 text-center backdrop-blur">
+        <div className="text-lg">{phase.icon}</div>
+        <div className="mt-1 text-sm font-bold text-white">{phase.label}</div>
+        <div className="mt-0.5 text-xs text-white/70">{phase.subtitle}</div>
+        <div className="mt-2.5 flex justify-center">
+          <PoseArcIndicator
+            yaw={currentYaw}
+            poseOk={poseOk}
+            phaseType={phase.poseType}
+            sideAYaw={null}
+          />
+        </div>
+        <div className={`mt-2 text-xs font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
+          {statusMsg}
+        </div>
+        <div className="mt-2.5 flex items-center justify-center gap-2.5">
+          {CAPTURE_PHASES.map((p, i) => (
+            <div key={p.id} className="flex items-center gap-1">
+              {Array.from({ length: 3 }).map((_, f) => {
+                const isCurrent = i === capturePhase
+                const filled = i < capturePhase || (isCurrent && f < phaseProgress)
+                const active = isCurrent && f === phaseProgress - 1
+                return (
+                  <span
+                    key={f}
+                    className={`inline-block rounded-full transition-all duration-200 ${
+                      active
+                        ? 'h-2.5 w-2.5 scale-125 bg-emerald-400'
+                        : filled
+                          ? 'h-2 w-2 bg-white/70'
+                          : 'h-2 w-2 bg-white/20'
+                    }`}
+                  />
+                )
+              })}
+              {i < CAPTURE_PHASES.length - 1 && (
+                <span className="mx-0.5 text-white/25 text-xs">·</span>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="mt-1.5 text-[10px] font-medium uppercase tracking-widest text-white/40">
+          Phase {capturePhase + 1} of {CAPTURE_PHASES.length}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -75,48 +159,6 @@ function InfoCard({ title, text, tone = 'default' }) {
   )
 }
 
-// ─── Phase indicator shown during capture ──────────────────────────────────
-function PhaseIndicator({ capturePhase, phaseProgress }) {
-  if (capturePhase < 0) return null
-  const phase = CAPTURE_PHASES[capturePhase]
-  const FRAMES = 3
-  return (
-    <div className="w-full max-w-xs">
-      <div className="rounded-[1.25rem] border border-white/20 bg-black/60 px-5 py-3 text-center backdrop-blur">
-        <div className="text-lg">{phase.icon}</div>
-        <div className="mt-1 text-sm font-bold text-white">{phase.label}</div>
-        <div className="mt-0.5 text-xs text-white/70">{phase.subtitle}</div>
-        {/* frame dots */}
-        <div className="mt-2 flex items-center justify-center gap-1.5">
-          {CAPTURE_PHASES.map((p, i) => (
-            <div key={p.id} className="flex items-center gap-1">
-              {Array.from({ length: FRAMES }).map((_, f) => {
-                const filled = i < capturePhase || (i === capturePhase && f < phaseProgress)
-                return (
-                  <span
-                    key={f}
-                    className={`inline-block h-2 w-2 rounded-full transition-all duration-200 ${
-                      i === capturePhase && f === phaseProgress - 1
-                        ? 'scale-125 bg-emerald-400'
-                        : filled
-                          ? 'bg-white/70'
-                          : 'bg-white/25'
-                    }`}
-                  />
-                )
-              })}
-              {i < CAPTURE_PHASES.length - 1 && <span className="mx-1 text-white/30">·</span>}
-            </div>
-          ))}
-        </div>
-        <div className="mt-1.5 text-[10px] font-medium uppercase tracking-widest text-white/50">
-          Phase {capturePhase + 1} of {CAPTURE_PHASES.length}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function RegisterView({
   camera,
   persons,
@@ -149,6 +191,9 @@ export default function RegisterView({
     faceFound,
     faceNeedsAlignment,
     statusMsg,
+    setStatusMsg,
+    currentYaw,
+    poseOk,
     startDetect,
     stopDetect,
     resetCapture,
@@ -174,7 +219,6 @@ export default function RegisterView({
     setEmployeeIdError(val !== sanitized ? 'Only letters, numbers, and dashes (-)' : '')
   }
 
-  // Boot detection when workspace is ready
   useEffect(() => {
     if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
 
@@ -216,7 +260,13 @@ export default function RegisterView({
     let result = null
     try {
       result = await onEnrollPerson(
-        { name: name.trim(), employeeId: employeeId.trim(), officeId, officeName: selectedOffice?.name || 'Unassigned', photoDataUrl: previewUrl },
+        {
+          name: name.trim(),
+          employeeId: employeeId.trim(),
+          officeId,
+          officeName: selectedOffice?.name || 'Unassigned',
+          photoDataUrl: previewUrl,
+        },
         pendingDescriptors,
       )
     } catch (err) {
@@ -230,9 +280,11 @@ export default function RegisterView({
     const totalCount = Number(result?.sampleCount || (existingSamples + savedCount))
     const approvalStatus = result?.approvalStatus || PERSON_APPROVAL_PENDING
     setLastSavedSummary({
-      name: name.trim(), employeeId: employeeId.trim(),
+      name: name.trim(),
+      employeeId: employeeId.trim(),
       officeName: selectedOffice?.name || 'Unassigned',
-      sampleCount: totalCount, savedSampleCount: savedCount,
+      sampleCount: totalCount,
+      savedSampleCount: savedCount,
       remaining: Math.max(0, ENROLLMENT_MIN_SAMPLES - totalCount),
       approvalStatus,
     })
@@ -241,18 +293,26 @@ export default function RegisterView({
   }, [employeeId, existingSamples, name, officeId, onEnrollPerson, pendingDescriptors, pendingSampleCount, previewUrl, selectedOffice, playAudioCue])
 
   const handleNewPerson = useCallback(() => {
-    setName(''); setEmployeeId(''); setOfficeId(offices[0]?.id || '')
+    setName('')
+    setEmployeeId('')
+    setOfficeId(offices[0]?.id || '')
     handleRetake()
   }, [offices, handleRetake])
 
-  const captureStateLabel = !modelsReady ? 'Loading models…'
-    : capturePhase >= 0 ? CAPTURE_PHASES[capturePhase]?.label
-    : faceFound ? 'Face ready'
-    : faceNeedsAlignment ? 'Align inside oval'
-    : 'Scanning for face…'
+  const captureStateLabel = !modelsReady
+    ? 'Loading models…'
+    : capturePhase >= 0
+      ? CAPTURE_PHASES[capturePhase]?.label
+      : faceFound
+        ? 'Face ready — hold still'
+        : faceNeedsAlignment
+          ? 'Move into the oval guide'
+          : 'Scanning for face…'
 
   const captureStateCls = capturePhase >= 0
-    ? 'bg-blue-500/20 text-blue-100 ring-1 ring-blue-400/40'
+    ? poseOk
+      ? 'bg-emerald-500/25 text-emerald-100 ring-1 ring-emerald-400/50'
+      : 'bg-blue-500/20 text-blue-100 ring-1 ring-blue-400/40'
     : faceFound
       ? 'bg-emerald-400/20 text-emerald-50 ring-1 ring-emerald-300/40'
       : faceNeedsAlignment
@@ -262,20 +322,18 @@ export default function RegisterView({
   return (
     <AppShell
       actions={
-        <div className="w-full rounded-full bg-white px-4 py-2.5 text-center text-sm font-semibold text-ink shadow-sm sm:w-auto">
+        <div className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm">
           {persons.length} enrolled
         </div>
       }
       contentClassName="px-3 py-3 sm:px-5 lg:px-8 min-h-0 flex flex-col"
     >
-      {/* Toast */}
       {toast && (
         <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-navy-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
           {toast}
         </div>
       )}
 
-      {/* Saving overlay */}
       {savingEnrollment && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/35 px-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-[1.8rem] border border-black/5 bg-white px-6 py-6 text-center shadow-2xl">
@@ -288,7 +346,6 @@ export default function RegisterView({
         </div>
       )}
 
-      {/* ── Capture step (full-viewport camera) ── */}
       {step === 'capture' && (
         <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
           <motion.section
@@ -297,93 +354,85 @@ export default function RegisterView({
             transition={{ duration: 0.35 }}
             className="relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow xl:min-h-[calc(100dvh-10.5rem)]"
           >
-            {/* Background */}
             <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
-            {/* Flex column: top bar | oval | bottom status */}
-            <div className="absolute inset-0 z-[2] flex flex-col">
-
-              {/* Top bar — back + status */}
-              <div className="flex shrink-0 items-start justify-between gap-2 p-3">
-                {onBack
-                  ? (
-                    <button
-                      className="rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-black/50"
-                      onClick={onBack}
-                      type="button"
-                    >
-                      ← Kiosk
-                    </button>
-                  )
-                  : <span />}
-                <div className="rounded-[1.1rem] border border-white/14 bg-black/60 px-4 py-2.5 text-right shadow-lg backdrop-blur">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-100/90">Status</div>
-                  <div className="mt-1 text-sm font-medium text-white/95">{statusMsg}</div>
-                </div>
-              </div>
-
-              {/* Oval — fills remaining flex space, never overflows */}
-              <div className="flex min-h-0 flex-1 items-center justify-center px-4">
+            <div className="absolute inset-0 z-[2] flex items-center justify-center px-4 py-6">
+              <div
+                className="relative w-[78vw] sm:w-[54vw]"
+                style={{
+                  aspectRatio: String(OVAL_CAPTURE_ASPECT_RATIO),
+                  maxWidth: `min(430px, calc(min(72vh, 640px) * ${OVAL_CAPTURE_ASPECT_RATIO}))`,
+                }}
+              >
                 <div
-                  className="relative"
-                  style={{
-                    width: `min(72vw, calc(min(72vh, 580px) * ${OVAL_CAPTURE_ASPECT_RATIO}))`,
-                    aspectRatio: String(OVAL_CAPTURE_ASPECT_RATIO),
-                  }}
-                >
-                  {/* Ring — state-aware color */}
-                  <div
-                    className={`absolute inset-0 transition-all duration-200 ${
-                      capturePhase >= 0
-                        ? 'ring-2 ring-blue-400/70 shadow-[0_0_50px_rgba(59,130,246,0.24)]'
+                  className={`absolute inset-0 transition-all duration-200 ${
+                    capturePhase >= 0 && poseOk
+                      ? 'ring-2 ring-emerald-400/80 shadow-[0_0_50px_rgba(16,185,129,0.32)]'
+                      : capturePhase >= 0
+                        ? 'ring-2 ring-blue-400/60 shadow-[0_0_40px_rgba(59,130,246,0.20)]'
                         : faceFound
-                          ? 'ring-2 ring-emerald-400/70 shadow-[0_0_50px_rgba(16,185,129,0.24)]'
-                          : faceNeedsAlignment
-                            ? 'ring-1 ring-amber-300/50'
-                            : 'ring-1 ring-white/18'
-                    }`}
-                    style={OVAL_STYLE}
-                  />
-                  {/* Video clipped to oval */}
-                  <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_STYLE}>
-                    <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" />
-                    <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
-                    {/* Face position guide — shown before any face is detected */}
-                    <FaceGuide show={!faceFound && capturePhase < 0 && camera.camOn} />
-                  </div>
+                          ? 'ring-2 ring-emerald-400/70'
+                          : 'ring-1 ring-white/18'
+                  }`}
+                  style={OVAL_FRAME_STYLE}
+                />
+                <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_FRAME_STYLE}>
+                  <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" />
+                  <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
                 </div>
-              </div>
-
-              {/* Bottom — phase indicator + state badge, always below the oval */}
-              <div className="flex shrink-0 flex-col items-center gap-3 px-4 py-4">
-                <PhaseIndicator capturePhase={capturePhase} phaseProgress={phaseProgress} />
-                <span className={`rounded-full px-5 py-2.5 text-sm font-semibold backdrop-blur ${captureStateCls}`}>
-                  {captureStateLabel}
-                </span>
-                {errorMessage && (
-                  <div className="w-full rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
-                    {errorMessage}
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Camera offline overlay */}
+            <div className="absolute left-3 top-3 z-[4]">
+              {onBack && (
+                <button
+                  className="rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-black/50"
+                  onClick={onBack}
+                  type="button"
+                >
+                  ← Kiosk
+                </button>
+              )}
+            </div>
+
+            <div className="absolute right-3 top-3 z-[4] max-w-[55%] rounded-[1.1rem] border border-white/14 bg-black/60 px-4 py-2.5 text-right shadow-lg backdrop-blur">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-100/90">Status</div>
+              <div className="mt-1 text-sm font-medium text-white/95 leading-tight">{statusMsg}</div>
+            </div>
+
             {!camera.camOn && (
               <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-black/60 text-center text-white">
                 <div className="text-5xl opacity-60">◈</div>
                 <div className="text-sm">{camera.camError || 'Camera offline'}</div>
               </div>
             )}
+
+            <PhaseIndicator
+              capturePhase={capturePhase}
+              phaseProgress={phaseProgress}
+              poseOk={poseOk}
+              currentYaw={currentYaw}
+              statusMsg={statusMsg}
+            />
+
+            <div className="absolute inset-x-0 bottom-5 z-[4] flex justify-center px-4">
+              <span className={`rounded-full px-5 py-3 text-sm font-semibold backdrop-blur ${captureStateCls}`}>
+                {captureStateLabel}
+              </span>
+            </div>
+
+            {errorMessage && (
+              <div className="absolute inset-x-3 bottom-16 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+                {errorMessage}
+              </div>
+            )}
           </motion.section>
         </div>
       )}
 
-      {/* ── Review / Details / Complete steps ── */}
       {step !== 'capture' && (
         <div className="page-frame flex min-h-[calc(100dvh-8.25rem)] flex-col gap-3 xl:min-h-[calc(100dvh-10.5rem)]">
-          {/* Wizard steps bar */}
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
@@ -404,27 +453,29 @@ export default function RegisterView({
             </div>
           </motion.div>
 
-          {/* Content panel */}
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, delay: 0.05 }}
             className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow sm:p-4"
           >
-            {/* Status bar */}
             <div className="flex shrink-0 flex-col gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Enrollment</span>
                 <h2 className="mt-0.5 font-display text-xl text-ink sm:text-2xl">{STEPS[stepIndex]?.title}</h2>
               </div>
               {burstSummary && (
-                <div className="rounded-full bg-emerald-100 px-4 py-1.5 text-xs font-semibold text-emerald-800">
-                  {burstSummary.keptCount} samples · {burstSummary.phasesCompleted} angles
+                <div className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
+                  burstSummary.genuinelyDiverse
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {burstSummary.keptCount} samples
+                  {burstSummary.genuinelyDiverse ? ' · Diverse angles ✓' : ' · Single angle — retake recommended'}
                 </div>
               )}
             </div>
 
-            {/* ── Review ── */}
             {step === 'review' && (
               <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_300px]">
                 <div className="flex min-h-[16rem] items-center justify-center overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-950">
@@ -434,26 +485,39 @@ export default function RegisterView({
                   }
                 </div>
                 <div className="grid content-start gap-3">
-                  <button className="btn btn-primary w-full" onClick={goToDetails} type="button">Continue to details</button>
-                  <button className="btn btn-ghost w-full" onClick={handleRetake} type="button">Retake (3-angle)</button>
-                  {burstSummary && (
+                  <button className="btn btn-primary w-full" onClick={goToDetails} type="button">
+                    Continue to details
+                  </button>
+                  <button className="btn btn-ghost w-full" onClick={handleRetake} type="button">
+                    Retake (3-angle)
+                  </button>
+
+                  {burstSummary && !burstSummary.genuinelyDiverse && (
                     <InfoCard
-                      title={`${burstSummary.keptCount} samples — ${burstSummary.phasesCompleted} angles`}
-                      text={`${burstSummary.detectedCount} frames detected. Diverse angle samples improve recognition accuracy.`}
+                      title="Single angle detected"
+                      text="The system captured similar poses for all 3 phases. For better accuracy, retake and follow the head-turn instructions."
+                      tone="warn"
+                    />
+                  )}
+
+                  {burstSummary && burstSummary.genuinelyDiverse && (
+                    <InfoCard
+                      title={`${burstSummary.keptCount} diverse samples captured`}
+                      text={`${burstSummary.detectedCount} frames processed across 3 angles. Diverse poses improve recognition accuracy significantly.`}
                       tone="default"
                     />
                   )}
-                  {captureFeedback && (
-                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone={captureFeedback.tone} />
+
+                  {captureFeedback && captureFeedback.tone === 'warn' && (
+                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone="warn" />
                   )}
                 </div>
               </div>
             )}
 
-            {/* ── Details ── */}
             {step === 'details' && (
               <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_280px]">
-                <div className="grid content-start gap-4 overflow-y-auto rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
+                <div className="grid content-start gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
                   <Field label="Full name">
                     <input
                       ref={nameRef}
@@ -481,7 +545,9 @@ export default function RegisterView({
                     </select>
                   </Field>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <button className="btn btn-ghost w-full" onClick={() => setStep('review')} type="button">← Back</button>
+                    <button className="btn btn-ghost w-full" onClick={() => setStep('review')} type="button">
+                      ← Back
+                    </button>
                     <button
                       className="btn btn-primary w-full"
                       disabled={savingEnrollment || !pendingSampleCount || !name.trim() || !employeeId.trim() || !officeId}
@@ -503,14 +569,10 @@ export default function RegisterView({
                     ? <InfoCard title="Existing record" text={`${existingPerson.name} — ${existingSamples} sample(s) at ${existingPerson.officeName}.`} />
                     : <InfoCard title="New employee" text="A new record will be created pending admin approval." />
                   }
-                  {captureFeedback && (
-                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone={captureFeedback.tone} />
-                  )}
                 </div>
               </div>
             )}
 
-            {/* ── Complete ── */}
             {step === 'complete' && (
               <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_280px]">
                 <div className="overflow-auto rounded-[1.5rem] border border-emerald-200 bg-emerald-50 p-5">
@@ -533,11 +595,12 @@ export default function RegisterView({
                   </div>
                 </div>
                 <div className="grid content-start gap-3">
-                  {captureFeedback && (
-                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone={captureFeedback.tone} />
-                  )}
-                  <button className="btn btn-primary w-full" onClick={handleRetake} type="button">Add another sample</button>
-                  <button className="btn btn-ghost w-full" onClick={handleNewPerson} type="button">Enroll new employee</button>
+                  <button className="btn btn-primary w-full" onClick={handleRetake} type="button">
+                    Add another sample
+                  </button>
+                  <button className="btn btn-ghost w-full" onClick={handleNewPerson} type="button">
+                    Enroll new employee
+                  </button>
                 </div>
               </div>
             )}
