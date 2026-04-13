@@ -214,10 +214,8 @@ export default function RegisterView({
     if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
 
     startDetect(result => {
-      console.log('[RegisterView] Capture complete, checking duplicate. Persons:', persons.length, 'Descriptors:', result.descriptors.length)
       for (const descriptor of result.descriptors) {
         const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
-        console.log('[RegisterView] Checking descriptor, dup:', dup ? dup.person.name : null)
         if (dup) {
           setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
           playAudioCue('error')

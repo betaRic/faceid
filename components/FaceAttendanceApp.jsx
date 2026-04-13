@@ -80,7 +80,6 @@ export default function FaceAttendanceApp({
     setPersonsLoading(true)
     const unsubscribe = subscribeToPersons(
       nextPersons => {
-        console.log('[FaceAttendanceApp] Persons loaded:', nextPersons.length)
         setPersons(nextPersons)
         setPersonsLoading(false)
         setDataStatus(
