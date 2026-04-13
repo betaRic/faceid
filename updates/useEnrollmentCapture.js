@@ -4,7 +4,6 @@ import { useCallback, useRef, useState } from 'react'
 import { detectFaceBoxes, detectSingleDescriptor } from '@/lib/biometrics/human'
 import {
   getOvalCaptureRegion,
-  isFaceInsideCaptureOval,
   OVAL_CAPTURE_ASPECT_RATIO,
   selectOvalReadyFace,
 } from '@/lib/biometrics/oval-capture'
@@ -16,35 +15,139 @@ import {
 } from '@/lib/biometrics/enrollment-burst'
 import { DETECTION_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, REGISTRATION_SCAN_INTERVAL_MS } from '@/lib/config'
 
-// ─── Capture phases — 3 angles, 3 frames each = 9 total input frames ──────────
+// ─── Phase definitions ────────────────────────────────────────────────────
 export const CAPTURE_PHASES = [
   {
     id: 'center',
     label: 'Look straight ahead',
-    subtitle: 'Face the camera directly',
+    subtitle: 'Face the camera directly — chin level',
     icon: '🎯',
+    poseType: 'center',
   },
   {
-    id: 'left',
-    label: 'Turn slightly left',
-    subtitle: 'About 20° to your left — chin stays level',
-    icon: '←',
+    id: 'side_a',
+    label: 'Turn your head to one side',
+    subtitle: 'About 20°—chin stays level, eyes forward',
+    icon: '↔',
+    poseType: 'side_a',
   },
   {
-    id: 'right',
-    label: 'Turn slightly right',
-    subtitle: 'About 20° to your right — chin stays level',
-    icon: '→',
+    id: 'side_b',
+    label: 'Now turn the other direction',
+    subtitle: 'Opposite side from before',
+    icon: '↔',
+    poseType: 'side_b',
   },
 ]
 
 const FRAMES_PER_PHASE = 3
-const PHASE_FRAME_INTERVAL_MS = 200
-const PHASE_REPOSITION_MS = 1400 // Time given to physically turn head between phases
+const PHASE_FRAME_INTERVAL_MS = 150
+
+// Pose detection timing
+const POSE_POLL_INTERVAL_MS = 90       // Poll for correct pose every Nms
+const POSE_WAIT_TIMEOUT_MS = 12000    // Give up waiting after 12s and warn
+const POSE_HOLD_STABLE_MS = 300       // Must hold pose for 300ms before capturing
+
+// Yaw thresholds (normalized nose offset: 0 = center, ±0.5 = extreme)
+const YAW_CENTER_MAX = 0.08     // |yaw| < this → centered
+const YAW_SIDE_MIN = 0.12       // |yaw| ≥ this → sufficient turn
+const YAW_SIDE_GOOD = 0.18      // |yaw| ≥ this → ideal turn
+
 const CAPTURE_METRIC_SAMPLE_STEP = 4
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Head yaw estimation via MediaPipe Face Mesh ──────────────────────────
+// Returns value in [-0.5, +0.5] where 0 = centered.
+// Sign depends on camera/mirror configuration but is self-consistent within a session.
+// Positive = nose shifted to detection-frame-right.
+// Negative = nose shifted to detection-frame-left.
+export function estimateHeadYaw(mesh) {
+  if (!Array.isArray(mesh) || mesh.length < 455) return null
 
+  const getX = (i) => {
+    const pt = mesh[i]
+    if (!pt) return null
+    return Array.isArray(pt) ? pt[0] : (typeof pt.x === 'number' ? pt.x : null)
+  }
+
+  // MediaPipe Face Mesh landmark indices:
+  // 1   = nose tip
+  // 234 = left face boundary (cheekbone)
+  // 454 = right face boundary (cheekbone)
+  const noseX = getX(1)
+  const leftX = getX(234)
+  const rightX = getX(454)
+
+  if (noseX == null || leftX == null || rightX == null) return null
+
+  const faceWidth = rightX - leftX
+  if (Math.abs(faceWidth) < 5) return null  // degenerate case
+
+  // Normalize: 0 = centered, negative = nose shifted left, positive = right
+  return (noseX - leftX) / faceWidth - 0.5
+}
+
+// ─── Pose classification ──────────────────────────────────────────────────
+export function classifyPose(yaw) {
+  if (yaw === null) return 'unknown'
+  const abs = Math.abs(yaw)
+  if (abs < YAW_CENTER_MAX) return 'center'
+  if (abs < YAW_SIDE_MIN) return 'transition'
+  if (abs < YAW_SIDE_GOOD) return 'side'
+  return 'side_good'
+}
+
+function isPoseCentered(yaw) {
+  return yaw !== null && Math.abs(yaw) < YAW_CENTER_MAX
+}
+
+function isPoseSufficient(yaw) {
+  return yaw !== null && Math.abs(yaw) >= YAW_SIDE_MIN
+}
+
+// Returns true if yaw is in opposite direction from the reference yaw recorded in phase 1
+function isPoseOpposite(yaw, referenceYaw) {
+  if (yaw === null || referenceYaw === null || referenceYaw === 0) return false
+  // Must be in opposite direction AND sufficient magnitude
+  return Math.sign(yaw) !== Math.sign(referenceYaw) && Math.abs(yaw) >= YAW_SIDE_MIN
+}
+
+function isPoseMatchingPhase(phaseType, yaw, sideAYaw) {
+  switch (phaseType) {
+    case 'center': return isPoseCentered(yaw)
+    case 'side_a': return isPoseSufficient(yaw)
+    case 'side_b': return isPoseOpposite(yaw, sideAYaw)
+    default: return true
+  }
+}
+
+// ─── Pose guidance message ────────────────────────────────────────────────
+export function getPoseGuidanceMessage(phaseType, yaw, sideAYaw) {
+  if (yaw === null) return 'Position your face in the oval'
+
+  switch (phaseType) {
+    case 'center': {
+      if (isPoseCentered(yaw)) return '✓ Hold still — capturing'
+      return 'Center your face — look directly at the camera'
+    }
+    case 'side_a': {
+      if (Math.abs(yaw) >= YAW_SIDE_GOOD) return '✓ Good — hold that angle'
+      if (Math.abs(yaw) >= YAW_SIDE_MIN) return 'A little more — keep turning'
+      return 'Turn your head to either side'
+    }
+    case 'side_b': {
+      if (isPoseOpposite(yaw, sideAYaw)) return '✓ Good — hold that angle'
+      // Guide them to the opposite direction from phase 1
+      if (sideAYaw !== null) {
+        const needDirection = sideAYaw > 0 ? 'left' : 'right'
+        return `Now turn your head to the ${needDirection}`
+      }
+      return 'Turn your head the other way'
+    }
+    default: return ''
+  }
+}
+
+// ─── Canvas utilities ─────────────────────────────────────────────────────
 function wait(ms) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
 }
@@ -126,33 +229,36 @@ function measureCaptureMetrics(canvas, faceResult) {
   }
 }
 
-function buildCandidate(canvas, faceResult, phaseIndex, frameIndex) {
+function buildCandidate(canvas, faceResult, phaseIndex, frameIndex, yaw) {
   const metrics = measureCaptureMetrics(canvas, faceResult)
   return {
     attempt: phaseIndex * FRAMES_PER_PHASE + frameIndex,
     phaseId: CAPTURE_PHASES[phaseIndex]?.id || 'unknown',
+    phaseIndex,
     descriptor: Array.from(faceResult?.descriptor || []),
     previewUrl: canvas.toDataURL('image/jpeg', 0.85),
     metrics,
     score: scoreEnrollmentCapture(metrics),
+    yaw,  // Store actual yaw for diversity verification
   }
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
+// ─── Main hook ────────────────────────────────────────────────────────────
 export function useEnrollmentCapture(camera) {
-  const [capturePhase, setCapturePhase] = useState(-1)      // -1 = not capturing
-  const [phaseProgress, setPhaseProgress] = useState(0)     // 0–FRAMES_PER_PHASE
+  const [capturePhase, setCapturePhase] = useState(-1)
+  const [phaseProgress, setPhaseProgress] = useState(0)
   const [faceFound, setFaceFound] = useState(false)
   const [faceNeedsAlignment, setFaceNeedsAlignment] = useState(false)
   const [statusMsg, setStatusMsg] = useState('Align face with the camera.')
+  const [currentYaw, setCurrentYaw] = useState(null)
+  const [poseOk, setPoseOk] = useState(false)
 
   const autoRef = useRef(null)
   const busyRef = useRef(false)
   const captureAttemptRef = useRef(false)
   const previewUrlRef = useRef(null)
+  const abortedRef = useRef(false)
 
-  // ── Idle face detection loop ─────────────────────────────────────────────
   const stopDetect = useCallback(() => {
     if (autoRef.current) {
       window.clearInterval(autoRef.current)
@@ -160,59 +266,163 @@ export function useEnrollmentCapture(camera) {
     }
   }, [])
 
-  // ── Multi-phase capture ─────────────────────────────────────────────────
-  const captureAllPhases = useCallback(async () => {
+  // ── Wait for user to achieve correct pose for the current phase ──────────
+  // Polls continuously, updates live status, resolves when pose is held stable
+  // Returns { yaw } on success or null on timeout
+  const waitForPose = useCallback(async (phaseType, sideAYaw, updateStatus) => {
+    const deadline = Date.now() + POSE_WAIT_TIMEOUT_MS
+    let poseAchievedAt = null
+
+    while (Date.now() < deadline && !abortedRef.current) {
+      const canvas = camera.captureImageData({
+        maxWidth: 360,  // Small for speed — we only need pose, not quality
+        maxHeight: 360,
+      })
+      if (!canvas) { await wait(POSE_POLL_INTERVAL_MS); continue }
+
+      const cropped = buildOvalCaptureCanvas(canvas)
+      let detectedYaw = null
+
+      try {
+        const result = await detectSingleDescriptor(cropped)
+        if (result?.landmarks?.positions) {
+          detectedYaw = estimateHeadYaw(result.landmarks.positions)
+        }
+      } catch {
+        // ignore detection errors in pose loop
+      }
+
+      setCurrentYaw(detectedYaw)
+      const poseMatch = isPoseMatchingPhase(phaseType, detectedYaw, sideAYaw)
+      setPoseOk(poseMatch)
+
+      const guidance = getPoseGuidanceMessage(phaseType, detectedYaw, sideAYaw)
+      updateStatus(guidance)
+
+      if (poseMatch) {
+        if (poseAchievedAt === null) {
+          poseAchievedAt = Date.now()
+        } else if (Date.now() - poseAchievedAt >= POSE_HOLD_STABLE_MS) {
+          // Pose held stable long enough — go
+          return { yaw: detectedYaw }
+        }
+      } else {
+        poseAchievedAt = null  // Reset stability timer if pose breaks
+      }
+
+      await wait(POSE_POLL_INTERVAL_MS)
+    }
+
+    // Timeout — warn but allow proceeding with whatever frames we can get
+    updateStatus('⚠️ Pose timeout — capturing best available frames')
+    return null  // null means "timed out, proceed anyway"
+  }, [camera])
+
+  // ── Capture frames for one phase (once pose is correct) ──────────────────
+  const capturePhaseFrames = useCallback(async (phaseIndex, phaseType, sideAYaw) => {
+    const captures = []
+
+    for (let frame = 0; frame < FRAMES_PER_PHASE; frame++) {
+      if (abortedRef.current) break
+
+      const canvas = camera.captureImageData({
+        maxWidth: PREVIEW_MAX_DIMENSION,
+        maxHeight: PREVIEW_MAX_DIMENSION,
+        enhanced: true,
+      })
+      const cropped = buildOvalCaptureCanvas(canvas)
+
+      let faceResult = null
+      try {
+        faceResult = await detectSingleDescriptor(cropped)
+      } catch {
+        // skip this frame
+      }
+
+      if (faceResult && faceResult.descriptor?.length > 0) {
+        // Verify this frame still has the correct pose (don't accept drift)
+        const frameYaw = faceResult.landmarks?.positions
+          ? estimateHeadYaw(faceResult.landmarks.positions)
+          : null
+
+        const poseStillOk = isPoseMatchingPhase(phaseType, frameYaw, sideAYaw)
+        if (poseStillOk || captures.length === 0) {
+          // Accept if pose is ok, OR if we have no frames yet (better than nothing)
+          captures.push(buildCandidate(cropped, faceResult, phaseIndex, frame, frameYaw))
+        }
+      }
+
+      setPhaseProgress(frame + 1)
+      if (frame < FRAMES_PER_PHASE - 1) await wait(PHASE_FRAME_INTERVAL_MS)
+    }
+
+    return captures
+  }, [camera])
+
+  // ── Full multi-phase capture ───────────────────────────────────────────
+  const captureAllPhases = useCallback(async (onStatusUpdate) => {
     captureAttemptRef.current = true
+    abortedRef.current = false
     const allCaptures = []
+    let sideAYaw = null  // Track direction of phase 1 to ensure phase 2 is opposite
 
     try {
       for (let phaseIndex = 0; phaseIndex < CAPTURE_PHASES.length; phaseIndex++) {
+        if (abortedRef.current) break
+
         const phase = CAPTURE_PHASES[phaseIndex]
         setCapturePhase(phaseIndex)
         setPhaseProgress(0)
-        setStatusMsg(`${phase.label} — ${phase.subtitle}`)
+        setPoseOk(false)
+        setCurrentYaw(null)
 
-        // Give user time to reposition for phases 2 and 3
-        if (phaseIndex > 0) {
-          await wait(PHASE_REPOSITION_MS)
+        onStatusUpdate?.(`Phase ${phaseIndex + 1}/3 — ${phase.label}`)
+
+        // Wait for correct pose
+        const poseResult = await waitForPose(
+          phase.poseType,
+          sideAYaw,
+          (msg) => onStatusUpdate?.(msg),
+        )
+
+        if (abortedRef.current) break
+
+        // Record side_a yaw direction for side_b enforcement
+        if (phase.poseType === 'side_a' && poseResult?.yaw != null) {
+          sideAYaw = poseResult.yaw
         }
 
-        let phaseCaptured = 0
-        for (let frame = 0; frame < FRAMES_PER_PHASE; frame++) {
-          const canvas = camera.captureImageData({
-            maxWidth: PREVIEW_MAX_DIMENSION,
-            maxHeight: PREVIEW_MAX_DIMENSION,
-            enhanced: true,
-          })
-          const cropped = buildOvalCaptureCanvas(canvas)
-          const faceResult = await detectSingleDescriptor(cropped)
+        // Capture frames with pose verification
+        const phaseCaptures = await capturePhaseFrames(phaseIndex, phase.poseType, sideAYaw)
+        allCaptures.push(...phaseCaptures)
 
-          if (faceResult && faceResult.descriptor?.length > 0) {
-            allCaptures.push(buildCandidate(cropped, faceResult, phaseIndex, frame))
-            phaseCaptured++
-          }
-
-          setPhaseProgress(frame + 1)
-          if (frame < FRAMES_PER_PHASE - 1) await wait(PHASE_FRAME_INTERVAL_MS)
-        }
-
-        // If phase yielded nothing (face turned too far), push a blank slot warning
-        if (phaseCaptured === 0 && phaseIndex > 0) {
-          setStatusMsg(`Couldn't capture ${phase.id} angle — results may be less accurate.`)
-          await wait(800)
+        // Brief warning if phase yielded few or no frames
+        if (phaseCaptures.length === 0 && phaseIndex > 0) {
+          onStatusUpdate?.(`⚠️ No valid frames for ${phase.id} angle`)
+          await wait(600)
         }
       }
 
-      if (allCaptures.length === 0) {
-        return null
-      }
+      if (allCaptures.length === 0) return null
 
-      // Select best samples ensuring at least some angle diversity
+      // Verify genuine diversity: check we have captures from different poses
+      const centerCaptures = allCaptures.filter(c => c.phaseIndex === 0)
+      const sideCaptures = allCaptures.filter(c => c.phaseIndex > 0)
+      const diverseCaptures = sideCaptures.filter(c =>
+        c.yaw !== null && Math.abs(c.yaw) >= YAW_SIDE_MIN,
+      )
+
+      // Select best samples with diversity weighting:
+      // At least 1 center + 1 side from each direction if available
       const selected = selectEnrollmentBurstSamples(allCaptures, {
         maxSamples: ENROLLMENT_TARGET_BURST_SAMPLES,
-        minFrameGap: 1, // Lower gap to allow cross-phase diversity
-        minDescriptorDiversity: 0.04, // Lower threshold to keep angle-diverse samples
+        minFrameGap: 1,
+        minDescriptorDiversity: 0.04,
       })
+
+      // Sanity check: if selected samples are all from same phase, warn
+      const selectedPhases = new Set(selected.map(c => c.phaseIndex))
+      const genuinelyDiverse = selectedPhases.size >= 2
 
       const primary = selected[0]
       const quality = summarizeEnrollmentCaptureQuality(primary.metrics)
@@ -225,22 +435,31 @@ export function useEnrollmentCapture(camera) {
           keptCount: selected.length,
           detectedCount: allCaptures.length,
           phasesCompleted: CAPTURE_PHASES.length,
+          genuinelyDiverse,
+          diverseFrameCount: diverseCaptures.length,
+          sideAYaw,
         },
       }
+
     } finally {
       setCapturePhase(-1)
       setPhaseProgress(0)
+      setPoseOk(false)
+      setCurrentYaw(null)
       captureAttemptRef.current = false
     }
-  }, [camera])
+  }, [waitForPose, capturePhaseFrames])
 
-  // ── Detection loop startup ───────────────────────────────────────────────
+  // ── Idle detection loop (before capture starts) ────────────────────────
   const startDetect = useCallback((onCaptureComplete, modelsReady) => {
     stopDetect()
     captureAttemptRef.current = false
+    abortedRef.current = false
     previewUrlRef.current = null
     setFaceFound(false)
     setFaceNeedsAlignment(false)
+    setCurrentYaw(null)
+    setPoseOk(false)
     setStatusMsg(modelsReady ? 'Center your face in the oval.' : 'Loading models...')
 
     if (!modelsReady) return
@@ -266,20 +485,23 @@ export function useEnrollmentCapture(camera) {
           return
         }
 
+        // Face is oval-ready — kick off capture
         stopDetect()
-        setStatusMsg('Face detected — starting capture...')
-        await wait(300)
+        setStatusMsg('Face detected — starting guided capture...')
+        await wait(400)
 
-        const result = await captureAllPhases()
-        if (result) {
+        const result = await captureAllPhases((msg) => setStatusMsg(msg))
+
+        if (result && !abortedRef.current) {
           previewUrlRef.current = result.previewUrl
           onCaptureComplete(result)
-        } else {
+        } else if (!abortedRef.current) {
           setFaceFound(false)
-          setStatusMsg('No face captured. Try again.')
+          setStatusMsg('No face captured. Move into the oval and try again.')
           startDetect(onCaptureComplete, modelsReady)
         }
-      } catch {
+      } catch (err) {
+        console.error('[EnrollmentCapture] Detection error:', err)
         setStatusMsg('Camera error — retrying...')
       } finally {
         busyRef.current = false
@@ -290,23 +512,31 @@ export function useEnrollmentCapture(camera) {
     autoRef.current = window.setInterval(runDetection, REGISTRATION_SCAN_INTERVAL_MS)
   }, [camera, captureAllPhases, stopDetect])
 
+  const resetCapture = useCallback(() => {
+    abortedRef.current = true  // Signal any ongoing capture to stop
+    previewUrlRef.current = null
+    setFaceFound(false)
+    setFaceNeedsAlignment(false)
+    setCapturePhase(-1)
+    setPhaseProgress(0)
+    setCurrentYaw(null)
+    setPoseOk(false)
+    setStatusMsg('Align face with the camera.')
+    // Allow new capture after a brief delay
+    window.setTimeout(() => { abortedRef.current = false }, 100)
+  }, [])
+
   return {
-    // State
-    capturePhase,         // index into CAPTURE_PHASES, or -1
-    phaseProgress,        // 0–FRAMES_PER_PHASE
+    capturePhase,
+    phaseProgress,
     faceFound,
     faceNeedsAlignment,
     statusMsg,
     setStatusMsg,
-    // Actions
+    currentYaw,    // Live yaw value for UI indicator
+    poseOk,        // Whether current pose matches the phase requirement
     startDetect,
     stopDetect,
-    resetCapture: () => {
-      previewUrlRef.current = null
-      setFaceFound(false)
-      setFaceNeedsAlignment(false)
-      setCapturePhase(-1)
-      setPhaseProgress(0)
-    },
+    resetCapture,
   }
 }

@@ -1,4 +1,29 @@
-const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
+import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
+
+const OVAL_STYLE = { borderRadius: '50%' }
+
+// Subtle guide shown when idle — face outline, eye wells, nose
+function FaceGuide({ show }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`absolute inset-0 h-full w-full pointer-events-none transition-opacity duration-500 ${show ? 'opacity-100' : 'opacity-0'}`}
+      viewBox="0 0 68 100"
+    >
+      {/* Face silhouette */}
+      <ellipse cx="34" cy="50" rx="22" ry="28"
+        fill="none" stroke="white" strokeOpacity="0.22" strokeWidth="1.2" strokeDasharray="4 3" />
+      {/* Eyes */}
+      <ellipse cx="24" cy="38" rx="7" ry="4"
+        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
+      <ellipse cx="44" cy="38" rx="7" ry="4"
+        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
+      {/* Nose bridge */}
+      <circle cx="34" cy="55" r="2.5"
+        fill="none" stroke="white" strokeOpacity="0.14" strokeWidth="0.9" />
+    </svg>
+  )
+}
 
 export default function KioskScanningOverlay({
   camera,
@@ -29,16 +54,16 @@ export default function KioskScanningOverlay({
   const isVerifying = kioskState === 'verifying'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
 
-  // Determine ring color based on state (matches registration UX)
   const ringState = isVerifying
     ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
     : isConfirmed
       ? 'ring-2 ring-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
       : isBlocked || isUnknown
         ? 'ring-2 ring-red-400/80'
-        : 'ring-1 ring-white/18'
+        : isScanning
+          ? 'ring-2 ring-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.18)]'
+          : 'ring-1 ring-white/18'
 
-  // Status message for user
   const statusMessage = isVerifying
     ? 'Verifying...'
     : isConfirmed
@@ -53,26 +78,22 @@ export default function KioskScanningOverlay({
 
   return (
     <>
-      {/* Video container with OVAL CLIP - exactly like registration */}
+      {/* Oval camera view — portrait, matches detection math (0.68 ratio) */}
       <div className="absolute inset-0 flex items-center justify-center">
         <div
-          className="relative w-[78vw] sm:w-[54vw]"
+          className="relative"
           style={{
-            aspectRatio: '4/3',
-            maxWidth: 'min(430px, calc(min(72vh, 640px) * 4/3))',
+            width: `min(72vw, calc(min(80vh, 660px) * ${OVAL_CAPTURE_ASPECT_RATIO}))`,
+            aspectRatio: String(OVAL_CAPTURE_ASPECT_RATIO),
           }}
         >
-          {/* Outer ring with glow - same styling as registration */}
+          {/* Ring border — state-aware color */}
           <div
             className={`absolute inset-0 shadow-[0_30px_80px_rgba(0,0,0,0.38)] transition-all duration-300 ${ringState}`}
-            style={OVAL_FRAME_STYLE}
+            style={OVAL_STYLE}
           />
-          
-          {/* Video clipped inside oval - same as registration */}
-          <div
-            className="absolute inset-[2px] overflow-hidden bg-black"
-            style={OVAL_FRAME_STYLE}
-          >
+          {/* Video clipped to oval */}
+          <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_STYLE}>
             {hasCapturedFrame ? (
               <img
                 alt="Verification frame"
@@ -89,33 +110,35 @@ export default function KioskScanningOverlay({
               />
             )}
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
-            {/* Subtle vignette - same as registration */}
+            {/* Vignette */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
+            {/* Face position guide — visible when idle/waiting */}
+            <FaceGuide show={isIdle && camera.camOn && !hasCapturedFrame} />
           </div>
         </div>
       </div>
 
       <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
 
-      {/* State flash overlay - subtle pulse effect */}
+      {/* State flash overlays */}
       {isConfirmed && <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/15 animate-pulse" />}
       {(isBlocked || isUnknown) && <div className="absolute inset-0 z-[3] bg-red-500/10" />}
 
-      {/* Clock and date - top right */}
+      {/* Clock — top right */}
       <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:px-5 sm:py-3">
         <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
         <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs">{dateStr}</div>
       </div>
 
-      {/* Location status - top left */}
+      {/* Location status — top left */}
       <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:px-5 sm:py-3">
         <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs">{locationBadgeLabel}</div>
         <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
         <div className="mt-1 text-[9px] text-slate-100/70 sm:text-xs">{wifiStatus}</div>
       </div>
 
-      {/* Status message - center below oval */}
-      <div className="absolute left-0 right-0 bottom-24 z-[4] flex justify-center pointer-events-none">
+      {/* Status pill — anchored to bottom, above any footer chrome */}
+      <div className="absolute inset-x-0 bottom-16 z-[4] flex justify-center pointer-events-none sm:bottom-20">
         <div className={`rounded-full px-5 py-2 text-sm font-semibold backdrop-blur shadow-lg ${
           isVerifying
             ? 'bg-blue-500/80 text-white'
@@ -129,7 +152,7 @@ export default function KioskScanningOverlay({
         </div>
       </div>
 
-      {/* Today's attendance count - bottom left */}
+      {/* Today's attendance count — bottom left */}
       {todaysCount != null && (
         <div className="absolute bottom-3 left-3 z-[4] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 shadow-lg backdrop-blur sm:left-5 sm:bottom-5 sm:px-5 sm:py-3">
           <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-100/92 sm:text-xs">Today&apos;s attendance</div>
@@ -138,12 +161,12 @@ export default function KioskScanningOverlay({
       )}
 
       {/* Camera off overlay */}
-      {!camera.camOn ? (
+      {!camera.camOn && (
         <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
           <div className="text-5xl opacity-60">◈</div>
           <div className="text-sm font-medium">{camera.camError || 'Camera idle'}</div>
         </div>
-      ) : null}
+      )}
     </>
   )
 }

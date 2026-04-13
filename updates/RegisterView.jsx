@@ -6,17 +6,143 @@ import { PERSON_APPROVAL_PENDING } from '../lib/person-approval'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '../lib/biometrics/oval-capture'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
 import { useAudioCue } from '../hooks/useAudioCue'
-import { useEnrollmentCapture, CAPTURE_PHASES } from '../hooks/useEnrollmentCapture'
+import { useEnrollmentCapture, CAPTURE_PHASES, classifyPose } from '../hooks/useEnrollmentCapture'
 import AppShell from './AppShell'
 
 const STEPS = [
-  { id: 'capture', number: '1', title: 'Capture face', description: '3-angle guided burst for accuracy.' },
-  { id: 'review', number: '2', title: 'Review photo', description: 'Retake if the preview is unclear.' },
-  { id: 'details', number: '3', title: 'Employee details', description: 'ID, name, and assigned office.' },
-  { id: 'complete', number: '4', title: 'Complete', description: 'Add more samples or enroll another.' },
+  { id: 'capture', number: '1', title: 'Capture face', description: '3-angle guided capture.' },
+  { id: 'review', number: '2', title: 'Review photo', description: 'Retake if unclear.' },
+  { id: 'details', number: '3', title: 'Employee details', description: 'ID, name, office.' },
+  { id: 'complete', number: '4', title: 'Complete', description: 'Add samples or enroll another.' },
 ]
 
 const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
+
+// ─── Pose arc indicator ───────────────────────────────────────────────────
+// Shows a horizontal arc that fills based on detected yaw direction and magnitude.
+// Green when correct pose achieved, amber when partial, grey otherwise.
+function PoseArcIndicator({ yaw, poseOk, phaseType, sideAYaw }) {
+  if (phaseType === null || phaseType === undefined) return null
+
+  // For center phase: show how close to center (smaller = better)
+  // For side phases: show how far they've turned (larger = better)
+  const isCenterPhase = phaseType === 'center'
+
+  // Compute fill percentage
+  let leftFill = 0
+  let rightFill = 0
+
+  if (yaw !== null) {
+    if (isCenterPhase) {
+      // Both sides fill as face drifts off center (bad)
+      const deviation = Math.min(1, Math.abs(yaw) / 0.25) * 0.5
+      leftFill = deviation
+      rightFill = deviation
+    } else {
+      // Fill the side they're turning toward
+      if (yaw > 0) {
+        rightFill = Math.min(1, (yaw - 0.08) / 0.20)
+      } else {
+        leftFill = Math.min(1, (-yaw - 0.08) / 0.20)
+      }
+    }
+  }
+
+  const color = poseOk
+    ? 'bg-emerald-400'
+    : yaw !== null && Math.abs(yaw) > 0.06
+      ? 'bg-amber-400'
+      : 'bg-white/30'
+
+  return (
+    <div className="flex items-center gap-1.5 px-2">
+      {/* Left arc */}
+      <div className="h-1.5 w-12 overflow-hidden rounded-full bg-white/15">
+        <div
+          className={`h-full rounded-full transition-all duration-150 ${color}`}
+          style={{ width: `${leftFill * 100}%`, marginLeft: 'auto' }}
+        />
+      </div>
+
+      {/* Center dot */}
+      <div className={`h-2.5 w-2.5 rounded-full border-2 transition-all duration-150 ${
+        poseOk ? 'border-emerald-400 bg-emerald-400' : 'border-white/50 bg-transparent'
+      }`} />
+
+      {/* Right arc */}
+      <div className="h-1.5 w-12 overflow-hidden rounded-full bg-white/15">
+        <div
+          className={`h-full rounded-full transition-all duration-150 ${color}`}
+          style={{ width: `${rightFill * 100}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── Phase progress indicator ─────────────────────────────────────────────
+function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statusMsg }) {
+  if (capturePhase < 0) return null
+  const phase = CAPTURE_PHASES[capturePhase]
+  const FRAMES = CAPTURE_PHASES.length
+
+  return (
+    <div className="absolute inset-x-0 bottom-16 z-[5] flex justify-center px-4">
+      <div className="rounded-[1.25rem] border border-white/20 bg-black/65 px-5 py-3.5 text-center backdrop-blur">
+        <div className="text-lg">{phase.icon}</div>
+        <div className="mt-1 text-sm font-bold text-white">{phase.label}</div>
+        <div className="mt-0.5 text-xs text-white/70">{phase.subtitle}</div>
+
+        {/* Live pose arc indicator */}
+        <div className="mt-2.5 flex justify-center">
+          <PoseArcIndicator
+            yaw={currentYaw}
+            poseOk={poseOk}
+            phaseType={phase.poseType}
+            sideAYaw={null}
+          />
+        </div>
+
+        {/* Status message */}
+        <div className={`mt-2 text-xs font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
+          {statusMsg}
+        </div>
+
+        {/* Frame capture dots */}
+        <div className="mt-2.5 flex items-center justify-center gap-2.5">
+          {CAPTURE_PHASES.map((p, i) => (
+            <div key={p.id} className="flex items-center gap-1">
+              {Array.from({ length: 3 }).map((_, f) => {
+                const isCurrent = i === capturePhase
+                const filled = i < capturePhase || (isCurrent && f < phaseProgress)
+                const active = isCurrent && f === phaseProgress - 1
+                return (
+                  <span
+                    key={f}
+                    className={`inline-block rounded-full transition-all duration-200 ${
+                      active
+                        ? 'h-2.5 w-2.5 scale-125 bg-emerald-400'
+                        : filled
+                          ? 'h-2 w-2 bg-white/70'
+                          : 'h-2 w-2 bg-white/20'
+                    }`}
+                  />
+                )
+              })}
+              {i < CAPTURE_PHASES.length - 1 && (
+                <span className="mx-0.5 text-white/25 text-xs">·</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-1.5 text-[10px] font-medium uppercase tracking-widest text-white/40">
+          Phase {capturePhase + 1} of {CAPTURE_PHASES.length}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Field({ label, children }) {
   return (
@@ -55,48 +181,6 @@ function InfoCard({ title, text, tone = 'default' }) {
   )
 }
 
-// ─── Phase indicator shown during capture ──────────────────────────────────
-function PhaseIndicator({ capturePhase, phaseProgress }) {
-  if (capturePhase < 0) return null
-  const phase = CAPTURE_PHASES[capturePhase]
-  const FRAMES = 3
-  return (
-    <div className="absolute inset-x-0 bottom-16 z-[5] flex justify-center px-4">
-      <div className="rounded-[1.25rem] border border-white/20 bg-black/60 px-5 py-3 text-center backdrop-blur">
-        <div className="text-lg">{phase.icon}</div>
-        <div className="mt-1 text-sm font-bold text-white">{phase.label}</div>
-        <div className="mt-0.5 text-xs text-white/70">{phase.subtitle}</div>
-        {/* frame dots */}
-        <div className="mt-2 flex items-center justify-center gap-1.5">
-          {CAPTURE_PHASES.map((p, i) => (
-            <div key={p.id} className="flex items-center gap-1">
-              {Array.from({ length: FRAMES }).map((_, f) => {
-                const filled = i < capturePhase || (i === capturePhase && f < phaseProgress)
-                return (
-                  <span
-                    key={f}
-                    className={`inline-block h-2 w-2 rounded-full transition-all duration-200 ${
-                      i === capturePhase && f === phaseProgress - 1
-                        ? 'scale-125 bg-emerald-400'
-                        : filled
-                          ? 'bg-white/70'
-                          : 'bg-white/25'
-                    }`}
-                  />
-                )
-              })}
-              {i < CAPTURE_PHASES.length - 1 && <span className="mx-1 text-white/30">·</span>}
-            </div>
-          ))}
-        </div>
-        <div className="mt-1.5 text-[10px] font-medium uppercase tracking-widest text-white/50">
-          Phase {capturePhase + 1} of {CAPTURE_PHASES.length}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function RegisterView({
   camera,
   persons,
@@ -129,6 +213,9 @@ export default function RegisterView({
     faceFound,
     faceNeedsAlignment,
     statusMsg,
+    setStatusMsg,
+    currentYaw,
+    poseOk,
     startDetect,
     stopDetect,
     resetCapture,
@@ -154,7 +241,6 @@ export default function RegisterView({
     setEmployeeIdError(val !== sanitized ? 'Only letters, numbers, and dashes (-)' : '')
   }
 
-  // Boot detection when workspace is ready
   useEffect(() => {
     if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
 
@@ -196,7 +282,13 @@ export default function RegisterView({
     let result = null
     try {
       result = await onEnrollPerson(
-        { name: name.trim(), employeeId: employeeId.trim(), officeId, officeName: selectedOffice?.name || 'Unassigned', photoDataUrl: previewUrl },
+        {
+          name: name.trim(),
+          employeeId: employeeId.trim(),
+          officeId,
+          officeName: selectedOffice?.name || 'Unassigned',
+          photoDataUrl: previewUrl,
+        },
         pendingDescriptors,
       )
     } catch (err) {
@@ -210,9 +302,11 @@ export default function RegisterView({
     const totalCount = Number(result?.sampleCount || (existingSamples + savedCount))
     const approvalStatus = result?.approvalStatus || PERSON_APPROVAL_PENDING
     setLastSavedSummary({
-      name: name.trim(), employeeId: employeeId.trim(),
+      name: name.trim(),
+      employeeId: employeeId.trim(),
       officeName: selectedOffice?.name || 'Unassigned',
-      sampleCount: totalCount, savedSampleCount: savedCount,
+      sampleCount: totalCount,
+      savedSampleCount: savedCount,
       remaining: Math.max(0, ENROLLMENT_MIN_SAMPLES - totalCount),
       approvalStatus,
     })
@@ -221,18 +315,26 @@ export default function RegisterView({
   }, [employeeId, existingSamples, name, officeId, onEnrollPerson, pendingDescriptors, pendingSampleCount, previewUrl, selectedOffice, playAudioCue])
 
   const handleNewPerson = useCallback(() => {
-    setName(''); setEmployeeId(''); setOfficeId(offices[0]?.id || '')
+    setName('')
+    setEmployeeId('')
+    setOfficeId(offices[0]?.id || '')
     handleRetake()
   }, [offices, handleRetake])
 
-  const captureStateLabel = !modelsReady ? 'Loading models…'
-    : capturePhase >= 0 ? CAPTURE_PHASES[capturePhase]?.label
-    : faceFound ? 'Face ready'
-    : faceNeedsAlignment ? 'Align inside oval'
-    : 'Scanning for face…'
+  const captureStateLabel = !modelsReady
+    ? 'Loading models…'
+    : capturePhase >= 0
+      ? CAPTURE_PHASES[capturePhase]?.label
+      : faceFound
+        ? 'Face ready — hold still'
+        : faceNeedsAlignment
+          ? 'Move into the oval guide'
+          : 'Scanning for face…'
 
   const captureStateCls = capturePhase >= 0
-    ? 'bg-blue-500/20 text-blue-100 ring-1 ring-blue-400/40'
+    ? poseOk
+      ? 'bg-emerald-500/25 text-emerald-100 ring-1 ring-emerald-400/50'
+      : 'bg-blue-500/20 text-blue-100 ring-1 ring-blue-400/40'
     : faceFound
       ? 'bg-emerald-400/20 text-emerald-50 ring-1 ring-emerald-300/40'
       : faceNeedsAlignment
@@ -242,7 +344,7 @@ export default function RegisterView({
   return (
     <AppShell
       actions={
-        <div className="w-full rounded-full bg-white px-4 py-2.5 text-center text-sm font-semibold text-ink shadow-sm sm:w-auto">
+        <div className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm">
           {persons.length} enrolled
         </div>
       }
@@ -268,7 +370,7 @@ export default function RegisterView({
         </div>
       )}
 
-      {/* ── Capture step (full-viewport camera) ── */}
+      {/* ── Capture step ── */}
       {step === 'capture' && (
         <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
           <motion.section
@@ -290,11 +392,13 @@ export default function RegisterView({
               >
                 <div
                   className={`absolute inset-0 transition-all duration-200 ${
-                    capturePhase >= 0
-                      ? 'ring-2 ring-blue-400/70 shadow-[0_0_50px_rgba(59,130,246,0.24)]'
-                      : faceFound
-                        ? 'ring-2 ring-emerald-400/70 shadow-[0_0_50px_rgba(16,185,129,0.24)]'
-                        : 'ring-1 ring-white/18'
+                    capturePhase >= 0 && poseOk
+                      ? 'ring-2 ring-emerald-400/80 shadow-[0_0_50px_rgba(16,185,129,0.32)]'
+                      : capturePhase >= 0
+                        ? 'ring-2 ring-blue-400/60 shadow-[0_0_40px_rgba(59,130,246,0.20)]'
+                        : faceFound
+                          ? 'ring-2 ring-emerald-400/70'
+                          : 'ring-1 ring-white/18'
                   }`}
                   style={OVAL_FRAME_STYLE}
                 />
@@ -319,10 +423,10 @@ export default function RegisterView({
               )}
             </div>
 
-            {/* Status top-right */}
+            {/* Status — top right */}
             <div className="absolute right-3 top-3 z-[4] max-w-[55%] rounded-[1.1rem] border border-white/14 bg-black/60 px-4 py-2.5 text-right shadow-lg backdrop-blur">
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-100/90">Status</div>
-              <div className="mt-1 text-sm font-medium text-white/95">{statusMsg}</div>
+              <div className="mt-1 text-sm font-medium text-white/95 leading-tight">{statusMsg}</div>
             </div>
 
             {/* Camera offline state */}
@@ -333,10 +437,16 @@ export default function RegisterView({
               </div>
             )}
 
-            {/* Phase progress indicator */}
-            <PhaseIndicator capturePhase={capturePhase} phaseProgress={phaseProgress} />
+            {/* Phase indicator with live yaw feedback */}
+            <PhaseIndicator
+              capturePhase={capturePhase}
+              phaseProgress={phaseProgress}
+              poseOk={poseOk}
+              currentYaw={currentYaw}
+              statusMsg={statusMsg}
+            />
 
-            {/* State badge bottom */}
+            {/* State badge — bottom */}
             <div className="absolute inset-x-0 bottom-5 z-[4] flex justify-center px-4">
               <span className={`rounded-full px-5 py-3 text-sm font-semibold backdrop-blur ${captureStateCls}`}>
                 {captureStateLabel}
@@ -390,8 +500,13 @@ export default function RegisterView({
                 <h2 className="mt-0.5 font-display text-xl text-ink sm:text-2xl">{STEPS[stepIndex]?.title}</h2>
               </div>
               {burstSummary && (
-                <div className="rounded-full bg-emerald-100 px-4 py-1.5 text-xs font-semibold text-emerald-800">
-                  {burstSummary.keptCount} samples · {burstSummary.phasesCompleted} angles
+                <div className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
+                  burstSummary.genuinelyDiverse
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {burstSummary.keptCount} samples
+                  {burstSummary.genuinelyDiverse ? ' · Diverse angles ✓' : ' · Single angle — retake recommended'}
                 </div>
               )}
             </div>
@@ -406,17 +521,31 @@ export default function RegisterView({
                   }
                 </div>
                 <div className="grid content-start gap-3">
-                  <button className="btn btn-primary w-full" onClick={goToDetails} type="button">Continue to details</button>
-                  <button className="btn btn-ghost w-full" onClick={handleRetake} type="button">Retake (3-angle)</button>
-                  {burstSummary && (
+                  <button className="btn btn-primary w-full" onClick={goToDetails} type="button">
+                    Continue to details
+                  </button>
+                  <button className="btn btn-ghost w-full" onClick={handleRetake} type="button">
+                    Retake (3-angle)
+                  </button>
+
+                  {burstSummary && !burstSummary.genuinelyDiverse && (
                     <InfoCard
-                      title={`${burstSummary.keptCount} samples — ${burstSummary.phasesCompleted} angles`}
-                      text={`${burstSummary.detectedCount} frames detected. Diverse angle samples improve recognition accuracy.`}
+                      title="Single angle detected"
+                      text="The system captured similar poses for all 3 phases. For better accuracy, retake and follow the head-turn instructions."
+                      tone="warn"
+                    />
+                  )}
+
+                  {burstSummary && burstSummary.genuinelyDiverse && (
+                    <InfoCard
+                      title={`${burstSummary.keptCount} diverse samples captured`}
+                      text={`${burstSummary.detectedCount} frames processed across 3 angles. Diverse poses improve recognition accuracy significantly.`}
                       tone="default"
                     />
                   )}
-                  {captureFeedback && (
-                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone={captureFeedback.tone} />
+
+                  {captureFeedback && captureFeedback.tone === 'warn' && (
+                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone="warn" />
                   )}
                 </div>
               </div>
@@ -453,7 +582,9 @@ export default function RegisterView({
                     </select>
                   </Field>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <button className="btn btn-ghost w-full" onClick={() => setStep('review')} type="button">← Back</button>
+                    <button className="btn btn-ghost w-full" onClick={() => setStep('review')} type="button">
+                      ← Back
+                    </button>
                     <button
                       className="btn btn-primary w-full"
                       disabled={savingEnrollment || !pendingSampleCount || !name.trim() || !employeeId.trim() || !officeId}
@@ -475,9 +606,6 @@ export default function RegisterView({
                     ? <InfoCard title="Existing record" text={`${existingPerson.name} — ${existingSamples} sample(s) at ${existingPerson.officeName}.`} />
                     : <InfoCard title="New employee" text="A new record will be created pending admin approval." />
                   }
-                  {captureFeedback && (
-                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone={captureFeedback.tone} />
-                  )}
                 </div>
               </div>
             )}
@@ -505,11 +633,12 @@ export default function RegisterView({
                   </div>
                 </div>
                 <div className="grid content-start gap-3">
-                  {captureFeedback && (
-                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone={captureFeedback.tone} />
-                  )}
-                  <button className="btn btn-primary w-full" onClick={handleRetake} type="button">Add another sample</button>
-                  <button className="btn btn-ghost w-full" onClick={handleNewPerson} type="button">Enroll new employee</button>
+                  <button className="btn btn-primary w-full" onClick={handleRetake} type="button">
+                    Add another sample
+                  </button>
+                  <button className="btn btn-ghost w-full" onClick={handleNewPerson} type="button">
+                    Enroll new employee
+                  </button>
                 </div>
               </div>
             )}

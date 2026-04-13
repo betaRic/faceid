@@ -16,7 +16,27 @@ const STEPS = [
   { id: 'complete', number: '4', title: 'Complete', description: 'Add more samples or enroll another.' },
 ]
 
-const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
+const OVAL_STYLE = { borderRadius: '50%' }
+
+// Subtle guide shown before face is detected — face outline, eye wells, nose
+function FaceGuide({ show }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`absolute inset-0 h-full w-full pointer-events-none transition-opacity duration-500 ${show ? 'opacity-100' : 'opacity-0'}`}
+      viewBox="0 0 68 100"
+    >
+      <ellipse cx="34" cy="50" rx="22" ry="28"
+        fill="none" stroke="white" strokeOpacity="0.22" strokeWidth="1.2" strokeDasharray="4 3" />
+      <ellipse cx="24" cy="38" rx="7" ry="4"
+        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
+      <ellipse cx="44" cy="38" rx="7" ry="4"
+        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
+      <circle cx="34" cy="55" r="2.5"
+        fill="none" stroke="white" strokeOpacity="0.14" strokeWidth="0.9" />
+    </svg>
+  )
+}
 
 function Field({ label, children }) {
   return (
@@ -61,7 +81,7 @@ function PhaseIndicator({ capturePhase, phaseProgress }) {
   const phase = CAPTURE_PHASES[capturePhase]
   const FRAMES = 3
   return (
-    <div className="absolute inset-x-0 bottom-16 z-[5] flex justify-center px-4">
+    <div className="w-full max-w-xs">
       <div className="rounded-[1.25rem] border border-white/20 bg-black/60 px-5 py-3 text-center backdrop-blur">
         <div className="text-lg">{phase.icon}</div>
         <div className="mt-1 text-sm font-bold text-white">{phase.label}</div>
@@ -277,75 +297,83 @@ export default function RegisterView({
             transition={{ duration: 0.35 }}
             className="relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow xl:min-h-[calc(100dvh-10.5rem)]"
           >
+            {/* Background */}
             <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
-            {/* Oval camera view */}
-            <div className="absolute inset-0 z-[2] flex items-center justify-center px-4 py-6">
-              <div
-                className="relative w-[78vw] sm:w-[54vw]"
-                style={{
-                  aspectRatio: String(OVAL_CAPTURE_ASPECT_RATIO),
-                  maxWidth: `min(430px, calc(min(72vh, 640px) * ${OVAL_CAPTURE_ASPECT_RATIO}))`,
-                }}
-              >
-                <div
-                  className={`absolute inset-0 transition-all duration-200 ${
-                    capturePhase >= 0
-                      ? 'ring-2 ring-blue-400/70 shadow-[0_0_50px_rgba(59,130,246,0.24)]'
-                      : faceFound
-                        ? 'ring-2 ring-emerald-400/70 shadow-[0_0_50px_rgba(16,185,129,0.24)]'
-                        : 'ring-1 ring-white/18'
-                  }`}
-                  style={OVAL_FRAME_STYLE}
-                />
-                <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_FRAME_STYLE}>
-                  <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" />
-                  <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
+            {/* Flex column: top bar | oval | bottom status */}
+            <div className="absolute inset-0 z-[2] flex flex-col">
+
+              {/* Top bar — back + status */}
+              <div className="flex shrink-0 items-start justify-between gap-2 p-3">
+                {onBack
+                  ? (
+                    <button
+                      className="rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-black/50"
+                      onClick={onBack}
+                      type="button"
+                    >
+                      ← Kiosk
+                    </button>
+                  )
+                  : <span />}
+                <div className="rounded-[1.1rem] border border-white/14 bg-black/60 px-4 py-2.5 text-right shadow-lg backdrop-blur">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-100/90">Status</div>
+                  <div className="mt-1 text-sm font-medium text-white/95">{statusMsg}</div>
                 </div>
+              </div>
+
+              {/* Oval — fills remaining flex space, never overflows */}
+              <div className="flex min-h-0 flex-1 items-center justify-center px-4">
+                <div
+                  className="relative"
+                  style={{
+                    width: `min(72vw, calc(min(72vh, 580px) * ${OVAL_CAPTURE_ASPECT_RATIO}))`,
+                    aspectRatio: String(OVAL_CAPTURE_ASPECT_RATIO),
+                  }}
+                >
+                  {/* Ring — state-aware color */}
+                  <div
+                    className={`absolute inset-0 transition-all duration-200 ${
+                      capturePhase >= 0
+                        ? 'ring-2 ring-blue-400/70 shadow-[0_0_50px_rgba(59,130,246,0.24)]'
+                        : faceFound
+                          ? 'ring-2 ring-emerald-400/70 shadow-[0_0_50px_rgba(16,185,129,0.24)]'
+                          : faceNeedsAlignment
+                            ? 'ring-1 ring-amber-300/50'
+                            : 'ring-1 ring-white/18'
+                    }`}
+                    style={OVAL_STYLE}
+                  />
+                  {/* Video clipped to oval */}
+                  <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_STYLE}>
+                    <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" />
+                    <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
+                    {/* Face position guide — shown before any face is detected */}
+                    <FaceGuide show={!faceFound && capturePhase < 0 && camera.camOn} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom — phase indicator + state badge, always below the oval */}
+              <div className="flex shrink-0 flex-col items-center gap-3 px-4 py-4">
+                <PhaseIndicator capturePhase={capturePhase} phaseProgress={phaseProgress} />
+                <span className={`rounded-full px-5 py-2.5 text-sm font-semibold backdrop-blur ${captureStateCls}`}>
+                  {captureStateLabel}
+                </span>
+                {errorMessage && (
+                  <div className="w-full rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+                    {errorMessage}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Back button */}
-            <div className="absolute left-3 top-3 z-[4]">
-              {onBack && (
-                <button
-                  className="rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-black/50"
-                  onClick={onBack}
-                  type="button"
-                >
-                  ← Kiosk
-                </button>
-              )}
-            </div>
-
-            {/* Status top-right */}
-            <div className="absolute right-3 top-3 z-[4] max-w-[55%] rounded-[1.1rem] border border-white/14 bg-black/60 px-4 py-2.5 text-right shadow-lg backdrop-blur">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-100/90">Status</div>
-              <div className="mt-1 text-sm font-medium text-white/95">{statusMsg}</div>
-            </div>
-
-            {/* Camera offline state */}
+            {/* Camera offline overlay */}
             {!camera.camOn && (
               <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-black/60 text-center text-white">
                 <div className="text-5xl opacity-60">◈</div>
                 <div className="text-sm">{camera.camError || 'Camera offline'}</div>
-              </div>
-            )}
-
-            {/* Phase progress indicator */}
-            <PhaseIndicator capturePhase={capturePhase} phaseProgress={phaseProgress} />
-
-            {/* State badge bottom */}
-            <div className="absolute inset-x-0 bottom-5 z-[4] flex justify-center px-4">
-              <span className={`rounded-full px-5 py-3 text-sm font-semibold backdrop-blur ${captureStateCls}`}>
-                {captureStateLabel}
-              </span>
-            </div>
-
-            {errorMessage && (
-              <div className="absolute inset-x-3 bottom-16 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
-                {errorMessage}
               </div>
             )}
           </motion.section>
