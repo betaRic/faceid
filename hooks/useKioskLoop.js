@@ -11,7 +11,6 @@ import {
   KIOSK_FACE_LOSS_GRACE_MS,
   UNKNOWN_DEBOUNCE_MS,
 } from '@/lib/config'
-import { PERFECT_FACE_AREA_RATIO_MIN, PERFECT_FACE_AREA_RATIO_MAX } from '@/lib/biometrics/oval-capture'
 
 const PERFECT_POSITION_HOLD_MS = 600
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
@@ -105,9 +104,9 @@ export function useKioskLoop({
           const faceArea = box.width * box.height
           const ratio = faceArea / frameArea
           let status = 'too-far'
-          if (ratio > PERFECT_FACE_AREA_RATIO_MAX) status = 'too-close'
-          else if (ratio >= PERFECT_FACE_AREA_RATIO_MIN && ratio <= PERFECT_FACE_AREA_RATIO_MAX) status = 'perfect'
-          else if (ratio >= 0.35) status = 'good'
+          if (ratio > 0.88) status = 'too-close'
+          else if (ratio >= 0.22 && ratio <= 0.78) status = 'perfect'
+          else if (ratio >= 0.12) status = 'good'
           else status = 'too-far'
           setFaceDistanceInfo({ faceAreaRatio: ratio, status })
         }
@@ -139,7 +138,8 @@ export function useKioskLoop({
         return
       }
 
-      // Face IS in oval - proceed exactly like registration would
+      // Face IS in oval - proceed with verification
+      // Note: Perfect position requirement REMOVED to work at distance
       faceDetectedRef.current = true
 
       if (faceLossTimerRef.current) {
@@ -151,20 +151,12 @@ export function useKioskLoop({
       unknownTimer.current = null
 
       const faceAreaRatio = ovalReady.faceAreaRatio || 0
-      const isPerfectPosition = faceAreaRatio >= PERFECT_FACE_AREA_RATIO_MIN && faceAreaRatio <= PERFECT_FACE_AREA_RATIO_MAX
-      
-      // If not in perfect position, reset timer and pause
-      if (!isPerfectPosition) {
-        perfectPositionEnteredRef.current = 0
-        busyRef.current = false
-        return
-      }
 
-      // Use the oval-ready face for confirmation when perfect
+      // Use the oval-ready face for confirmation (any valid position works now)
       const ovalBox = ovalReady.box
       drawOverlay({ detection: { box: ovalBox } }, canvas.width, canvas.height)
 
-      // Track time in perfect position - require hold for delay
+      // Track time in position - require hold for delay
       if (!perfectPositionEnteredRef.current) {
         perfectPositionEnteredRef.current = Date.now()
         setKioskState('scanning')

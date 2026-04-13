@@ -35,10 +35,11 @@ export default function KioskScanningOverlay({
   // Distance indicator based on faceAreaRatio
   const distanceStatus = faceDistanceInfo?.status || null
   const distanceLabel = distanceStatus === 'too-close' ? 'Move back' 
-    : distanceStatus === 'perfect' ? 'Perfect distance'
-    : distanceStatus === 'good' ? 'Getting closer'
-    : distanceStatus === 'too-far' ? 'Get closer'
-    : null
+    : distanceStatus === 'perfect' ? 'OK - hold steady'
+    : distanceStatus === 'good' ? 'OK - hold steady'
+    : distanceStatus === 'too-far' ? 'Move closer'
+    : faceAreaRatio > 0 ? 'OK - hold steady'
+    : 'Position face in frame'
     
   const distanceColor = distanceStatus === 'too-close' ? 'bg-amber-500/80'
     : distanceStatus === 'perfect' ? 'bg-emerald-500/80'
@@ -48,10 +49,12 @@ export default function KioskScanningOverlay({
   // Distance bar indicator (like pose arc in registration)
   const faceAreaRatio = faceDistanceInfo?.faceAreaRatio || 0
   const getBarPosition = () => {
-    if (faceAreaRatio <= 0.35) return 0
-    if (faceAreaRatio > PERFECT_FACE_AREA_RATIO_MAX) return 100
-    if (faceAreaRatio >= PERFECT_FACE_AREA_RATIO_MIN && faceAreaRatio <= PERFECT_FACE_AREA_RATIO_MAX) return 50
-    if (faceAreaRatio >= 0.35) return 20
+    if (faceAreaRatio <= 0) return 0
+    if (faceAreaRatio < 0.12) return 0
+    if (faceAreaRatio >= 0.12 && faceAreaRatio < 0.22) return 10
+    if (faceAreaRatio >= 0.22 && faceAreaRatio <= 0.78) return 50
+    if (faceAreaRatio > 0.78 && faceAreaRatio <= 0.88) return 80
+    if (faceAreaRatio > 0.88) return 100
     return 0
   }
   const barPosition = getBarPosition()
