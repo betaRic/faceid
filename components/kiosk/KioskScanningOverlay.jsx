@@ -45,6 +45,18 @@ export default function KioskScanningOverlay({
     : distanceStatus === 'good' ? 'bg-blue-500/80'
     : 'bg-white/30'
 
+  // Distance bar indicator (like pose arc in registration)
+  const faceAreaRatio = faceDistanceInfo?.faceAreaRatio || 0
+  // Map faceAreaRatio to bar position: 0.35 (far) -> 0.45 (good) -> 0.70 (close) -> 0.92 (too close)
+  const getBarPosition = () => {
+    if (faceAreaRatio <= 0.35) return 0    // Too far
+    if (faceAreaRatio >= 0.92) return 100  // Too close
+    if (faceAreaRatio >= 0.70) return 80   // Close
+    if (faceAreaRatio >= 0.45) return 50   // Perfect
+    return 20                                // Getting closer
+  }
+  const barPosition = getBarPosition()
+
   const ringState = isVerifying
     ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
     : isConfirmed
@@ -56,19 +68,20 @@ export default function KioskScanningOverlay({
           : 'ring-1 ring-white/18'
 
   // Dynamic status messages - no more confusing "Align face"
+  // Note: kioskState 'blocked' is used for multiple errors, not just multiple faces
   const statusMessage = isVerifying
     ? 'Verifying...'
     : isConfirmed
       ? '✓ Verified'
       : isBlocked
-        ? 'Multiple faces detected'
+        ? 'Try again'
         : isUnknown
           ? 'Face not recognized'
           : isScanning
             ? 'Face detected — hold steady'
             : camera.camOn
               ? 'Ready — look at camera'
-              : 'Camera offline'
+              : 'Camera off'
 
   return (
     <>
@@ -144,10 +157,35 @@ export default function KioskScanningOverlay({
         </div>
       </div>
 
-      {/* Distance indicator - shows when face is detected but not perfect */}
-      {distanceLabel && !isVerifying && !isConfirmed && (
-        <div className="absolute inset-x-0 bottom-28 z-[4] flex justify-center pointer-events-none sm:bottom-32">
-          <div className={`rounded-full px-4 py-1.5 text-xs font-semibold backdrop-blur shadow-lg ${distanceColor}`}>
+      {/* Distance indicator - visual bar like registration pose arc */}
+      {faceDistanceInfo && !isVerifying && !isConfirmed && (
+        <div className="absolute inset-x-0 bottom-28 z-[4] flex flex-col items-center gap-2 pointer-events-none sm:bottom-32">
+          {/* Distance bar with position indicator */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-white/50">FAR</span>
+            <div className="relative h-2 w-32 overflow-hidden rounded-full bg-white/20">
+              {/* Background zones */}
+              <div className="absolute inset-0 flex">
+                <div className="h-full w-1/4 bg-amber-500/40" />
+                <div className="h-full w-1/4 bg-blue-500/40" />
+                <div className="h-full w-1/4 bg-emerald-500/40" />
+                <div className="h-full w-1/4 bg-amber-500/40" />
+              </div>
+              {/* Position marker */}
+              <div 
+                className={`absolute top-0 h-full w-1.5 rounded-full transition-all duration-200 ${
+                  distanceStatus === 'perfect' ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' :
+                  distanceStatus === 'good' ? 'bg-blue-400 shadow-lg shadow-blue-400/50' :
+                  distanceStatus === 'too-close' ? 'bg-amber-400 shadow-lg shadow-amber-400/50' :
+                  'bg-white/70'
+                }`}
+                style={{ left: `${barPosition}%`, transform: 'translateX(-50%)' }}
+              />
+            </div>
+            <span className="text-[10px] font-medium text-white/50">CLOSE</span>
+          </div>
+          {/* Distance label */}
+          <div className={`rounded-full px-3 py-1 text-xs font-semibold backdrop-blur shadow-lg ${distanceColor}`}>
             {distanceLabel}
           </div>
         </div>

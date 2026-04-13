@@ -169,11 +169,12 @@ export function useKioskLoop({
         }
 
         if (allCaptures.length > 1) {
-          const multiFaceFrames = allCaptures.filter(c => c.detections.length > 1)
+          // Check if ANY frame actually had multiple faces, not just multiple frames captured
+          const multiFaceFrames = allCaptures.filter(c => c.detections && c.detections.length > 1)
           if (multiFaceFrames.length > 0) {
             setKioskState('blocked')
             pausedRef.current = true
-            showAlertAndResume('Multiple faces detected during capture. One employee at a time.', 2400)
+            showAlertAndResume('Multiple faces detected. One employee at a time.', 2400)
             confirmRef.current = 0
             return
           }
