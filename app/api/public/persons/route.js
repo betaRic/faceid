@@ -2,7 +2,15 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
-import { mapPersonRecord } from '@/lib/persons'
+
+function normalizeStoredDescriptors(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw.map(d => {
+    if (Array.isArray(d)) return d
+    if (d && typeof d === 'object' && Array.isArray(d.vector)) return d.vector
+    return null
+  }).filter(d => Array.isArray(d) && d.length > 0)
+}
 
 export async function GET() {
   try {
@@ -21,7 +29,7 @@ export async function GET() {
         nameLower: data.nameLower,
         officeId: data.officeId,
         officeName: data.officeName,
-        descriptors: data.descriptors || [],
+        descriptors: normalizeStoredDescriptors(data.descriptors),
         active: data.active,
         approvalStatus: data.approvalStatus,
       }
