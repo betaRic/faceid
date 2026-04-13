@@ -10,6 +10,7 @@ export default function OfficePanel() {
     officesLoaded,
     visibleOffices,
     selectedOfficeId,
+    setSelectedOfficeId,          // ← was missing — caused Edit to silently fail
     activeOffice,
     officeDraftWarning,
     locationLoading,
@@ -41,13 +42,14 @@ export default function OfficePanel() {
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
     >
+      {/* Office list table */}
       <section className="overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 shadow-glow backdrop-blur xl:flex xl:min-h-0 xl:flex-col">
         <div className="flex flex-col gap-3 border-b border-black/5 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Office</div>
             <h2 className="mt-2 font-display text-3xl text-ink">Office list</h2>
             <p className="mt-2 text-sm leading-7 text-muted">
-              Regional admins can switch across the regional, provincial, and HUC offices and update each office record from the same workspace.
+              Select an office below to edit its settings, GPS geofence, schedule, and WFH rules.
             </p>
           </div>
         </div>
@@ -71,7 +73,7 @@ export default function OfficePanel() {
                 return (
                   <tr
                     key={office.id}
-                    className={`cursor-pointer transition ${selected ? 'bg-navy/5' : ''}`}
+                    className={`cursor-pointer transition hover:bg-sky-light/40 ${selected ? 'bg-navy/5' : ''}`}
                     onClick={() => setSelectedOfficeId(office.id)}
                   >
                     <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
@@ -85,20 +87,28 @@ export default function OfficePanel() {
                     <td className="px-5 py-4 text-muted">{office.provinceOrCity || office.location}</td>
                     <td className="px-5 py-4 text-muted">{office.employees || 0}</td>
                     <td className="px-5 py-4">
-                      <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${(office.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
+                        (office.status || 'active') === 'active'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
                         {(office.status || 'active') === 'active' ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     <td className="px-5 py-4">
                       <button
-                        className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
-                        onClick={event => {
-                          event.stopPropagation()
+                        className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          selected
+                            ? 'border-navy/30 bg-navy text-white'
+                            : 'border-black/10 bg-white text-ink hover:bg-stone-100'
+                        }`}
+                        onClick={e => {
+                          e.stopPropagation()
                           setSelectedOfficeId(office.id)
                         }}
                         type="button"
                       >
-                        Edit
+                        {selected ? 'Editing' : 'Edit'}
                       </button>
                     </td>
                   </tr>
@@ -109,6 +119,7 @@ export default function OfficePanel() {
         </div>
       </section>
 
+      {/* Office editor */}
       <section className="rounded-[2rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur sm:p-6 xl:min-h-0 xl:overflow-auto">
         <AdminOfficePanel
           activeOffice={activeOffice}
@@ -125,4 +136,3 @@ export default function OfficePanel() {
     </motion.section>
   )
 }
-

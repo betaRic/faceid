@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import OfficeLocationPicker from './OfficeLocationPicker'
 
-const dayOptions = [
+const DAY_OPTIONS = [
   { value: 1, label: 'Mon' },
   { value: 2, label: 'Tue' },
   { value: 3, label: 'Wed' },
@@ -13,17 +13,89 @@ const dayOptions = [
   { value: 0, label: 'Sun' },
 ]
 
-const officeTypeOptions = [
+const OFFICE_TYPE_OPTIONS = [
   'Regional Office',
   'Provincial Office',
   'HUC Office',
 ]
 
-const officeTabs = [
-  { id: 'location', label: 'Location' },
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'attendance', label: 'Scan rules' },
-]
+function formatTime(value) {
+  if (!value) return '--'
+  const [h, m] = String(value).split(':')
+  const hour = Number(h)
+  return `${((hour + 11) % 12) + 1}:${m} ${hour >= 12 ? 'PM' : 'AM'}`
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function TimeInput({ label, value, onChange }) {
+  return (
+    <Field label={label}>
+      <input
+        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+        onChange={e => onChange(e.target.value)}
+        type="time"
+        value={value || ''}
+      />
+    </Field>
+  )
+}
+
+function NumberInput({ label, value, onChange, description }) {
+  return (
+    <div className="grid gap-1">
+      <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</label>
+      {description && <p className="text-xs text-muted/70">{description}</p>}
+      <input
+        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+        onChange={e => onChange(Number(e.target.value))}
+        type="number"
+        value={value ?? ''}
+      />
+    </div>
+  )
+}
+
+function DayToggle({ label, activeValues = [], onToggle, accent = false }) {
+  return (
+    <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">{label}</div>
+      <div className="flex flex-wrap gap-2">
+        {DAY_OPTIONS.map(day => {
+          const active = activeValues.includes(day.value)
+          return (
+            <button
+              key={day.value}
+              className={`rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${
+                active
+                  ? accent
+                    ? 'border-amber/40 bg-amber/15 text-amber-dark'
+                    : 'border-navy/30 bg-navy/10 text-navy-dark'
+                  : 'border-black/10 bg-white text-muted hover:bg-stone-100'
+              }`}
+              onClick={() => onToggle(day.value)}
+              type="button"
+            >
+              {day.label}
+            </button>
+          )
+        })}
+      </div>
+      <p className="mt-2.5 text-xs text-muted">
+        {activeValues.length === 0
+          ? 'None selected'
+          : DAY_OPTIONS.filter(d => activeValues.includes(d.value)).map(d => d.label).join(', ')}
+      </p>
+    </div>
+  )
+}
 
 export default function AdminOfficePanel({
   activeOffice,
@@ -41,354 +113,277 @@ export default function AdminOfficePanel({
 
   if (!activeOffice) {
     return (
-      <div className="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-10 text-center text-sm text-muted">
-        No office selected.
+      <div className="flex h-40 items-center justify-center rounded-2xl border border-dashed border-black/10 bg-stone-50 text-sm text-muted">
+        Select an office from the list above to edit its settings.
       </div>
     )
   }
 
+  const wp = activeOffice.workPolicy || {}
+
   return (
-    <div className="grid gap-5">
-      {officeDraftWarning ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    <div className="grid gap-4">
+      {/* Unsaved changes warning */}
+      {officeDraftWarning && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {officeDraftWarning}
         </div>
-      ) : null}
+      )}
 
-      <section className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {/* Header row — basic info + tab switcher + save */}
+      <div className="grid gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 lg:grid-cols-2 xl:grid-cols-[1fr_auto]">
+        {/* Basic fields */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Office name">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={event => updateDraft('name', event.target.value)}
-              value={activeOffice.name}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+              onChange={e => updateDraft('name', e.target.value)}
+              value={activeOffice.name || ''}
             />
           </Field>
           <Field label="Short name">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={event => updateDraft('shortName', event.target.value)}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+              onChange={e => updateDraft('shortName', e.target.value)}
               value={activeOffice.shortName || ''}
             />
           </Field>
           <Field label="Office type">
             <select
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={event => updateDraft('officeType', event.target.value)}
-              value={activeOffice.officeType}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+              onChange={e => updateDraft('officeType', e.target.value)}
+              value={activeOffice.officeType || ''}
             >
-              {officeTypeOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
+              {OFFICE_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           </Field>
           <Field label="Location">
             <input
-              className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={event => updateDraft('location', event.target.value)}
-              value={activeOffice.location}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+              onChange={e => updateDraft('location', e.target.value)}
+              value={activeOffice.location || ''}
             />
           </Field>
         </div>
 
-        <div className="flex flex-col gap-3 lg:items-end">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[340px]">
-            {officeTabs.map(tab => (
+        {/* Tab + Save */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:flex-col xl:items-end">
+          <div className="flex gap-2">
+            {['location', 'schedule', 'attendance'].map(tab => (
               <button
-                key={tab.id}
-                className={`rounded-[1rem] border px-4 py-2.5 text-sm font-semibold transition sm:rounded-full ${
-                  activeTab === tab.id
+                key={tab}
+                className={`rounded-full border px-4 py-2 text-sm font-semibold transition capitalize ${
+                  activeTab === tab
                     ? 'border-navy/30 bg-navy/10 text-navy-dark'
-                    : 'border-black/10 bg-white text-ink hover:bg-stone-50'
+                    : 'border-black/10 bg-white text-ink hover:bg-stone-100'
                 }`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveTab(tab)}
                 type="button"
               >
-                {tab.label}
+                {tab}
               </button>
             ))}
           </div>
           <button
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[1rem] bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-full"
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-navy px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-60"
             disabled={savePending}
             onClick={handleSaveOffice}
             type="button"
           >
             {savePending ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Saving...
-              </>
-            ) : 'Save office settings'}
+              <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving…</>
+            ) : 'Save settings'}
           </button>
         </div>
-      </section>
+      </div>
 
-      {activeTab === 'location' ? (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_420px]">
-          <div>
-            <DataSection
-              description="Map and geofence values used for on-site validation."
-              title="Location"
-            >
-              <OfficeLocationPicker
-                latitude={activeOffice.gps.latitude}
-                longitude={activeOffice.gps.longitude}
-                highlightPin={highlightLocationPin}
-                onChange={({ latitude, longitude }) => {
-                  updateDraft('gps.latitude', latitude)
-                  updateDraft('gps.longitude', longitude)
-                }}
-                radiusMeters={activeOffice.gps.radiusMeters}
-                officeId={activeOffice.id}
-              />
-            </DataSection>
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+      {/* ── LOCATION TAB ── */}
+      {activeTab === 'location' && (
+        <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
+          {/* Map */}
+          <div className="grid gap-3">
+            <OfficeLocationPicker
+              latitude={activeOffice.gps?.latitude}
+              longitude={activeOffice.gps?.longitude}
+              radiusMeters={activeOffice.gps?.radiusMeters}
+              officeId={activeOffice.id}
+              onChange={({ latitude, longitude }) => {
+                updateDraft('gps.latitude', latitude)
+                updateDraft('gps.longitude', longitude)
+              }}
+            />
+            <div className="flex flex-wrap gap-3">
               <button
-                className="inline-flex min-h-12 items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:rounded-full"
+                className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:opacity-50"
+                disabled={locationLoading}
                 onClick={handleUseMyLocation}
                 type="button"
-                disabled={locationLoading}
               >
-                {locationLoading ? 'Getting location...' : 'Use my location'}
+                {locationLoading ? 'Getting location…' : '📍 Use my location'}
               </button>
-              <div className="rounded-[1rem] bg-navy/8 px-4 py-3 text-sm text-navy-dark sm:rounded-full">
-                Click on the map to place the office pin and adjust the geofence.
-              </div>
+              {locationNotice && (
+                <span className="self-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-900">
+                  {locationNotice}
+                </span>
+              )}
             </div>
-            {locationNotice ? (
-              <div className="mt-3 rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                {locationNotice}
-              </div>
-            ) : null}
           </div>
 
-          <DataTable
-            rows={[
-              {
-                label: 'Latitude',
-                description: 'Geofence center latitude.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('gps.latitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.latitude} />,
-              },
-              {
-                label: 'Longitude',
-                description: 'Geofence center longitude.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('gps.longitude', Number(event.target.value))} step="0.0001" type="number" value={activeOffice.gps.longitude} />,
-              },
-              {
-                label: 'Radius meters',
-                description: 'Allowed on-site radius for kiosk scans.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('gps.radiusMeters', Number(event.target.value))} type="number" value={activeOffice.gps.radiusMeters} />,
-              },
-              {
-                label: 'WiFi SSIDs',
-                description: 'Accepts multiple networks separated by commas. Leave empty to skip WiFi validation.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('wifiSsid', event.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="DILG-Main, DILG-Guest, DILG-Staff" type="text" value={Array.isArray(activeOffice.wifiSsid) ? activeOffice.wifiSsid.join(', ') : String(activeOffice.wifiSsid || '')} />,
-              },
-            ]}
-            title="Location data"
-          />
-        </div>
-      ) : null}
-
-      {activeTab === 'schedule' ? (
-        <div className="grid gap-5">
-          <DataSection
-            description="Generated from the configured work days and AM/PM duty times."
-            title="Schedule summary"
-          >
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <InfoCard label="Working days" value={formatCompactDays(activeOffice.workPolicy.workingDays)} />
-              <InfoCard label="WFH days" value={formatCompactDays(activeOffice.workPolicy.wfhDays)} />
-              <InfoCard
-                label="Morning session"
-                value={`${formatTime(activeOffice.workPolicy.morningIn)} to ${formatTime(activeOffice.workPolicy.morningOut)}`}
-              />
-              <InfoCard
-                label="Afternoon session"
-                value={`${formatTime(activeOffice.workPolicy.afternoonIn)} to ${formatTime(activeOffice.workPolicy.afternoonOut)}`}
+          {/* GPS + WiFi inputs */}
+          <div className="grid content-start gap-3">
+            <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">GPS coordinates</div>
+              <div className="grid gap-3">
+                <NumberInput
+                  label="Latitude"
+                  value={activeOffice.gps?.latitude}
+                  onChange={v => updateDraft('gps.latitude', v)}
+                />
+                <NumberInput
+                  label="Longitude"
+                  value={activeOffice.gps?.longitude}
+                  onChange={v => updateDraft('gps.longitude', v)}
+                />
+                <NumberInput
+                  label="Radius (meters)"
+                  description="Employees must be within this distance to clock in on-site."
+                  value={activeOffice.gps?.radiusMeters}
+                  onChange={v => updateDraft('gps.radiusMeters', v)}
+                />
+              </div>
+            </div>
+            <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">WiFi SSIDs (optional)</div>
+              <p className="mb-2 text-xs text-muted">Comma-separated. Leave blank to skip WiFi validation.</p>
+              <input
+                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+                onChange={e => updateDraft('wifiSsid', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                placeholder="DILG-Main, DILG-Guest"
+                value={Array.isArray(activeOffice.wifiSsid) ? activeOffice.wifiSsid.join(', ') : (activeOffice.wifiSsid || '')}
               />
             </div>
-          </DataSection>
+          </div>
+        </div>
+      )}
 
-          <DataTable
-            rows={[
-              {
-                label: 'Grace period',
-                description: 'Allowed late buffer before tardiness counts.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.gracePeriodMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.gracePeriodMinutes} />,
-              },
-              {
-                label: 'AM in',
-                description: 'Morning expected check-in time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.morningIn', event.target.value)} type="time" value={activeOffice.workPolicy.morningIn} />,
-              },
-              {
-                label: 'AM out',
-                description: 'Morning expected check-out time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.morningOut', event.target.value)} type="time" value={activeOffice.workPolicy.morningOut} />,
-              },
-              {
-                label: 'PM in',
-                description: 'Afternoon expected check-in time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.afternoonIn', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonIn} />,
-              },
-              {
-                label: 'PM out',
-                description: 'Afternoon expected check-out time.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.afternoonOut', event.target.value)} type="time" value={activeOffice.workPolicy.afternoonOut} />,
-              },
-            ]}
-            title="Schedule data"
-          />
+      {/* ── SCHEDULE TAB ── */}
+      {activeTab === 'schedule' && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {/* Left — time inputs */}
+          <div className="grid gap-3">
+            {/* Summary strip */}
+            <div className="grid grid-cols-2 gap-3 rounded-[1.25rem] border border-black/5 bg-navy/5 p-4">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-widest text-muted">Morning</div>
+                <div className="mt-1 text-sm font-semibold text-ink">
+                  {formatTime(wp.morningIn)} → {formatTime(wp.morningOut)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-widest text-muted">Afternoon</div>
+                <div className="mt-1 text-sm font-semibold text-ink">
+                  {formatTime(wp.afternoonIn)} → {formatTime(wp.afternoonOut)}
+                </div>
+              </div>
+            </div>
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <TagEditor
-              activeValues={activeOffice.workPolicy.workingDays}
+            {/* Time fields — 2×2 grid */}
+            <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Session times</div>
+              <div className="grid grid-cols-2 gap-3">
+                <TimeInput label="AM Check-in" value={wp.morningIn}    onChange={v => updateDraft('workPolicy.morningIn', v)} />
+                <TimeInput label="AM Check-out" value={wp.morningOut}   onChange={v => updateDraft('workPolicy.morningOut', v)} />
+                <TimeInput label="PM Check-in"  value={wp.afternoonIn}  onChange={v => updateDraft('workPolicy.afternoonIn', v)} />
+                <TimeInput label="PM Check-out" value={wp.afternoonOut} onChange={v => updateDraft('workPolicy.afternoonOut', v)} />
+              </div>
+            </div>
+
+            {/* Grace period */}
+            <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Tardiness grace period</div>
+              <NumberInput
+                label="Grace period (minutes)"
+                description="Scans within this window after AM check-in time are not counted as late."
+                value={wp.gracePeriodMinutes ?? 0}
+                onChange={v => updateDraft('workPolicy.gracePeriodMinutes', v)}
+              />
+            </div>
+          </div>
+
+          {/* Right — day selectors */}
+          <div className="grid gap-3 content-start">
+            <DayToggle
               label="Working days"
+              activeValues={wp.workingDays || []}
               onToggle={day => toggleDay('workingDays', day)}
             />
-            <TagEditor
-              activeValues={activeOffice.workPolicy.wfhDays}
+            <DayToggle
               label="WFH days"
+              activeValues={wp.wfhDays || []}
               onToggle={day => toggleDay('wfhDays', day)}
-              tone="accent"
+              accent
+            />
+            <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Schedule label</div>
+              <p className="mb-2 text-xs text-muted">Human-readable description shown on reports.</p>
+              <input
+                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-ink outline-none transition focus:border-navy"
+                onChange={e => updateDraft('workPolicy.schedule', e.target.value)}
+                placeholder="Mon-Fri, 8:00 AM to 5:00 PM"
+                value={wp.schedule || ''}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SCAN RULES TAB ── */}
+      {activeTab === 'attendance' && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Check-in cooldown</div>
+            <p className="mb-3 text-xs text-muted">
+              Blocks a second successful check-in scan for the same employee within this window.
+              Prevents accidental double-scans. Recommended: 20–30 min.
+            </p>
+            <NumberInput
+              label="Minutes"
+              value={wp.checkInCooldownMinutes ?? 30}
+              onChange={v => updateDraft('workPolicy.checkInCooldownMinutes', v)}
             />
           </div>
-        </div>
-      ) : null}
+          <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Check-out cooldown</div>
+            <p className="mb-3 text-xs text-muted">
+              Blocks a second successful check-out scan within this window.
+              Recommended: 3–5 min.
+            </p>
+            <NumberInput
+              label="Minutes"
+              value={wp.checkOutCooldownMinutes ?? 5}
+              onChange={v => updateDraft('workPolicy.checkOutCooldownMinutes', v)}
+            />
+          </div>
 
-      {activeTab === 'attendance' ? (
-        <div className="grid gap-5">
-          <DataTable
-            rows={[
-              {
-                label: 'Check-in cooldown',
-                description: 'Blocks repeated successful IN scans for the same employee.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.checkInCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkInCooldownMinutes ?? 30} />,
-              },
-              {
-                label: 'Check-out cooldown',
-                description: 'Blocks repeated successful OUT scans for the same employee.',
-                control: <input className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-navy" onChange={event => updateDraft('workPolicy.checkOutCooldownMinutes', Number(event.target.value))} type="number" value={activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} />,
-              },
-            ]}
-            title="Scan rules"
-          />
-
-          <div className="rounded-[1.4rem] border border-black/5 bg-stone-50 p-4">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Current scan policy</span>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <PolicyBadge label="Check-in wait" value={`${activeOffice.workPolicy.checkInCooldownMinutes ?? 30} min`} />
-              <PolicyBadge label="Check-out wait" value={`${activeOffice.workPolicy.checkOutCooldownMinutes ?? 5} min`} />
+          {/* Current policy readout */}
+          <div className="rounded-[1.25rem] border border-navy/10 bg-navy/5 p-4 xl:col-span-2">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Current scan policy</div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {[
+                { label: 'Check-in wait',   value: `${wp.checkInCooldownMinutes ?? 30} min` },
+                { label: 'Check-out wait',  value: `${wp.checkOutCooldownMinutes ?? 5} min` },
+                { label: 'Grace period',    value: `${wp.gracePeriodMinutes ?? 0} min` },
+                { label: 'Working days',    value: (wp.workingDays || []).length === 0 ? 'None' : DAY_OPTIONS.filter(d => (wp.workingDays || []).includes(d.value)).map(d => d.label).join(', ') },
+              ].map(item => (
+                <div key={item.label} className="rounded-xl border border-black/5 bg-white px-4 py-3">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-muted">{item.label}</div>
+                  <div className="mt-1 text-base font-bold text-ink">{item.value}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
-
-function DataSection({ title, description, children }) {
-  return (
-    <section className="rounded-[1.4rem] border border-black/5 bg-white p-4">
-      <div className="mb-4">
-        <div className="text-sm font-semibold text-ink">{title}</div>
-        {description ? <div className="mt-1 text-sm text-muted">{description}</div> : null}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function DataTable({ title, rows }) {
-  return (
-    <section className="overflow-hidden rounded-[1.4rem] border border-black/5 bg-white">
-      <div className="border-b border-black/5 px-4 py-4">
-        <div className="text-sm font-semibold text-ink">{title}</div>
-      </div>
-      <div className="divide-y divide-black/5">
-        {rows.map(row => (
-          <div key={row.label} className="grid gap-3 px-4 py-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
-            <div>
-              <div className="text-sm font-semibold text-ink">{row.label}</div>
-              <div className="mt-1 text-sm leading-6 text-muted">{row.description}</div>
-            </div>
-            <div>{row.control}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function TagEditor({ label, activeValues, onToggle, tone = 'brand' }) {
-  const activeClass = tone === 'accent'
-    ? 'border-accent/40 bg-accent/10 text-ink'
-    : 'border-navy/40 bg-navy/10 text-navy-dark'
-
-  return (
-    <section className="rounded-[1.4rem] border border-black/5 bg-white p-4">
-      <div className="text-sm font-semibold text-ink">{label}</div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {dayOptions.map(day => (
-          <button
-            key={`${label}-${day.value}`}
-            className={`rounded-full border px-4 py-2 text-sm transition ${activeValues.includes(day.value) ? activeClass : 'border-black/10 bg-white text-muted'}`}
-            onClick={() => onToggle(day.value)}
-            type="button"
-          >
-            {day.label}
-          </button>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function PolicyBadge({ label, value }) {
-  return (
-    <div className="rounded-2xl border border-black/5 bg-white px-4 py-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-ink">{value}</div>
-    </div>
-  )
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function InfoCard({ label, value }) {
-  return (
-    <div className="rounded-2xl border border-black/5 bg-white px-4 py-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">{label}</div>
-      <div className="mt-2 text-sm font-semibold text-ink">{value}</div>
-    </div>
-  )
-}
-
-function formatCompactDays(values = []) {
-  if (!values.length) return 'None'
-
-  return dayOptions
-    .filter(day => values.includes(day.value))
-    .map(day => day.label)
-    .join(', ')
-}
-
-function formatTime(value) {
-  if (!value) return '--'
-
-  const [hours, minutes] = String(value).split(':')
-  const numericHours = Number(hours)
-  const suffix = numericHours >= 12 ? 'PM' : 'AM'
-  const displayHours = ((numericHours + 11) % 12) + 1
-  return `${displayHours}:${minutes} ${suffix}`
-}
-
