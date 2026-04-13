@@ -24,9 +24,24 @@ export async function GET(request) {
       bestDistance: data.metadata?.bestDistance,
       candidatesFound: data.metadata?.candidatesFound,
       threshold: data.metadata?.threshold,
+      storedDescSample: data.metadata?.storedDescriptorSample,
+      queryDescSample: data.metadata?.queryDescriptorSample,
+      storedMag: data.metadata?.storedMagnitude,
+      queryMag: data.metadata?.queryMagnitude,
       createdAt: data.createdAt?.toDate?.()?.toISOString(),
     }
   })
 
-  return NextResponse.json({ logs })
+  const html = `<!DOCTYPE html>
+<html>
+<head><title>Debug</title></head>
+<body>
+<h1>Last ${logs.length} Failed Attendance</h1>
+<pre>${JSON.stringify(logs, null, 2)}</pre>
+</body>
+</html>`
+
+  return new NextResponse(html, {
+    headers: { 'Content-Type': 'text/html' },
+  })
 }
