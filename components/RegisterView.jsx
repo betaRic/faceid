@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PERSON_APPROVAL_PENDING } from '../lib/person-approval'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '../lib/biometrics/oval-capture'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
-import { DUPLICATE_FACE_THRESHOLD } from '../lib/config'
+import { DUPLICATE_FACE_THRESHOLD, DISTANCE_THRESHOLD_KIOSK } from '../lib/config'
 import { useAudioCue } from '../hooks/useAudioCue'
 import { useEnrollmentCapture, CAPTURE_PHASES, classifyPose } from '../hooks/useEnrollmentCapture'
 import { findClosestPerson } from '../lib/biometrics/descriptor-utils'
@@ -229,8 +229,16 @@ export default function RegisterView({
 
       for (const descriptor of result.descriptors) {
         const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
+        const bestMatch = findClosestPerson(persons, '', descriptor, DISTANCE_THRESHOLD_KIOSK)
+        
         if (dup) {
           setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
+          playAudioCue('error')
+          return
+        }
+        
+        if (bestMatch && bestMatch.distance <= 0.50) {
+          setDuplicateError(`Face resembles ${bestMatch.person.name} (${bestMatch.person.employeeId || 'no ID'}). Too similar to existing enrollment.`)
           playAudioCue('error')
           return
         }
