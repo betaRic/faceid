@@ -86,10 +86,10 @@ export async function POST(request) {
     // Liveness check — client-provided landmarks (weak but filters obvious attacks)
     if (entry.landmarks?.length > 0) {
       const livenessResult = analyzeLiveness(entry.landmarks)
-      if (!livenessResult.live && livenessResult.reason === 'static_face') {
-        await writeFailedScanLog(db, entry, 'blocked_liveness_failed', 'Static face detected')
+      if (!livenessResult.live && (livenessResult.reason === 'static_face' || livenessResult.reason === 'photo_detected_flat' || livenessResult.reason === 'photo_detected_flat_no_blink')) {
+        await writeFailedScanLog(db, entry, 'blocked_liveness_failed', livenessResult.reason)
         return NextResponse.json(
-          { ok: false, message: 'Liveness check failed. Move slightly and try again.', decisionCode: 'blocked_liveness_failed', debug: { liveness: livenessResult } },
+          { ok: false, message: 'Photo detected. Please scan your real face, not a photo.', decisionCode: livenessResult.reason, debug: { liveness: livenessResult } },
           { status: 403 },
         )
       }
