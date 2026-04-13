@@ -97,7 +97,7 @@ function DashboardPanelInner() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Offices" value={String(visibleOffices.length).padStart(2, '0')} />
         <MetricCard label="Employees" value={employeeMetric} />
-        <MetricCard label="Today" value={attendanceLoaded ? String(todaysLogs).padStart(2, '0') : '--'} />
+        <MetricCard label="Today" value={attendanceLoaded ? String(todaysLogs.length).padStart(2, '0') : '--'} />
         <MetricCard label="Admins" value={roleScope === 'regional' && adminsLoaded ? String(admins.length).padStart(2, '0') : '--'} />
       </div>
 

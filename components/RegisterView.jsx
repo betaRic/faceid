@@ -74,50 +74,34 @@ function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statu
   const phase = CAPTURE_PHASES[capturePhase]
 
   return (
-    <div className="absolute inset-x-0 bottom-16 z-[5] flex justify-center px-4">
-      <div className="rounded-[1.25rem] border border-white/20 bg-black/65 px-5 py-3.5 text-center backdrop-blur">
-        <div className="text-lg">{phase.icon}</div>
-        <div className="mt-1 text-sm font-bold text-white">{phase.label}</div>
-        <div className="mt-0.5 text-xs text-white/70">{phase.subtitle}</div>
-        <div className="mt-2.5 flex justify-center">
-          <PoseArcIndicator
-            yaw={currentYaw}
-            poseOk={poseOk}
-            phaseType={phase.poseType}
-            sideAYaw={null}
-          />
-        </div>
-        <div className={`mt-2 text-xs font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
-          {statusMsg}
-        </div>
-        <div className="mt-2.5 flex items-center justify-center gap-2.5">
+    <div className="absolute inset-x-0 bottom-4 z-[5] flex justify-center px-4">
+      <div className="flex items-center gap-3 rounded-full border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
+        <div className="flex items-center gap-1">
           {CAPTURE_PHASES.map((p, i) => (
-            <div key={p.id} className="flex items-center gap-1">
-              {Array.from({ length: 3 }).map((_, f) => {
-                const isCurrent = i === capturePhase
-                const filled = i < capturePhase || (isCurrent && f < phaseProgress)
-                const active = isCurrent && f === phaseProgress - 1
-                return (
-                  <span
-                    key={f}
-                    className={`inline-block rounded-full transition-all duration-200 ${
-                      active
-                        ? 'h-2.5 w-2.5 scale-125 bg-emerald-400'
-                        : filled
-                          ? 'h-2 w-2 bg-white/70'
-                          : 'h-2 w-2 bg-white/20'
-                    }`}
-                  />
-                )
-              })}
+            <div key={p.id} className="flex items-center">
+              <div
+                className={`h-1.5 w-1.5 rounded-full transition-all ${
+                  i < capturePhase
+                    ? 'bg-emerald-400'
+                    : i === capturePhase
+                      ? poseOk
+                        ? 'bg-emerald-400 animate-pulse'
+                        : 'bg-amber-400'
+                      : 'bg-white/30'
+                }`}
+              />
               {i < CAPTURE_PHASES.length - 1 && (
-                <span className="mx-0.5 text-white/25 text-xs">·</span>
+                <div className={`h-px w-3 ${i < capturePhase ? 'bg-emerald-400/60' : 'bg-white/20'}`} />
               )}
             </div>
           ))}
         </div>
-        <div className="mt-1.5 text-[10px] font-medium uppercase tracking-widest text-white/40">
-          Phase {capturePhase + 1} of {CAPTURE_PHASES.length}
+        <div className="h-4 w-px bg-white/20" />
+        <div className="flex items-center gap-1.5">
+          <span className="text-base">{phase.icon}</span>
+          <span className={`text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
+            {statusMsg}
+          </span>
         </div>
       </div>
     </div>
@@ -226,8 +210,10 @@ export default function RegisterView({
     if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
 
     startDetect(result => {
+      console.log('[RegisterView] Capture complete, checking duplicate. Persons:', persons.length, 'Descriptors:', result.descriptors.length)
       for (const descriptor of result.descriptors) {
         const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
+        console.log('[RegisterView] Checking descriptor, dup:', dup ? dup.person.name : null)
         if (dup) {
           setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
           playAudioCue('error')
@@ -437,13 +423,13 @@ export default function RegisterView({
             </div>
 
             {errorMessage && (
-              <div className="absolute inset-x-3 bottom-16 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+              <div className="absolute inset-x-3 bottom-12 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
                 {errorMessage}
               </div>
             )}
 
             {duplicateError && (
-              <div className="absolute inset-x-3 bottom-16 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+              <div className="absolute inset-x-3 bottom-12 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
                 {duplicateError}
               </div>
             )}

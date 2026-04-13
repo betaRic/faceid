@@ -32,6 +32,7 @@ export default function FaceAttendanceApp({
   loadAttendance = true,
   showRegistrationAction = true,
   showRosterTools = loadPersons,
+  loadPersonsForCheck = false,
 }) {
   const runtime = useBiometricRuntime()
   const {
@@ -63,7 +64,7 @@ export default function FaceAttendanceApp({
   }, [])
 
   useEffect(() => {
-    if (!loadPersons) {
+    if (!loadPersons && !loadPersonsForCheck) {
       setPersons([])
       setDataStatus(getDefaultDataStatus(false))
       setErrorMessage(null)
@@ -88,7 +89,7 @@ export default function FaceAttendanceApp({
     )
 
     return unsubscribe
-  }, [loadPersons])
+  }, [loadPersons, loadPersonsForCheck])
 
   useEffect(() => {
     if (!loadAttendance) {
