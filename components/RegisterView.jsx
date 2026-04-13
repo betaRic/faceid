@@ -74,7 +74,7 @@ function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statu
   const phase = CAPTURE_PHASES[capturePhase]
 
   return (
-    <div className="absolute inset-x-0 bottom-4 z-[5] flex justify-center px-4">
+    <div className="absolute inset-x-0 top-4 z-[5] flex justify-center px-4">
       <div className="flex items-center gap-3 rounded-full border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
         <div className="flex items-center gap-1">
           {CAPTURE_PHASES.map((p, i) => (
@@ -396,11 +396,6 @@ export default function RegisterView({
               )}
             </div>
 
-            <div className="absolute right-3 top-3 z-[4] max-w-[55%] rounded-[1.1rem] border border-white/14 bg-black/60 px-4 py-2.5 text-right shadow-lg backdrop-blur">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-100/90">Status</div>
-              <div className="mt-1 text-sm font-medium text-white/95 leading-tight">{statusMsg}</div>
-            </div>
-
             {!camera.camOn && (
               <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-black/60 text-center text-white">
                 <div className="text-5xl opacity-60">◈</div>
@@ -416,20 +411,14 @@ export default function RegisterView({
               statusMsg={statusMsg}
             />
 
-            <div className="absolute inset-x-0 bottom-5 z-[4] flex justify-center px-4">
-              <span className={`rounded-full px-5 py-3 text-sm font-semibold backdrop-blur ${captureStateCls}`}>
-                {captureStateLabel}
-              </span>
-            </div>
-
             {errorMessage && (
-              <div className="absolute inset-x-3 bottom-12 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+              <div className="absolute inset-x-3 top-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
                 {errorMessage}
               </div>
             )}
 
             {duplicateError && (
-              <div className="absolute inset-x-3 bottom-12 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+              <div className="absolute inset-x-3 top-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
                 {duplicateError}
               </div>
             )}
