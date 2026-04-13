@@ -49,17 +49,17 @@ function PoseArcIndicator({ yaw, poseOk, phaseType, sideAYw }) {
       : 'bg-white/30'
 
   return (
-    <div className="flex items-center gap-1.5 px-2">
-      <div className="h-1.5 w-12 overflow-hidden rounded-full bg-white/15">
+    <div className="flex items-center gap-1">
+      <div className="h-1 w-8 overflow-hidden rounded-full bg-white/15">
         <div
           className={`h-full rounded-full transition-all duration-150 ${color}`}
           style={{ width: `${leftFill * 100}%`, marginLeft: 'auto' }}
         />
       </div>
-      <div className={`h-2.5 w-2.5 rounded-full border-2 transition-all duration-150 ${
+      <div className={`h-2 w-2 rounded-full border transition-all duration-150 ${
         poseOk ? 'border-emerald-400 bg-emerald-400' : 'border-white/50 bg-transparent'
       }`} />
-      <div className="h-1.5 w-12 overflow-hidden rounded-full bg-white/15">
+      <div className="h-1 w-8 overflow-hidden rounded-full bg-white/15">
         <div
           className={`h-full rounded-full transition-all duration-150 ${color}`}
           style={{ width: `${rightFill * 100}%` }}
@@ -74,35 +74,39 @@ function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statu
   const phase = CAPTURE_PHASES[capturePhase]
 
   return (
-    <div className="absolute inset-x-0 top-4 z-[5] flex justify-center px-4">
-      <div className="flex items-center gap-3 rounded-full border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
-        <div className="flex items-center gap-1">
+    <div className="absolute inset-x-0 bottom-4 z-[5] flex justify-center px-4">
+      <div className="flex items-center gap-4 rounded-full border border-white/20 bg-black/60 px-5 py-2 backdrop-blur">
+        <div className="flex items-center gap-1.5">
           {CAPTURE_PHASES.map((p, i) => (
             <div key={p.id} className="flex items-center">
               <div
-                className={`h-1.5 w-1.5 rounded-full transition-all ${
+                className={`h-2 w-2 rounded-full transition-all ${
                   i < capturePhase
                     ? 'bg-emerald-400'
                     : i === capturePhase
                       ? poseOk
-                        ? 'bg-emerald-400 animate-pulse'
+                        ? 'bg-emerald-400'
                         : 'bg-amber-400'
                       : 'bg-white/30'
                 }`}
               />
               {i < CAPTURE_PHASES.length - 1 && (
-                <div className={`h-px w-3 ${i < capturePhase ? 'bg-emerald-400/60' : 'bg-white/20'}`} />
+                <div className={`w-2 h-px ${i < capturePhase ? 'bg-emerald-400' : 'bg-white/30'}`} />
               )}
             </div>
           ))}
         </div>
         <div className="h-4 w-px bg-white/20" />
-        <div className="flex items-center gap-1.5">
-          <span className="text-base">{phase.icon}</span>
-          <span className={`text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
-            {statusMsg}
-          </span>
-        </div>
+        <PoseArcIndicator
+          yaw={currentYaw}
+          poseOk={poseOk}
+          phaseType={phase.poseType}
+          sideAYw={null}
+        />
+        <div className="h-4 w-px bg-white/20" />
+        <span className={`text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
+          {statusMsg}
+        </span>
       </div>
     </div>
   )
@@ -412,13 +416,13 @@ export default function RegisterView({
             />
 
             {errorMessage && (
-              <div className="absolute inset-x-3 top-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+              <div className="absolute inset-x-3 bottom-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
                 {errorMessage}
               </div>
             )}
 
             {duplicateError && (
-              <div className="absolute inset-x-3 top-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+              <div className="absolute inset-x-3 bottom-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
                 {duplicateError}
               </div>
             )}

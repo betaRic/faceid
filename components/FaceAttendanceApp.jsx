@@ -53,6 +53,12 @@ export default function FaceAttendanceApp({
   const [offices, setOffices] = useState([])
   const [dataStatus, setDataStatus] = useState(getDefaultDataStatus(loadPersons))
   const [errorMessage, setErrorMessage] = useState(null)
+  const [personsLoading, setPersonsLoading] = useState(false)
+
+  const registrationReady = useMemo(() => {
+    if (page !== 'register') return workspaceReady
+    return workspaceReady && !personsLoading
+  }, [page, workspaceReady, personsLoading])
 
   useEffect(() => {
     const unsubscribe = subscribeToPublicOffices(
@@ -71,9 +77,13 @@ export default function FaceAttendanceApp({
       return () => {}
     }
 
+    const requireAuth = loadPersons && !loadPersonsForCheck
+    setPersonsLoading(true)
     const unsubscribe = subscribeToPersons(
       nextPersons => {
+        console.log('[FaceAttendanceApp] Persons loaded:', nextPersons.length, 'requireAuth:', requireAuth)
         setPersons(nextPersons)
+        setPersonsLoading(false)
         setDataStatus(
           firebaseEnabled
             ? 'Firebase online'
@@ -83,13 +93,15 @@ export default function FaceAttendanceApp({
         )
       },
       error => {
+        setPersonsLoading(false)
         setErrorMessage(error.message)
         setDataStatus('Storage unavailable')
       },
+      { requireAuth },
     )
 
     return unsubscribe
-  }, [loadPersons, loadPersonsForCheck])
+  }, [loadPersons, loadPersonsForCheck, requireAuth])
 
   useEffect(() => {
     if (!loadAttendance) {
@@ -180,7 +192,7 @@ export default function FaceAttendanceApp({
     )
   }
 
-  if (!workspaceReady) {
+  if (page === 'register' ? !registrationReady : !workspaceReady) {
     return (
       <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
         <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
@@ -193,6 +205,7 @@ export default function FaceAttendanceApp({
             onContinueWithoutLocation={continueWithoutLocation}
             page={page}
             onRetry={retry}
+            personsLoading={personsLoading}
           />
         </div>
       </AppShell>
@@ -249,6 +262,7 @@ function BiometricWorkspaceGate({
   onRetry,
   canBypassLocation,
   onContinueWithoutLocation,
+  personsLoading,
 }) {
   const title = page === 'register' ? 'Preparing enrollment workspace' : 'Preparing attendance kiosk'
   const detail = errorMessage
@@ -287,6 +301,9 @@ function BiometricWorkspaceGate({
             </div>
             <div className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted">Runtime status</div>
             <div className="mt-2 text-lg font-semibold text-ink">{runtimeStatus}</div>
+            {personsLoading && (
+              <div className="mt-3 text-sm text-amber-600">Loading employee data...</div>
+            )}
             {bootStage === 'location' && locationState?.error ? (
               <div className="mt-3 rounded-[1rem] bg-amber-50 px-4 py-3 text-sm leading-7 text-amber-900">
                 {locationState.error}
