@@ -103,9 +103,9 @@ export async function POST(request) {
     // STEP 1: Global biometric match — identify who the person is first
     const personMatch = await findGlobalMatch(db, allOfficeIds, entry.descriptor)
     if (!personMatch.ok) {
-      await writeFailedScanLog(db, entry, personMatch.decisionCode, personMatch.message)
+      await writeFailedScanLog(db, entry, personMatch.decisionCode, personMatch.message, personMatch.debug || {})
       const failResponse = { ok: false, message: personMatch.message, decisionCode: personMatch.decisionCode }
-      if (process.env.NODE_ENV !== 'production') failResponse.debug = personMatch.debug ?? null
+      failResponse.debug = personMatch.debug ?? null
       return NextResponse.json(failResponse, { status: 403 })
     }
 

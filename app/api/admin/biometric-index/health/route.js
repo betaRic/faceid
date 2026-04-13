@@ -67,6 +67,20 @@ export async function GET(request) {
       cacheStats = { available: false, reason: err.message }
     }
 
+    const byApprovalStatus = { approved: 0, pending: 0, rejected: 0, unknown: 0 }
+    indexSnapshot.docs.forEach(doc => {
+      const data = doc.data()
+      const status = data.approvalStatus || 'unknown'
+      byApprovalStatus[status] = (byApprovalStatus[status] || 0) + 1
+    })
+
+    const byActiveStatus = { true: 0, false: 0, unknown: 0 }
+    indexSnapshot.docs.forEach(doc => {
+      const data = doc.data()
+      const active = data.active
+      byActiveStatus[active === true ? 'true' : active === false ? 'false' : 'unknown']++
+    })
+
     const health = {
       ok: true,
       personsCount,
@@ -78,6 +92,17 @@ export async function GET(request) {
       newestUpdate: newestUpdate ? new Date(newestUpdate).toISOString() : null,
       status: missingFromIndex === 0 ? 'healthy' : missingFromIndex > 10 ? 'critical' : 'warning',
       cache: cacheStats,
+      indexBreakdown: {
+        byApprovalStatus,
+        byActiveStatus,
+      },
+      recommendation: missingFromIndex > 0 
+        ? `Rebuild index - ${missingFromIndex} persons with samples missing from index` 
+        : byApprovalStatus.pending > 0 
+          ? `Approve or rebuild - ${byApprovalStatus.pending} entries still pending approval`
+          : byActiveStatus.false > 0 
+            ? `${byActiveStatus.false} entries are marked inactive`
+            : 'Index healthy',
     }
 
     return NextResponse.json(health)
