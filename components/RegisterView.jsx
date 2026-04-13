@@ -5,8 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PERSON_APPROVAL_PENDING } from '../lib/person-approval'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '../lib/biometrics/oval-capture'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
+import { DUPLICATE_FACE_THRESHOLD } from '../lib/config'
 import { useAudioCue } from '../hooks/useAudioCue'
 import { useEnrollmentCapture, CAPTURE_PHASES, classifyPose } from '../hooks/useEnrollmentCapture'
+import { findClosestPerson } from '../lib/biometrics/descriptor-utils'
 import AppShell from './AppShell'
 
 const STEPS = [
@@ -181,6 +183,7 @@ export default function RegisterView({
   const [lastSavedSummary, setLastSavedSummary] = useState(null)
   const [savingEnrollment, setSavingEnrollment] = useState(false)
   const [toast, setToast] = useState(null)
+  const [duplicateError, setDuplicateError] = useState(null)
 
   const playAudioCue = useAudioCue()
   const nameRef = useRef(null)
@@ -223,6 +226,16 @@ export default function RegisterView({
     if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
 
     startDetect(result => {
+      for (const descriptor of result.descriptors) {
+        const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
+        if (dup) {
+          setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
+          playAudioCue('error')
+          return
+        }
+      }
+
+      setDuplicateError(null)
       setPendingDescriptors(result.descriptors)
       setPreviewUrl(result.previewUrl)
       setCaptureFeedback(result.qualitySummary)
@@ -232,9 +245,10 @@ export default function RegisterView({
     }, modelsReady)
 
     return stopDetect
-  }, [camera.camOn, modelsReady, workspaceReady, step, startDetect, stopDetect, playAudioCue])
+  }, [camera.camOn, modelsReady, workspaceReady, step, startDetect, stopDetect, playAudioCue, persons])
 
   const handleRetake = useCallback(() => {
+    setDuplicateError(null)
     setPreviewUrl(null)
     setPendingDescriptors([])
     setCaptureFeedback(null)
@@ -425,6 +439,12 @@ export default function RegisterView({
             {errorMessage && (
               <div className="absolute inset-x-3 bottom-16 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
                 {errorMessage}
+              </div>
+            )}
+
+            {duplicateError && (
+              <div className="absolute inset-x-3 bottom-16 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+                {duplicateError}
               </div>
             )}
           </motion.section>
