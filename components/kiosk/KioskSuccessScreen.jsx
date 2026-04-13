@@ -1,12 +1,90 @@
+'use client'
+
 import { getGreeting, formatTime } from '@/lib/kiosk-utils'
 import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function MonthlySummary({ employeeId }) {
+  const [summary, setSummary] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!employeeId) {
+      setLoading(false)
+      return
+    }
+
+    async function fetchSummary() {
+      try {
+        const res = await fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`)
+        const data = await res.json()
+        if (data.ok) {
+          setSummary(data)
+        }
+      } catch (e) {
+        console.error('Summary fetch error:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchSummary()
+  }, [employeeId])
+
+  if (loading) {
+    return (
+      <div className="mt-6 grid animate-pulse gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 sm:grid-cols-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-16 rounded-lg bg-black/5" />
+        ))}
+      </div>
+    )
+  }
+
+  if (!summary) return null
+
+  const monthName = MONTH_NAMES[summary.month - 1] || ''
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
+      className="mt-6 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5"
+    >
+      <div className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+        {monthName} {summary.year} Summary
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        <div className="text-center">
+          <div className="font-display text-2xl text-ink">{summary.totalDays}</div>
+          <div className="text-xs text-muted">Days</div>
+        </div>
+        <div className="text-center">
+          <div className="font-display text-2xl text-emerald-600">{summary.checkIns}</div>
+          <div className="text-xs text-muted">Check In</div>
+        </div>
+        <div className="text-center">
+          <div className="font-display text-2xl text-amber-600">{summary.checkOuts}</div>
+          <div className="text-xs text-muted">Check Out</div>
+        </div>
+        <div className="text-center">
+          <div className="font-display text-2xl text-navy">{summary.wfhCount}</div>
+          <div className="text-xs text-muted">WFH</div>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
 
 export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onViewSummary }) {
   const attendanceMode = currentMatch?.attendanceMode || ''
   const isWfh = attendanceMode.toLowerCase() === 'wfh'
   
   return (
-    <div className="absolute inset-0 z-[6] flex items-center justify-center px-4 py-6 sm:px-6">
+    <div className="absolute inset-0 z-[6] flex items-center justify-center overflow-auto px-4 py-6 sm:px-6">
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -60,12 +138,14 @@ export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onV
           </div>
         </div>
 
-        <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+        <MonthlySummary employeeId={currentMatch?.employeeId} />
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <button
             onClick={onViewSummary}
             className="flex-1 rounded-2xl border border-navy/20 bg-navy/5 px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/10"
           >
-            View My Attendance
+            View Full History
           </button>
           <button
             onClick={onBack}

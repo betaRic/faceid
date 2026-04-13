@@ -11,6 +11,9 @@ import {
   KIOSK_FACE_LOSS_GRACE_MS,
   UNKNOWN_DEBOUNCE_MS,
 } from '@/lib/config'
+import { PERFECT_FACE_AREA_RATIO_MIN, PERFECT_FACE_AREA_RATIO_MAX } from '@/lib/biometrics/oval-capture'
+
+const PERFECT_POSITION_HOLD_MS = 600
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { selectPrimaryFace, getSafeDecisionMessage, drawBracketBox } from '@/lib/kiosk-utils'
 import { selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
@@ -39,6 +42,8 @@ export function useKioskLoop({
   const scanRef = useRef(null)
   const busyRef = useRef(false)
   const faceDetectedRef = useRef(false)
+  const perfectPositionEnteredRef = useRef(0)
+  const perfectStatusShownRef = useRef(false)
 
   const drawOverlay = useCallback((detection, sourceWidth, sourceHeight) => {
     const video = camera.videoRef.current
@@ -100,8 +105,8 @@ export function useKioskLoop({
           const faceArea = box.width * box.height
           const ratio = faceArea / frameArea
           let status = 'too-far'
-          if (ratio >= 0.70) status = 'too-close'
-          else if (ratio >= 0.45) status = 'perfect'
+          if (ratio > PERFECT_FACE_AREA_RATIO_MAX) status = 'too-close'
+          else if (ratio >= PERFECT_FACE_AREA_RATIO_MIN && ratio <= PERFECT_FACE_AREA_RATIO_MAX) status = 'perfect'
           else if (ratio >= 0.35) status = 'good'
           else status = 'too-far'
           setFaceDistanceInfo({ faceAreaRatio: ratio, status })
@@ -116,7 +121,7 @@ export function useKioskLoop({
       // If face detected but NOT in oval - show indicator but don't progress yet
       if (!ovalReady) {
         faceDetectedRef.current = false
-        // Keep scanning but don't increment confirmation - show "get closer"
+        perfectPositionEnteredRef.current = 0
         if (!confirmedTimer.current && !faceLossTimerRef.current) {
           faceLossTimerRef.current = window.setTimeout(() => {
             window.clearTimeout(unknownTimer.current)
@@ -145,31 +150,42 @@ export function useKioskLoop({
       window.clearTimeout(unknownTimer.current)
       unknownTimer.current = null
 
-      // Only capture when in perfect position - immediate, no delay
       const faceAreaRatio = ovalReady.faceAreaRatio || 0
-      const isPerfectPosition = faceAreaRatio >= 0.40 && faceAreaRatio <= 0.80
+      const isPerfectPosition = faceAreaRatio >= PERFECT_FACE_AREA_RATIO_MIN && faceAreaRatio <= PERFECT_FACE_AREA_RATIO_MAX
       
-      // If not in perfect position, pause but keep showing indicator
+      // If not in perfect position, reset timer and pause
       if (!isPerfectPosition) {
-        if (confirmRef.current > 0) {
-          confirmRef.current = Math.max(0, confirmRef.current - 1)
-        }
+        perfectPositionEnteredRef.current = 0
         busyRef.current = false
         return
       }
 
-      // Use the oval-ready face for confirmation - immediate when perfect
+      // Use the oval-ready face for confirmation when perfect
       const ovalBox = ovalReady.box
       drawOverlay({ detection: { box: ovalBox } }, canvas.width, canvas.height)
-      
-      // Immediate capture - no delay when at perfect distance
-      confirmRef.current += 1
 
-      if (!confirmedTimer.current) setKioskState('scanning')
+      // Track time in perfect position - require hold for delay
+      if (!perfectPositionEnteredRef.current) {
+        perfectPositionEnteredRef.current = Date.now()
+        setKioskState('scanning')
+        busyRef.current = false
+        return
+      }
+
+      const heldDuration = Date.now() - perfectPositionEnteredRef.current
+      if (heldDuration < PERFECT_POSITION_HOLD_MS) {
+        busyRef.current = false
+        return
+      }
+
+      if (confirmRef.current < CONFIRM_FRAMES) {
+        confirmRef.current += 1
+      }
 
       if (confirmRef.current >= CONFIRM_FRAMES && Date.now() >= attemptCooldownUntilRef.current) {
         const now = Date.now()
         attemptCooldownUntilRef.current = now + KIOSK_ATTEMPT_COOLDOWN_MS
+        perfectPositionEnteredRef.current = 0
         pausedRef.current = true
         setKioskState('verifying')
         camera.clearOverlay()

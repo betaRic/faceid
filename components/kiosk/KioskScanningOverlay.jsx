@@ -1,4 +1,4 @@
-import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
+import { OVAL_CAPTURE_ASPECT_RATIO, PERFECT_FACE_AREA_RATIO_MIN, PERFECT_FACE_AREA_RATIO_MAX } from '@/lib/biometrics/oval-capture'
 
 const OVAL_STYLE = { borderRadius: '50%' }
 
@@ -47,13 +47,12 @@ export default function KioskScanningOverlay({
 
   // Distance bar indicator (like pose arc in registration)
   const faceAreaRatio = faceDistanceInfo?.faceAreaRatio || 0
-  // Map faceAreaRatio to bar position: 0.35 (far) -> 0.45 (good) -> 0.70 (close) -> 0.92 (too close)
   const getBarPosition = () => {
-    if (faceAreaRatio <= 0.35) return 0    // Too far
-    if (faceAreaRatio >= 0.92) return 100  // Too close
-    if (faceAreaRatio >= 0.70) return 80   // Close
-    if (faceAreaRatio >= 0.45) return 50   // Perfect
-    return 20                                // Getting closer
+    if (faceAreaRatio <= 0.35) return 0
+    if (faceAreaRatio > PERFECT_FACE_AREA_RATIO_MAX) return 100
+    if (faceAreaRatio >= PERFECT_FACE_AREA_RATIO_MIN && faceAreaRatio <= PERFECT_FACE_AREA_RATIO_MAX) return 50
+    if (faceAreaRatio >= 0.35) return 20
+    return 0
   }
   const barPosition = getBarPosition()
 
