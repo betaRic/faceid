@@ -454,7 +454,7 @@ export default function RegisterView({
           </motion.section>
         </div>
       ) : (
-        <div className="page-frame flex min-h-[calc(100dvh-8.5rem)] flex-col gap-3 overflow-hidden xl:min-h-[calc(100dvh-10.5rem)]">
+        <div className="page-frame flex min-h-[calc(100dvh-8.25rem)] flex-col gap-3 xl:min-h-[calc(100dvh-10.5rem)]">
           <motion.section
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
@@ -475,7 +475,7 @@ export default function RegisterView({
             </div>
           </motion.section>
 
-          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto">
+          <div className="grid min-h-0 flex-1 gap-4">
             <motion.section
               animate={{ opacity: 1, y: 0 }}
               initial={{ opacity: 0, y: 18 }}

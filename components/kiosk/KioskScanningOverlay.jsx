@@ -42,7 +42,55 @@ export default function KioskScanningOverlay({
       <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
       <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
 
-      <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/35 via-transparent to-black/25" />
+      {/* Oval capture guide - same as registration */}
+      <div className="absolute inset-0 z-[3] flex items-center justify-center">
+        <div className="relative w-full max-w-[540px] aspect-[4/3]">
+          {/* Oval shape with guide lines - matching registration */}
+          <svg 
+            className="absolute inset-0 h-full w-full" 
+            viewBox="0 0 540 405" 
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {/* Background overlay */}
+            <rect x="0" y="0" width="540" height="405" fill="rgba(0,0,0,0.35)" />
+            {/* Cut out the oval */}
+            <ellipse 
+              cx="270" 
+              cy="202.5" 
+              rx="225" 
+              ry="168" 
+              fill="rgba(0,0,0,0)" 
+              stroke="rgba(255,255,255,0.5)" 
+              strokeWidth="3"
+            />
+            {/* Inner guide lines */}
+            <ellipse 
+              cx="270" 
+              cy="202.5" 
+              rx="180" 
+              ry="134" 
+              fill="rgba(0,0,0,0)" 
+              stroke="rgba(255,255,255,0.25)" 
+              strokeWidth="1"
+              strokeDasharray="8 6"
+            />
+            {/* Center crosshair */}
+            <line x1="270" y1="160" x2="270" y2="180" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+            <line x1="270" y1="225" x2="270" y2="245" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+            <line x1="230" y1="202.5" x2="250" y2="202.5" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+            <line x1="290" y1="202.5" x2="310" y2="202.5" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+          </svg>
+          
+          {/* Instruction text overlay */}
+          <div className="absolute bottom-8 left-0 right-0 text-center">
+            <div className="inline-block rounded-full bg-black/60 px-6 py-2 text-sm font-medium text-white backdrop-blur">
+              Position your face in the oval
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Scanning state indicator */}
       {isScanning ? <div className="absolute inset-0 z-[3] border-2 border-navy/80 shadow-[inset_0_0_60px_rgba(12,108,88,0.25)]" /> : null}
       {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
       {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}

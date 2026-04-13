@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { getHumanVerification } from '@/lib/biometrics/human'
 import { PREVIEW_MAX_DIMENSION, VERIFICATION_BURST_FRAMES, VERIFICATION_BURST_INTERVAL_MS } from '@/lib/config'
 import { selectPrimaryFace } from '@/lib/kiosk-utils'
+import { selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
 
 const wait = duration => new Promise(resolve => {
   window.setTimeout(resolve, duration)
@@ -33,7 +34,9 @@ export function useVerificationBurst(camera) {
         landmarks: { positions: face.mesh },
         descriptor: face.embedding,
       }))
-      const primary = selectPrimaryFace(detections, canvas.width, canvas.height)
+      
+      // Only accept faces that are inside the oval (same as registration)
+      const primary = selectOvalReadyFace(detections, canvas.width, canvas.height)
       if (primary?.detection?.landmarks) {
         landmarksBuffer.push(primary.detection.landmarks.positions)
       }

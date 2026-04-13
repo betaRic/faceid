@@ -12,7 +12,8 @@ import {
   UNKNOWN_DEBOUNCE_MS,
 } from '@/lib/config'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
-import { selectPrimaryFace, getSafeDecisionMessage, drawBracketBox } from '@/lib/kiosk-utils'
+import { selectPrimaryFace, getSafeDecisionMessage, drawBracketBox, drawOutsideOvalWarning } from '@/lib/kiosk-utils'
+import { selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
 
 export function useKioskLoop({
   camera,
@@ -38,7 +39,7 @@ export function useKioskLoop({
   const busyRef = useRef(false)
   const faceDetectedRef = useRef(false)
 
-  const drawOverlay = useCallback((detection, sourceWidth, sourceHeight) => {
+  const drawOverlay = useCallback((detection, sourceWidth, sourceHeight, outsideOval = false) => {
     const video = camera.videoRef.current
     const overlay = camera.overlayRef.current
 
@@ -57,7 +58,12 @@ export function useKioskLoop({
     const box = detection?.detection?.box
     if (!box) return
 
-    drawBracketBox(ctx, box, '#22c55e', 'FACE READY', null, scaleX, scaleY)
+    // STRICT oval mode: red warning if face is outside oval
+    if (outsideOval) {
+      drawOutsideOvalWarning(ctx, box, sourceWidth, sourceHeight, scaleX, scaleY)
+    } else {
+      drawBracketBox(ctx, box, '#22c55e', 'FACE READY', null, scaleX, scaleY)
+    }
   }, [camera])
 
   const runScan = useCallback(async (captureVerificationBurst) => {
@@ -103,6 +109,36 @@ export function useKioskLoop({
         return
       }
 
+      // Only proceed if face is inside the oval (same logic as registration)
+      const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
+      if (!ovalReady) {
+        faceDetectedRef.current = false
+        // Face detected but NOT in oval - draw RED warning overlay + alert
+        if (primary?.box) {
+          drawOverlay({ detection: { box: primary.box } }, canvas.width, canvas.height, true)
+          // Show immediate feedback that face needs to be positioned in oval
+          setAlertState({ title: 'Face not in oval', detail: 'Center your face in the oval guide', tone: 'warn' })
+        }
+        // Keep scanning but don't increment confirmation
+        if (!confirmedTimer.current && !faceLossTimerRef.current) {
+          faceLossTimerRef.current = window.setTimeout(() => {
+            window.clearTimeout(unknownTimer.current)
+            unknownTimer.current = null
+            setKioskState('idle')
+            setCurrentMatch(null)
+            confirmRef.current = 0
+            camera.clearOverlay()
+            faceLossTimerRef.current = null
+          }, KIOSK_FACE_LOSS_GRACE_MS)
+        }
+
+        busyRef.current = false
+        return
+      }
+      
+      // Clear any previous positioned-alert when face IS in oval
+      setAlertState(null)
+
       faceDetectedRef.current = true
       if (faceLossTimerRef.current) {
         window.clearTimeout(faceLossTimerRef.current)
@@ -112,7 +148,9 @@ export function useKioskLoop({
       window.clearTimeout(unknownTimer.current)
       unknownTimer.current = null
 
-      drawOverlay({ detection: { box: primary.box } }, canvas.width, canvas.height)
+      // Use the oval-ready face for confirmation
+      const ovalBox = ovalReady.box
+      drawOverlay({ detection: { box: ovalBox } }, canvas.width, canvas.height)
       confirmRef.current += 1
 
       if (!confirmedTimer.current) setKioskState('scanning')

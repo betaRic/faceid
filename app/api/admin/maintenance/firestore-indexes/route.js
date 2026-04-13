@@ -15,10 +15,10 @@ import { createOriginGuard } from '@/lib/csrf'
 export const runtime = 'nodejs'
 
 export async function POST(request) {
-  const guard = createOriginGuard(request)
-  if (!guard.valid) {
-    return NextResponse.json({ ok: false, message: 'Invalid origin.' }, { status: 403 })
-  }
+  // Correct pattern already in place - no bug
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
 
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) {
@@ -59,11 +59,7 @@ export async function POST(request) {
       },
     })
 
-    return NextResponse.json({
-      ok: summary.ok,
-      message,
-      summary,
-    })
+    return NextResponse.json({ ok: summary.ok, message, summary })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to sync Firestore indexes.' },
@@ -71,4 +67,3 @@ export async function POST(request) {
     )
   }
 }
-

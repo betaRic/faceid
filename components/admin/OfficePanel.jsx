@@ -10,7 +10,7 @@ export default function OfficePanel() {
     officesLoaded,
     visibleOffices,
     selectedOfficeId,
-    setSelectedOfficeId,          // ← was missing — caused Edit to silently fail
+    setSelectedOfficeId,
     activeOffice,
     officeDraftWarning,
     locationLoading,
@@ -21,6 +21,7 @@ export default function OfficePanel() {
     handleSaveOffice,
     handleUseMyLocation,
   } = useOffices()
+  const { setActivePanel } = useAdminStore()
 
   if (!officesLoaded) {
     return (
@@ -74,7 +75,7 @@ export default function OfficePanel() {
                   <tr
                     key={office.id}
                     className={`cursor-pointer transition hover:bg-sky-light/40 ${selected ? 'bg-navy/5' : ''}`}
-                    onClick={() => setSelectedOfficeId(office.id)}
+                    onClick={() => { setSelectedOfficeId(office.id); setActivePanel('office') }}
                   >
                     <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
                       {office.code || office.shortName || office.id}
@@ -105,6 +106,7 @@ export default function OfficePanel() {
                         onClick={e => {
                           e.stopPropagation()
                           setSelectedOfficeId(office.id)
+                          setActivePanel('office')
                         }}
                         type="button"
                       >
