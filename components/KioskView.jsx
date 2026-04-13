@@ -6,6 +6,7 @@ import { useAudioCue } from '@/hooks/useAudioCue'
 import { useKioskState } from '@/hooks/useKioskState'
 import { useVerificationBurst } from '@/hooks/useVerificationBurst'
 import { useKioskLoop } from '@/hooks/useKioskLoop'
+import { useKioskMetrics } from '@/hooks/useKioskMetrics'
 import AppShell from './AppShell'
 import KioskClock from './kiosk/KioskClock'
 import { useKioskClock } from '@/hooks/useKioskClock'
@@ -23,6 +24,7 @@ export default function KioskView({
   errorMessage,
 }) {
   const playAudioCue = useAudioCue()
+  useKioskMetrics()
   const previousStateRef = useRef('idle')
 
   const {
@@ -36,8 +38,6 @@ export default function KioskView({
     setFlashKey,
     alertState,
     setAlertState,
-    alertDebug,
-    setAlertDebug,
     resumeKey,
     faceDistanceInfo,
     setFaceDistanceInfo,
@@ -152,7 +152,7 @@ export default function KioskView({
               faceDistanceInfo={faceDistanceInfo}
             />
           )}
-          <KioskAlert alertState={alertState} alertDebug={alertDebug} />
+          <KioskAlert alertState={alertState} />
           {errorMessage ? (
             <div className="absolute inset-x-3 bottom-3 z-[4] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg backdrop-blur sm:inset-x-5 sm:bottom-5">
               {errorMessage}

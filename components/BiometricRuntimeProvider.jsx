@@ -160,7 +160,12 @@ export function BiometricRuntimeProvider({ children }) {
             setRuntimeError('Location required for kiosk. For WFH, continue without GPS.')
             return
           }
-          refreshInterval = window.setInterval(() => resolveLocation().catch(() => {}), LOCATION_REFRESH_INTERVAL_MS)
+          let locationRefreshPending = false
+          refreshInterval = window.setInterval(() => {
+            if (locationRefreshPending) return
+            locationRefreshPending = true
+            resolveLocation().catch(() => {}).finally(() => { locationRefreshPending = false })
+          }, LOCATION_REFRESH_INTERVAL_MS)
         }
 
         setBootStage('camera')

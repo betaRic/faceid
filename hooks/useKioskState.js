@@ -7,7 +7,6 @@ export function useKioskState(camera) {
   const [capturedFrameUrl, setCapturedFrameUrl] = useState(null)
   const [flashKey, setFlashKey] = useState(0)
   const [alertState, setAlertState] = useState(null)
-  const [alertDebug, setAlertDebug] = useState('')
   const [resumeKey, setResumeKey] = useState(0)
   const [faceDistanceInfo, setFaceDistanceInfo] = useState(null) // { faceAreaRatio, status }
 
@@ -54,16 +53,14 @@ export function useKioskState(camera) {
       setCapturedFrameUrl(null)
       setCurrentMatch(null)
       setAlertState(null)
-      setAlertDebug('')
       setKioskState('idle')
       if (camera?.clearOverlay) camera.clearOverlay()
       setResumeKey(k => k + 1)
     }, delay)
   }, [camera])
 
-  const showAlertAndResume = useCallback((message, delay = 2200, debug = '') => {
+  const showAlertAndResume = useCallback((message, delay = 2200) => {
     setAlertState(message)
-    setAlertDebug(debug)
     scheduleResume(delay)
   }, [scheduleResume])
 
@@ -84,8 +81,6 @@ export function useKioskState(camera) {
     setFlashKey,
     alertState,
     setAlertState,
-    alertDebug,
-    setAlertDebug,
     resumeKey,
     setResumeKey,
     faceDistanceInfo,

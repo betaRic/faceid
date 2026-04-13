@@ -141,7 +141,7 @@ export async function POST(request) {
       )
     }
 
-    const { transactionResult, sampleCount } = await enrollPerson(db, body, office, resolvedSession)
+    const { transactionResult, sampleCount, indexSyncWarning } = await enrollPerson(db, body, office, resolvedSession)
 
     await uploadEnrollmentPhotoIfPending(
       db,
@@ -152,15 +152,17 @@ export async function POST(request) {
 
     await writeEnrollmentAuditLog(db, transactionResult, body, office, resolvedSession)
 
+    const message = transactionResult.nextPerson.approvalStatus === 'pending'
+      ? 'Enrollment submitted for admin approval.'
+      : 'Enrollment saved.'
+
     return NextResponse.json({
       ok: true,
       personId: transactionResult.personId,
       approvalStatus: transactionResult.nextPerson.approvalStatus,
       sampleCount,
       savedSampleCount: body.descriptors.length,
-      message: transactionResult.nextPerson.approvalStatus === 'pending'
-        ? 'Enrollment submitted for admin approval.'
-        : 'Enrollment saved.',
+      message: indexSyncWarning ? `${message} Warning: ${indexSyncWarning}` : message,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to save enrollment.'

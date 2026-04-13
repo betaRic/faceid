@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { detectFaceBoxes, detectSingleDescriptor } from '@/lib/biometrics/human'
 import {
   getOvalCaptureRegion,
@@ -463,6 +463,16 @@ export function useEnrollmentCapture(camera) {
     runDetection()
     autoRef.current = window.setInterval(runDetection, REGISTRATION_SCAN_INTERVAL_MS)
   }, [camera, captureAllPhases, stopDetect])
+
+  useEffect(() => {
+    return () => {
+      abortedRef.current = true
+      if (autoRef.current) {
+        window.clearInterval(autoRef.current)
+        autoRef.current = null
+      }
+    }
+  }, [])
 
   const resetCapture = useCallback(() => {
     abortedRef.current = true

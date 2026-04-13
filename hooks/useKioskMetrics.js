@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 const MAX_SAMPLES = 100
 
@@ -61,6 +61,16 @@ export function useKioskMetrics() {
         p50: percentile(networks, 50),
         p95: percentile(networks, 95),
       },
+    }
+  }, [])
+
+  const metricsRef = useRef({ recordScan, recordVerification, recordNetwork, getStats })
+  metricsRef.current = { recordScan, recordVerification, recordNetwork, getStats }
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      window.getKioskMetrics = () => metricsRef.current
+      return () => { delete window.getKioskMetrics }
     }
   }, [])
 

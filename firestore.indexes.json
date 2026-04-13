@@ -435,6 +435,10 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "approvalStatus",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "officeId",
           "order": "ASCENDING"
         },
@@ -450,6 +454,10 @@
       "fields": [
         {
           "fieldPath": "active",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "approvalStatus",
           "order": "ASCENDING"
         },
         {
