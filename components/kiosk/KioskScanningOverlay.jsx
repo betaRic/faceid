@@ -158,8 +158,11 @@ export default function KioskScanningOverlay({
       </div>
 
       {/* Distance indicator - visual bar like registration pose arc */}
-      {faceDistanceInfo && !isVerifying && !isConfirmed && (
-        <div className="absolute inset-x-0 bottom-28 z-[4] flex flex-col items-center gap-2 pointer-events-none sm:bottom-32">
+      {/* Always show when we have distance info, even when face is lost briefly */}
+      {faceDistanceInfo && !isVerifying && (
+        <div className={`absolute inset-x-0 bottom-28 z-[4] flex flex-col items-center gap-2 pointer-events-none sm:bottom-32 transition-opacity duration-300 ${
+          isConfirmed ? 'opacity-0' : 'opacity-100'
+        }`}>
           {/* Distance bar with position indicator */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-medium text-white/50">FAR</span>

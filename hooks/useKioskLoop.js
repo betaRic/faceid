@@ -82,6 +82,7 @@ export function useKioskLoop({
       const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
       
       // Update distance info even for faces NOT in oval - show "Get closer" prompt
+      // Keep showing last known distance to prevent UI flickering
       const largestFace = detections.length > 0 ? detections.reduce((best, curr) => {
         const currBox = curr?.detection?.box || curr?.box
         const bestBox = best?.detection?.box || best?.box
@@ -106,7 +107,10 @@ export function useKioskLoop({
           setFaceDistanceInfo({ faceAreaRatio: ratio, status })
         }
       } else {
-        setFaceDistanceInfo(null)
+        // Only clear if we've lost face completely - keep showing last state briefly
+        if (!faceDetectedRef.current) {
+          setFaceDistanceInfo(null)
+        }
       }
       
       // If face detected but NOT in oval - show indicator but don't progress yet
@@ -133,7 +137,6 @@ export function useKioskLoop({
       // Face IS in oval - proceed exactly like registration would
       faceDetectedRef.current = true
 
-      faceDetectedRef.current = true
       if (faceLossTimerRef.current) {
         window.clearTimeout(faceLossTimerRef.current)
         faceLossTimerRef.current = null
@@ -142,32 +145,24 @@ export function useKioskLoop({
       window.clearTimeout(unknownTimer.current)
       unknownTimer.current = null
 
-      // Add delay before starting confirmation to let user adjust distance
-      // Only start counting after face has been in good range for a moment
+      // Only capture when in perfect position - immediate, no delay
       const faceAreaRatio = ovalReady.faceAreaRatio || 0
-      const isGoodPosition = faceAreaRatio >= 0.40 && faceAreaRatio <= 0.80
+      const isPerfectPosition = faceAreaRatio >= 0.40 && faceAreaRatio <= 0.80
       
-      // If not in good position, reset confirmation and give user time to adjust
-      if (!isGoodPosition) {
+      // If not in perfect position, pause but keep showing indicator
+      if (!isPerfectPosition) {
         if (confirmRef.current > 0) {
-          // Reset but don't show as "face lost" - just pause
           confirmRef.current = Math.max(0, confirmRef.current - 1)
         }
-        // Add delay before next check
         busyRef.current = false
         return
       }
 
-      // Use the oval-ready face for confirmation
+      // Use the oval-ready face for confirmation - immediate when perfect
       const ovalBox = ovalReady.box
       drawOverlay({ detection: { box: ovalBox } }, canvas.width, canvas.height)
       
-      // Add delay before incrementing confirmation counter
-      // This gives user time to reach perfect distance
-      if (!confirmRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
-      
+      // Immediate capture - no delay when at perfect distance
       confirmRef.current += 1
 
       if (!confirmedTimer.current) setKioskState('scanning')

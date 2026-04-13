@@ -16,6 +16,7 @@ export default function OfficePanel() {
     locationLoading,
     locationNotice,
     highlightLocationPin,
+    savePending,
     updateDraft,
     toggleDay,
     handleSaveOffice,
@@ -133,6 +134,7 @@ export default function OfficePanel() {
           locationNotice={locationNotice}
           highlightLocationPin={highlightLocationPin}
           officeDraftWarning={officeDraftWarning}
+          savePending={savePending}
         />
       </section>
     </motion.section>
