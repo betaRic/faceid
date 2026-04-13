@@ -229,14 +229,10 @@ export default function RegisterView({
 
       for (const descriptor of result.descriptors) {
         const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
-        console.log('[DuplicateCheck] descriptor length:', descriptor?.length, 'persons with descriptors:', persons.filter(p => p.descriptors?.length)?.length)
         if (dup) {
-          console.log('[DuplicateCheck] DUPLICATE FOUND:', dup.person.name, 'distance:', dup.distance)
           setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
           playAudioCue('error')
           return
-        } else {
-          console.log('[DuplicateCheck] No duplicate found, best distance was:', dup?.distance)
         }
       }
 
