@@ -21,16 +21,6 @@ export async function GET(request) {
   const db = getAdminDb()
   let query = db.collection('audit_logs').orderBy('createdAt', 'desc')
 
-  if (action) {
-    query = query.where('action', '==', action)
-  }
-  if (decisionCode) {
-    query = query.where('metadata.decisionCode', '==', decisionCode)
-  }
-  if (officeId) {
-    query = query.where('officeId', '==', officeId)
-  }
-
   let snapshot = await query.limit(limit).get()
 
   if (offset && offset.length > 0) {
