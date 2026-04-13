@@ -81,13 +81,22 @@ export function BiometricIndexHealth({ onRebuildRequest }) {
             {' persons indexed'}
           </div>
         </div>
-        {health.missingFromIndex > 0 && (
+        {(health.missingFromIndex > 0 || health.indexBreakdown?.byApprovalStatus?.pending > 0) && (
           <button
             className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50"
             disabled={rebuilding}
             onClick={handleRebuild}
           >
             {rebuilding ? 'Rebuilding...' : 'Rebuild Index'}
+          </button>
+        )}
+        {health.missingFromIndex === 0 && health.indexBreakdown?.byApprovalStatus?.pending === 0 && (
+          <button
+            className="rounded-full border border-navy/20 bg-navy/5 px-4 py-2 text-xs font-semibold text-navy transition hover:bg-navy/10 disabled:opacity-50"
+            disabled={rebuilding}
+            onClick={handleRebuild}
+          >
+            {rebuilding ? 'Rebuilding...' : 'Force Rebuild'}
           </button>
         )}
       </div>
