@@ -12,7 +12,6 @@ import { DashboardPanel } from './admin/DashboardPanel'
 import { EmployeesPanel } from './admin/EmployeesPanel'
 import { SummaryPanel } from './admin/SummaryPanel'
 import { AdminsPanel } from './admin/AdminsPanel'
-import { AuditLogsPanel } from './admin/AuditLogsPanel'
 import OfficePanel from './admin/OfficePanel'
 import EmployeeEditorModal from './admin/EmployeeEditorModal'
 
@@ -21,7 +20,6 @@ const navItems = [
   { id: 'office', label: 'Office' },
   { id: 'employees', label: 'Employees' },
   { id: 'summary', label: 'Summary' },
-  { id: 'audit', label: 'Audit Logs' },
   { id: 'admins', label: 'Admins' },
 ]
 
@@ -129,7 +127,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
           {activePanel === 'office' && <OfficePanel />}
           {activePanel === 'employees' && <EmployeesPanel />}
           {activePanel === 'summary' && <SummaryPanel />}
-          {activePanel === 'audit' && <AuditLogsPanel />}
           {activePanel === 'admins' && <AdminsPanel />}
         </div>
       </div>

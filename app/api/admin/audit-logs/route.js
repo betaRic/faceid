@@ -5,18 +5,20 @@ import { getAdminDb } from '@/lib/firebase-admin'
 import { resolveAdminSession } from '@/lib/admin-auth'
 
 export async function GET(request) {
-  const sessionError = await resolveAdminSession(request)
-  if (sessionError) return sessionError
-
   const { searchParams } = new URL(request.url)
-  const action = searchParams.get('action')
+  const summary = searchParams.get('summary') === 'true'
+  const requireAuth = !summary
+
+  if (requireAuth) {
+    const sessionError = await resolveAdminSession(request)
+    if (sessionError) return sessionError
+  }
   const decisionCode = searchParams.get('decisionCode')
   const officeId = searchParams.get('officeId')
   const dateFrom = searchParams.get('from')
   const dateTo = searchParams.get('to')
   const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500)
   const offset = searchParams.get('offset')
-  const summary = searchParams.get('summary') === 'true'
 
   const db = getAdminDb()
   let query = db.collection('audit_logs').orderBy('createdAt', 'desc')
