@@ -2,13 +2,24 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
-import { resolveAdminSession } from '@/lib/admin-auth'
+import {
+  getAdminSessionCookieName,
+  parseAdminSessionCookieValue,
+  resolveAdminSession,
+} from '@/lib/admin-auth'
 
 export async function GET(request) {
-  const sessionError = await resolveAdminSession(request)
-  if (sessionError) return sessionError
-
   const db = getAdminDb()
+  const session = parseAdminSessionCookieValue(
+    request.cookies.get(getAdminSessionCookieName())?.value,
+  )
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
+  }
+  const resolvedSession = await resolveAdminSession(db, session)
+  if (!resolvedSession) {
+    return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+  }
   const { searchParams } = new URL(request.url)
   const personId = searchParams.get('personId')
 

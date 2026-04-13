@@ -1,0 +1,153 @@
+export const dynamic = 'force-dynamic'
+
+import { NextResponse } from 'next/server'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { normalizeDescriptor, euclideanDistance } from '@/lib/biometrics/descriptor-utils'
+import { buildDescriptorBuckets } from '@/lib/biometric-index'
+import { DISTANCE_THRESHOLD_KIOSK, AMBIGUOUS_MATCH_MARGIN } from '@/lib/config'
+
+/**
+ * POST /api/debug/match-test
+ *
+ * Diagnostic endpoint: send a descriptor and get back distances to ALL index entries.
+ * Shows exactly why matching is failing.
+ *
+ * Body: { descriptor: number[] }
+ *
+ * Also available as GET to show index health without a descriptor.
+ */
+
+export async function GET() {
+  try {
+    const db = getAdminDb()
+    const snapshot = await db.collection('biometric_index')
+      .where('active', '==', true)
+      .where('approvalStatus', '==', 'approved')
+      .get()
+
+    const entries = snapshot.docs.map(doc => {
+      const data = doc.data()
+      const nd = Array.isArray(data.normalizedDescriptor) ? data.normalizedDescriptor : []
+      const magnitude = Math.sqrt(nd.reduce((s, v) => s + Number(v) * Number(v), 0))
+      return {
+        id: doc.id,
+        personId: data.personId,
+        name: data.name,
+        officeId: data.officeId,
+        bucketA: data.bucketA,
+        bucketB: data.bucketB,
+        descriptorLength: nd.length,
+        descriptorMagnitude: magnitude,
+        descriptorSample: nd.slice(0, 5).map(Number),
+        hasValidDescriptor: nd.length === 1024 && magnitude > 0.9 && magnitude < 1.1,
+      }
+    })
+
+    const healthy = entries.filter(e => e.hasValidDescriptor).length
+    const broken = entries.filter(e => !e.hasValidDescriptor).length
+
+    return NextResponse.json({
+      total: entries.length,
+      healthy,
+      broken,
+      threshold: DISTANCE_THRESHOLD_KIOSK,
+      ambiguousMargin: AMBIGUOUS_MATCH_MARGIN,
+      entries,
+    })
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+export async function POST(request) {
+  try {
+    const body = await request.json().catch(() => null)
+    const rawDescriptor = Array.isArray(body?.descriptor) ? body.descriptor.map(Number) : []
+
+    if (rawDescriptor.length !== 1024) {
+      return NextResponse.json(
+        { error: `Descriptor must be 1024 dimensions, got ${rawDescriptor.length}` },
+        { status: 400 },
+      )
+    }
+
+    const queryNormalized = normalizeDescriptor(rawDescriptor)
+    const queryMagnitude = Math.sqrt(rawDescriptor.reduce((s, v) => s + v * v, 0))
+    const { bucketA: queryBucketA, bucketB: queryBucketB } = buildDescriptorBuckets(rawDescriptor)
+
+    const db = getAdminDb()
+    const snapshot = await db.collection('biometric_index')
+      .where('active', '==', true)
+      .where('approvalStatus', '==', 'approved')
+      .get()
+
+    const results = []
+    for (const doc of snapshot.docs) {
+      const data = doc.data()
+      const storedNd = Array.isArray(data.normalizedDescriptor)
+        ? data.normalizedDescriptor.map(Number)
+        : []
+
+      if (storedNd.length !== 1024) {
+        results.push({
+          id: doc.id,
+          personId: data.personId,
+          name: data.name,
+          distance: null,
+          error: `Descriptor length ${storedNd.length}, expected 1024`,
+          bucketMatch: false,
+        })
+        continue
+      }
+
+      const distance = euclideanDistance(storedNd, queryNormalized)
+      const storedMagnitude = Math.sqrt(storedNd.reduce((s, v) => s + v * v, 0))
+
+      results.push({
+        id: doc.id,
+        personId: data.personId,
+        name: data.name,
+        distance: Math.round(distance * 10000) / 10000,
+        withinThreshold: distance <= DISTANCE_THRESHOLD_KIOSK,
+        storedMagnitude: Math.round(storedMagnitude * 10000) / 10000,
+        bucketA: data.bucketA,
+        bucketB: data.bucketB,
+        bucketAMatch: data.bucketA === queryBucketA,
+        bucketBMatch: data.bucketB === queryBucketB,
+      })
+    }
+
+    results.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
+
+    // Group by person (best distance per person)
+    const byPerson = new Map()
+    for (const r of results) {
+      const existing = byPerson.get(r.personId)
+      if (!existing || (r.distance != null && (existing.distance == null || r.distance < existing.distance))) {
+        byPerson.set(r.personId, r)
+      }
+    }
+    const ranked = Array.from(byPerson.values()).sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
+
+    return NextResponse.json({
+      query: {
+        descriptorLength: rawDescriptor.length,
+        rawMagnitude: Math.round(queryMagnitude * 10000) / 10000,
+        normalizedMagnitude: Math.round(Math.sqrt(queryNormalized.reduce((s, v) => s + v * v, 0)) * 10000) / 10000,
+        bucketA: queryBucketA,
+        bucketB: queryBucketB,
+        sample: queryNormalized.slice(0, 5),
+      },
+      config: {
+        threshold: DISTANCE_THRESHOLD_KIOSK,
+        ambiguousMargin: AMBIGUOUS_MATCH_MARGIN,
+      },
+      totalCandidates: snapshot.docs.length,
+      matchesWithinThreshold: ranked.filter(r => r.withinThreshold).length,
+      rankedByPerson: ranked,
+      allSampleDistances: results,
+    })
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}

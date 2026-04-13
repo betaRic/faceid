@@ -23,6 +23,41 @@ import {
 
 async function writeFailedScanLog(db, entry, decisionCode, reason, extra = {}) {
   try {
+    // Capture query descriptor diagnostics (first 10 values + magnitude)
+    const rawDesc = Array.isArray(entry.descriptor) ? entry.descriptor : []
+    const descMag = rawDesc.length > 0
+      ? Math.round(Math.sqrt(rawDesc.reduce((s, v) => s + Number(v) * Number(v), 0)) * 10000) / 10000
+      : null
+
+    // Flatten debug info into safe Firestore-friendly primitives
+    const metadata = {
+      decisionCode,
+      reason,
+      timestamp: entry.timestamp || Date.now(),
+      dateKey: entry.dateKey || '',
+      latitude: entry.latitude ?? null,
+      longitude: entry.longitude ?? null,
+      officeId: extra.officeId || '',
+      // Matching debug (from biometric-index)
+      source: extra.source || '',
+      candidatesFound: typeof extra.candidatesFound === 'number' ? extra.candidatesFound : null,
+      candidateCount: typeof extra.candidateCount === 'number' ? extra.candidateCount : null,
+      bestDistance: typeof extra.bestDistance === 'number' ? Math.round(extra.bestDistance * 10000) / 10000 : null,
+      secondDistance: typeof extra.secondDistance === 'number' ? Math.round(extra.secondDistance * 10000) / 10000 : null,
+      threshold: typeof extra.threshold === 'number' ? extra.threshold : null,
+      ambiguousMargin: typeof extra.ambiguousMargin === 'number' ? extra.ambiguousMargin : null,
+      storedMagnitude: typeof extra.storedMagnitude === 'number' ? Math.round(extra.storedMagnitude * 10000) / 10000 : null,
+      queryMagnitude: typeof extra.queryMagnitude === 'number' ? Math.round(extra.queryMagnitude * 10000) / 10000 : null,
+      officeIdsCount: typeof extra.officeIdsCount === 'number' ? extra.officeIdsCount : null,
+      // Query descriptor diagnostics
+      queryDescriptorLength: rawDesc.length,
+      queryDescriptorMagnitude: descMag,
+      queryDescriptorSample: rawDesc.slice(0, 10).map(v => Math.round(Number(v) * 10000) / 10000),
+      // Stored descriptor sample (from best candidate if available)
+      storedDescriptorSample: Array.isArray(extra.storedDescriptorSample)
+        ? extra.storedDescriptorSample.slice(0, 10).map(v => Math.round(Number(v) * 10000) / 10000)
+        : null,
+    }
     await db.collection('audit_logs').add({
       actorRole: 'kiosk',
       actorScope: 'public',
@@ -30,17 +65,9 @@ async function writeFailedScanLog(db, entry, decisionCode, reason, extra = {}) {
       action: 'attendance_scan_failed',
       targetType: 'attendance',
       targetId: '',
-      officeId: extra.officeId || '',
+      officeId: metadata.officeId,
       summary: `Scan blocked: ${decisionCode} — ${reason}`,
-      metadata: {
-        decisionCode,
-        reason,
-        timestamp: entry.timestamp || Date.now(),
-        dateKey: entry.dateKey || '',
-        latitude: entry.latitude ?? null,
-        longitude: entry.longitude ?? null,
-        ...extra,
-      },
+      metadata,
       createdAt: FieldValue.serverTimestamp(),
     })
   } catch {
