@@ -210,40 +210,35 @@ export default function RegisterView({
     setEmployeeIdError(val !== sanitized ? 'Only letters, numbers, and dashes (-)' : '')
   }
 
+  // ─── FIXED: Removed the early `if (persons.length === 0) return` that
+  // silently killed the entire capture flow on fresh/empty systems.
+  // The duplicate check is now correctly skipped when there's nothing to check,
+  // and the flow always proceeds to review when a valid capture is obtained.
   useEffect(() => {
     if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
 
     startDetect(result => {
-      if (persons.length === 0) return
-
-      const personsWithDescriptors = persons.filter(p => p.descriptors && p.descriptors.length > 0)
-      if (personsWithDescriptors.length === 0) {
-        setPendingDescriptors(result.descriptors)
-        setPreviewUrl(result.previewUrl)
-        setCaptureFeedback(result.qualitySummary)
-        setBurstSummary(result.burstSummary)
-        playAudioCue('notify')
-        setStep('review')
-        return
-      }
-
-      for (const descriptor of result.descriptors) {
-        const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
-        const bestMatch = findClosestPerson(persons, '', descriptor, DISTANCE_THRESHOLD_KIOSK)
-        
-        if (dup) {
-          setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
-          playAudioCue('error')
-          return
-        }
-        
-        if (bestMatch && bestMatch.distance <= 0.50) {
-          setDuplicateError(`Face resembles ${bestMatch.person.name} (${bestMatch.person.employeeId || 'no ID'}). Too similar to existing enrollment.`)
-          playAudioCue('error')
-          return
+      // Only run duplicate check when there are persons with descriptors to compare against.
+      // When the system is empty (first enrollment), skip directly to review.
+      const personsWithDescriptors = persons.filter(p => p.descriptors?.length > 0)
+      if (personsWithDescriptors.length > 0) {
+        for (const descriptor of result.descriptors) {
+          const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
+          if (dup) {
+            setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
+            playAudioCue('notify')
+            return
+          }
+          const close = findClosestPerson(persons, '', descriptor, DISTANCE_THRESHOLD_KIOSK)
+          if (close && close.distance <= 0.50) {
+            setDuplicateError(`Face resembles ${close.person.name} (${close.person.employeeId || 'no ID'}). Too similar to existing enrollment.`)
+            playAudioCue('notify')
+            return
+          }
         }
       }
 
+      // Always proceed here — whether the persons list is empty or not
       setDuplicateError(null)
       setPendingDescriptors(result.descriptors)
       setPreviewUrl(result.previewUrl)
