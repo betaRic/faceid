@@ -3,15 +3,6 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
 
-function normalizeStoredDescriptors(raw) {
-  if (!Array.isArray(raw)) return []
-  return raw.map(d => {
-    if (Array.isArray(d)) return d
-    if (d && typeof d === 'object' && Array.isArray(d.vector)) return d.vector
-    return null
-  }).filter(d => Array.isArray(d) && d.length > 0)
-}
-
 export async function GET() {
   try {
     const db = getAdminDb()
@@ -22,6 +13,8 @@ export async function GET() {
 
     const persons = snapshot.docs.map(doc => {
       const data = doc.data()
+      const rawDescriptors = data.descriptors || []
+      const sampleCount = Array.isArray(rawDescriptors) ? rawDescriptors.length : 0
       return {
         id: doc.id,
         name: data.name,
@@ -29,7 +22,7 @@ export async function GET() {
         nameLower: data.nameLower,
         officeId: data.officeId,
         officeName: data.officeName,
-        descriptors: normalizeStoredDescriptors(data.descriptors),
+        sampleCount,
         active: data.active,
         approvalStatus: data.approvalStatus,
       }

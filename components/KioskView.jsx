@@ -8,9 +8,8 @@ import { useVerificationBurst } from '@/hooks/useVerificationBurst'
 import { useKioskLoop } from '@/hooks/useKioskLoop'
 import { useKioskMetrics } from '@/hooks/useKioskMetrics'
 import AppShell from './AppShell'
-import KioskClock from './kiosk/KioskClock'
 import { useKioskClock } from '@/hooks/useKioskClock'
-import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
+import AttendanceTableView from './kiosk/AttendanceTableView'
 import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
 import { formatAttendanceDateKey } from '@/lib/attendance-time'
@@ -111,11 +110,7 @@ export default function KioskView({
     scheduleResume(250)
   }, [scheduleResume])
 
-  const handleViewSummary = useCallback(() => {
-    if (currentMatch?.employeeId) {
-      window.location.href = `/summary?employeeId=${encodeURIComponent(currentMatch.employeeId)}`
-    }
-  }, [currentMatch])
+  
 
   return (
     <AppShell
@@ -127,14 +122,12 @@ export default function KioskView({
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className={`relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] xl:min-h-[calc(100dvh-10.5rem)] ${showSuccessScreen ? 'bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.22),rgba(255,255,255,0.96))]' : 'bg-black'}`}
+          className={`relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] xl:min-h-[calc(100dvh-10.5rem)] ${showSuccessScreen ? 'bg-white' : 'bg-black'}`}
         >
           {showSuccessScreen ? (
-            <KioskSuccessScreen 
-              currentMatch={currentMatch} 
-              flashKey={flashKey}
+            <AttendanceTableView
+              currentMatch={currentMatch}
               onBack={handleBackToKiosk}
-              onViewSummary={handleViewSummary}
             />
           ) : (
             <KioskScanningOverlay

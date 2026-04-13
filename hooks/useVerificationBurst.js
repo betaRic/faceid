@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { getHumanVerification } from '@/lib/biometrics/human'
 import { PREVIEW_MAX_DIMENSION, VERIFICATION_BURST_FRAMES, VERIFICATION_BURST_INTERVAL_MS } from '@/lib/config'
 import { selectPrimaryFace } from '@/lib/kiosk-utils'
-import { selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
+import { selectOvalReadyFace, buildOvalCaptureCanvas } from '@/lib/biometrics/oval-capture'
 
 const wait = duration => new Promise(resolve => {
   window.setTimeout(resolve, duration)
@@ -15,11 +15,13 @@ export function useVerificationBurst(camera) {
     const landmarksBuffer = []
 
     for (let attempt = 0; attempt < VERIFICATION_BURST_FRAMES; attempt += 1) {
-      const canvas = camera.captureImageData({
+      const rawCanvas = camera.captureImageData({
         maxWidth: PREVIEW_MAX_DIMENSION,
         maxHeight: PREVIEW_MAX_DIMENSION,
         enhanced: true,
       })
+      // Crop to oval BEFORE descriptor extraction — must match enrollment pipeline
+      const canvas = buildOvalCaptureCanvas(rawCanvas)
       const result = await human.detect(canvas)
       const detections = result.face.map(face => ({
         detection: {
@@ -55,11 +57,13 @@ export function useVerificationBurst(camera) {
     // If no captures passed strict oval filter, try with ANY face (more lenient)
     if (captures.length === 0) {
       for (let attempt = 0; attempt < VERIFICATION_BURST_FRAMES; attempt += 1) {
-        const canvas = camera.captureImageData({
+        const rawCanvas = camera.captureImageData({
           maxWidth: PREVIEW_MAX_DIMENSION,
           maxHeight: PREVIEW_MAX_DIMENSION,
           enhanced: true,
         })
+        // Crop to oval even in fallback — descriptor geometry must match enrollment
+        const canvas = buildOvalCaptureCanvas(rawCanvas)
         const result = await human.detect(canvas)
         const detections = result.face.map(face => ({
           detection: {
@@ -74,7 +78,7 @@ export function useVerificationBurst(camera) {
           landmarks: { positions: face.mesh },
           descriptor: face.embedding,
         }))
-        
+
         if (detections.length > 0) {
           // Use the best face regardless of oval position (fallback)
           const best = detections.reduce((best, curr) => 

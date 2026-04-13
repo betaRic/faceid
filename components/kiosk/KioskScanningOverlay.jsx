@@ -1,6 +1,6 @@
 import { OVAL_CAPTURE_ASPECT_RATIO, PERFECT_FACE_AREA_RATIO_MIN, PERFECT_FACE_AREA_RATIO_MAX } from '@/lib/biometrics/oval-capture'
 
-const OVAL_STYLE = { borderRadius: '50%' }
+const OVAL_STYLE = { borderRadius: '44% / 34%' }
 
 export default function KioskScanningOverlay({
   camera,

@@ -104,10 +104,9 @@ export async function POST(request) {
     const personMatch = await findGlobalMatch(db, allOfficeIds, entry.descriptor)
     if (!personMatch.ok) {
       await writeFailedScanLog(db, entry, personMatch.decisionCode, personMatch.message)
-      return NextResponse.json(
-        { ok: false, message: personMatch.message, decisionCode: personMatch.decisionCode, debug: personMatch.debug ?? null },
-        { status: 403 },
-      )
+      const failResponse = { ok: false, message: personMatch.message, decisionCode: personMatch.decisionCode }
+      if (process.env.NODE_ENV !== 'production') failResponse.debug = personMatch.debug ?? null
+      return NextResponse.json(failResponse, { status: 403 })
     }
 
     // STEP 2: Person status checks

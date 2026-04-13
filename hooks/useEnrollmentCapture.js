@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { detectFaceBoxes, detectSingleDescriptor } from '@/lib/biometrics/human'
 import {
-  getOvalCaptureRegion,
-  OVAL_CAPTURE_ASPECT_RATIO,
+  buildOvalCaptureCanvas,
   selectOvalReadyFace,
 } from '@/lib/biometrics/oval-capture'
 import {
@@ -128,16 +127,6 @@ export function getPoseGuidanceMessage(phaseType, yaw, sideAYw) {
 
 function wait(ms) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
-}
-
-function buildOvalCaptureCanvas(sourceCanvas) {
-  const region = getOvalCaptureRegion(sourceCanvas?.width, sourceCanvas?.height, OVAL_CAPTURE_ASPECT_RATIO)
-  const canvas = document.createElement('canvas')
-  canvas.width = region.width
-  canvas.height = region.height
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  ctx.drawImage(sourceCanvas, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
-  return canvas
 }
 
 function rgbToLuminance(r, g, b) {

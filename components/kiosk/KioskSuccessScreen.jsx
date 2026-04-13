@@ -4,6 +4,15 @@ import { getGreeting, formatTime } from '@/lib/kiosk-utils'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 
+const FileTextIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+  </svg>
+)
+
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 function MonthlySummary({ employeeId }) {
@@ -79,7 +88,7 @@ function MonthlySummary({ employeeId }) {
   )
 }
 
-export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onViewSummary }) {
+export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onViewTable }) {
   const attendanceMode = currentMatch?.attendanceMode || ''
   const isWfh = attendanceMode.toLowerCase() === 'wfh'
   
@@ -141,12 +150,15 @@ export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onV
         <MonthlySummary employeeId={currentMatch?.employeeId} />
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <button
-            onClick={onViewSummary}
-            className="flex-1 rounded-2xl border border-navy/20 bg-navy/5 px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/10"
-          >
-            View Full History
-          </button>
+          {onViewTable && (
+            <button
+              onClick={onViewTable}
+              className="flex-1 flex items-center justify-center gap-2 rounded-2xl border border-navy/20 bg-navy/5 px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/10"
+            >
+              <FileTextIcon className="h-4 w-4" />
+              View Attendance Table
+            </button>
+          )}
           <button
             onClick={onBack}
             className="flex-1 rounded-2xl bg-navy px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-navy/90"
