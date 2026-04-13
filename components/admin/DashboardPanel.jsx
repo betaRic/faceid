@@ -78,6 +78,18 @@ function DashboardPanelInner() {
     setPending('firestore-index-sync', false)
   }
 
+  const handleRebuildBiometricIndex = async () => {
+    setPending('biometric-index-rebuild', true)
+    try {
+      const res = await fetch('/api/admin/maintenance/biometric-index', { method: 'POST' })
+      const data = await res.json()
+      useAdminStore.getState().addToast(data.message || 'Biometric index rebuilt', 'success')
+    } catch {
+      useAdminStore.getState().addToast('Biometric index rebuild failed', 'error')
+    }
+    setPending('biometric-index-rebuild', false)
+  }
+
   const employeeMetric = employeesLoaded
     ? String(employeeTotal).padStart(2, '0')
     : String(offices.reduce((t, o) => t + Number(o.employees || 0), 0)).padStart(2, '0')
@@ -166,7 +178,18 @@ function DashboardPanelInner() {
               <ActionButton busy={useAdminStore.getState().isPending('firestore-index-sync')} className="bg-navy text-white hover:bg-navy-dark" onClick={handleApplyIndexes}>
                 {useAdminStore.getState().isPending('firestore-index-sync') ? 'Applying...' : 'Apply indexes'}
               </ActionButton>
-              <BiometricIndexHealth onRebuildRequest={(data) => useAdminStore.getState().addToast(`Rebuilt: ${data.reindexedCount} entries`, 'success')} />
+              {roleScope === 'regional' && (
+                <>
+                  <div className="border-t border-black/5" />
+                  <h4 className="text-sm font-semibold text-ink">Biometric Index</h4>
+                  <BiometricIndexHealth onRebuildRequest={(data) => useAdminStore.getState().addToast(`Rebuilt: ${data.reindexedCount} entries`, 'success')} />
+                </>
+              )}
+              {roleScope !== 'regional' && (
+                <ActionButton busy={useAdminStore.getState().isPending('biometric-index-rebuild')} className="bg-amber-500 text-white hover:bg-amber-600" onClick={handleRebuildBiometricIndex}>
+                  {useAdminStore.getState().isPending('biometric-index-rebuild') ? 'Rebuilding...' : 'Rebuild Biometric Index'}
+                </ActionButton>
+              )}
             </section>
           )}
         </div>
