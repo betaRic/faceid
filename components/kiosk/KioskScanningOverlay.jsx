@@ -25,15 +25,36 @@ export default function KioskScanningOverlay({
     : 'WiFi: not available'
 
   const isScanning = kioskState === 'scanning'
+  const isIdle = kioskState === 'idle'
+  const isVerifying = kioskState === 'verifying'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
-  const videoRef = camera.videoRef.current
-  const hasStream = videoRef?.srcObject != null
+
+  // Determine ring color based on state (matches registration UX)
+  const ringState = isVerifying
+    ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
+    : isConfirmed
+      ? 'ring-2 ring-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+      : isBlocked || isUnknown
+        ? 'ring-2 ring-red-400/80'
+        : 'ring-1 ring-white/18'
+
+  // Status message for user
+  const statusMessage = isVerifying
+    ? 'Verifying...'
+    : isConfirmed
+      ? '✓ Verified'
+      : isBlocked
+        ? 'Multiple faces detected'
+        : isUnknown
+          ? 'Face not recognized'
+          : isScanning
+            ? 'Face detected'
+            : 'Align face in oval'
 
   return (
     <>
-      {/* Video container with OVAL CLIP - same as registration, NOT full-screen */}
+      {/* Video container with OVAL CLIP - exactly like registration */}
       <div className="absolute inset-0 flex items-center justify-center">
-        {/* Oval frame - video only appears inside this clipped area */}
         <div
           className="relative w-[78vw] sm:w-[54vw]"
           style={{
@@ -41,17 +62,13 @@ export default function KioskScanningOverlay({
             maxWidth: 'min(430px, calc(min(72vh, 640px) * 4/3))',
           }}
         >
-          {/* Outer ring with glow */}
+          {/* Outer ring with glow - same styling as registration */}
           <div
-            className={`absolute inset-0 shadow-[0_30px_80px_rgba(0,0,0,0.38)] transition-all duration-200 ${
-              isScanning
-                ? 'ring-2 ring-emerald-400/70 shadow-[0_0_0_1px_rgba(74,222,128,0.15),0_30px_80px_rgba(0,0,0,0.38),0_0_50px_rgba(16,185,129,0.24)]'
-                : 'ring-1 ring-white/18'
-            }`}
+            className={`absolute inset-0 shadow-[0_30px_80px_rgba(0,0,0,0.38)] transition-all duration-300 ${ringState}`}
             style={OVAL_FRAME_STYLE}
           />
           
-          {/* Video (or captured frame) clipped INSIDE oval - exactly like registration */}
+          {/* Video clipped inside oval - same as registration */}
           <div
             className="absolute inset-[2px] overflow-hidden bg-black"
             style={OVAL_FRAME_STYLE}
@@ -72,6 +89,7 @@ export default function KioskScanningOverlay({
               />
             )}
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
+            {/* Subtle vignette - same as registration */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
           </div>
         </div>
@@ -79,10 +97,9 @@ export default function KioskScanningOverlay({
 
       <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
 
-      {/* Scanning state indicator */}
-      {isScanning ? <div className="absolute inset-0 z-[3] border-2 border-navy/80 shadow-[inset_0_0_60px_rgba(12,108,88,0.25)]" /> : null}
-      {isConfirmed ? <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/20 animate-pulse" /> : null}
-      {isBlocked || isUnknown ? <div className="absolute inset-0 z-[3] bg-red-500/10" /> : null}
+      {/* State flash overlay - subtle pulse effect */}
+      {isConfirmed && <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/15 animate-pulse" />}
+      {(isBlocked || isUnknown) && <div className="absolute inset-0 z-[3] bg-red-500/10" />}
 
       {/* Clock and date - top right */}
       <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:px-5 sm:py-3">
@@ -95,6 +112,21 @@ export default function KioskScanningOverlay({
         <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs">{locationBadgeLabel}</div>
         <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
         <div className="mt-1 text-[9px] text-slate-100/70 sm:text-xs">{wifiStatus}</div>
+      </div>
+
+      {/* Status message - center below oval */}
+      <div className="absolute left-0 right-0 bottom-24 z-[4] flex justify-center pointer-events-none">
+        <div className={`rounded-full px-5 py-2 text-sm font-semibold backdrop-blur shadow-lg ${
+          isVerifying
+            ? 'bg-blue-500/80 text-white'
+            : isConfirmed
+              ? 'bg-emerald-500/80 text-white'
+              : isBlocked || isUnknown
+                ? 'bg-red-500/80 text-white'
+                : 'bg-black/50 text-white/80'
+        }`}>
+          {statusMessage}
+        </div>
       </div>
 
       {/* Today's attendance count - bottom left */}
