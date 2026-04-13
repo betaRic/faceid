@@ -77,11 +77,10 @@ export default function FaceAttendanceApp({
       return () => {}
     }
 
-    const requireAuth = loadPersons && !loadPersonsForCheck
     setPersonsLoading(true)
     const unsubscribe = subscribeToPersons(
       nextPersons => {
-        console.log('[FaceAttendanceApp] Persons loaded:', nextPersons.length, 'requireAuth:', requireAuth)
+        console.log('[FaceAttendanceApp] Persons loaded:', nextPersons.length)
         setPersons(nextPersons)
         setPersonsLoading(false)
         setDataStatus(
@@ -97,11 +96,11 @@ export default function FaceAttendanceApp({
         setErrorMessage(error.message)
         setDataStatus('Storage unavailable')
       },
-      { requireAuth },
+      { requireAuth: loadPersons && !loadPersonsForCheck },
     )
 
     return unsubscribe
-  }, [loadPersons, loadPersonsForCheck, requireAuth])
+  }, [loadPersons, loadPersonsForCheck])
 
   useEffect(() => {
     if (!loadAttendance) {
