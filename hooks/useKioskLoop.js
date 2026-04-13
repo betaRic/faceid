@@ -26,6 +26,7 @@ export function useKioskLoop({
   setCapturedFrameUrl,
   setFlashKey,
   setAlertState,
+  setFaceDistanceInfo,
   confirmRef,
   confirmedTimer,
   unknownTimer,
@@ -47,19 +48,12 @@ export function useKioskLoop({
 
     const width = video.videoWidth || 640
     const height = video.videoHeight || 480
-    const scaleX = sourceWidth ? width / sourceWidth : 1
-    const scaleY = sourceHeight ? height / sourceHeight : 1
     overlay.width = width
     overlay.height = height
 
+    // Clear overlay - no bounding box needed anymore
     const ctx = overlay.getContext('2d')
     ctx.clearRect(0, 0, width, height)
-
-    const box = detection?.detection?.box
-    if (!box) return
-
-    // Simple bracket - face is ready (same visual as registration)
-    drawBracketBox(ctx, box, '#22c55e', 'FACE READY', null, scaleX, scaleY)
   }, [camera])
 
   const runScan = useCallback(async (captureVerificationBurst) => {
@@ -86,6 +80,18 @@ export function useKioskLoop({
       
       // Use oval filtering - same as registration
       const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
+      
+      // Update distance info for UI
+      if (ovalReady?.faceAreaRatio) {
+        const ratio = ovalReady.faceAreaRatio
+        let status = 'too-far'
+        if (ratio >= 0.70) status = 'too-close'
+        else if (ratio >= 0.45) status = 'perfect'
+        else if (ratio >= 0.35) status = 'good'
+        setFaceDistanceInfo({ faceAreaRatio: ratio, status })
+      } else {
+        setFaceDistanceInfo(null)
+      }
       
       // If face detected but NOT in oval - just don't progress (same as registration)
       if (!ovalReady) {

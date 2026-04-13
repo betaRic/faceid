@@ -2,29 +2,6 @@ import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 
 const OVAL_STYLE = { borderRadius: '50%' }
 
-// Subtle guide shown when idle — face outline, eye wells, nose
-function FaceGuide({ show }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={`absolute inset-0 h-full w-full pointer-events-none transition-opacity duration-500 ${show ? 'opacity-100' : 'opacity-0'}`}
-      viewBox="0 0 68 100"
-    >
-      {/* Face silhouette */}
-      <ellipse cx="34" cy="50" rx="22" ry="28"
-        fill="none" stroke="white" strokeOpacity="0.22" strokeWidth="1.2" strokeDasharray="4 3" />
-      {/* Eyes */}
-      <ellipse cx="24" cy="38" rx="7" ry="4"
-        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
-      <ellipse cx="44" cy="38" rx="7" ry="4"
-        fill="none" stroke="white" strokeOpacity="0.16" strokeWidth="0.9" />
-      {/* Nose bridge */}
-      <circle cx="34" cy="55" r="2.5"
-        fill="none" stroke="white" strokeOpacity="0.14" strokeWidth="0.9" />
-    </svg>
-  )
-}
-
 export default function KioskScanningOverlay({
   camera,
   kioskState,
@@ -38,6 +15,7 @@ export default function KioskScanningOverlay({
   locationState,
   todaysCount,
   errorMessage,
+  faceDistanceInfo,
 }) {
   const locationBadgeLabel = locationState?.ready
     ? 'Location ready'
@@ -53,6 +31,19 @@ export default function KioskScanningOverlay({
   const isIdle = kioskState === 'idle'
   const isVerifying = kioskState === 'verifying'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
+
+  // Distance indicator based on faceAreaRatio
+  const distanceStatus = faceDistanceInfo?.status || null
+  const distanceLabel = distanceStatus === 'too-close' ? 'Move back' 
+    : distanceStatus === 'perfect' ? 'Perfect distance'
+    : distanceStatus === 'good' ? 'Getting closer'
+    : distanceStatus === 'too-far' ? 'Get closer'
+    : null
+    
+  const distanceColor = distanceStatus === 'too-close' ? 'bg-amber-500/80'
+    : distanceStatus === 'perfect' ? 'bg-emerald-500/80'
+    : distanceStatus === 'good' ? 'bg-blue-500/80'
+    : 'bg-white/30'
 
   const ringState = isVerifying
     ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
@@ -115,8 +106,6 @@ export default function KioskScanningOverlay({
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
             {/* Vignette */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
-            {/* Face position guide — visible when idle/waiting */}
-            <FaceGuide show={isIdle && camera.camOn && !hasCapturedFrame} />
           </div>
         </div>
       </div>
@@ -154,6 +143,15 @@ export default function KioskScanningOverlay({
           {statusMessage}
         </div>
       </div>
+
+      {/* Distance indicator - shows when face is detected but not perfect */}
+      {distanceLabel && !isVerifying && !isConfirmed && (
+        <div className="absolute inset-x-0 bottom-28 z-[4] flex justify-center pointer-events-none sm:bottom-32">
+          <div className={`rounded-full px-4 py-1.5 text-xs font-semibold backdrop-blur shadow-lg ${distanceColor}`}>
+            {distanceLabel}
+          </div>
+        </div>
+      )}
 
       {/* Today's attendance count — bottom left */}
       {todaysCount != null && (

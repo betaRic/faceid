@@ -150,10 +150,10 @@ export async function POST(request) {
     // Check if person's office is in WFH list (they can work from home today)
     const isWfhDay = wfhOfficeIds.includes(person.officeId)
     
-    // Check if person is at their office location (onsite)
-    const isOnsite = onsiteOfficeIds.includes(person.officeId)
+    // Check if person is at ANY DILG office location (onsite)
+    const isAtAnyDILGOffice = onsiteOfficeIds.length > 0
     
-    // Determine attendance mode
+    // Determine attendance mode - more flexible for government employees
     let attendanceMode = ''
     let geofenceStatus = ''
     let decisionCode = ''
@@ -184,11 +184,16 @@ export async function POST(request) {
         geofenceStatus = hasCoordinates ? 'WFH — GPS location recorded' : 'WFH — no GPS confirmation'
         decisionCode = 'accepted_wfh'
       }
-    } else if (isOnsite) {
-      // On-site check-in requires GPS
+    } else if (isAtAnyDILGOffice) {
+      // At ANY DILG office - allow check-in (not just their assigned office)
+      // Government employees can check in at any DILG office
       if (!hasCoordinates) {
         return NextResponse.json({ ok: false, message: 'GPS coordinates are required for on-site attendance.', decisionCode: 'blocked_missing_gps' }, { status: 400 })
       }
+      
+      // Find which office they're at for reporting
+      const officeAtLocation = await getOfficeRecord(db, onsiteOfficeIds[0])
+      const atAssignedOffice = onsiteOfficeIds.includes(person.officeId)
       
       const distanceMeters = calculateDistanceMeters({ latitude: entry.latitude, longitude: entry.longitude }, office.gps)
       if (distanceMeters > office.gps.radiusMeters) {
@@ -205,18 +210,28 @@ export async function POST(request) {
         }
       }
       
-      attendanceMode = 'On-site'
-      geofenceStatus = 'Inside office radius'
-      decisionCode = 'accepted_onsite'
+      // Allow check-in at any DILG office
+      if (atAssignedOffice) {
+        attendanceMode = 'On-site'
+        geofenceStatus = 'Inside office radius'
+        decisionCode = 'accepted_onsite'
+      } else {
+        attendanceMode = 'On-site'
+        geofenceStatus = `Checked in at ${officeAtLocation?.name || 'DILG office'} (not assigned office)`
+        decisionCode = 'accepted_onsite_other_office'
+      }
     } else {
-      // Not in WFH list AND not at office - check if they have GPS but wrong location
-      if (hasCoordinates && !isOnsite && !isWfhDay) {
-        await writeFailedScanLog(db, entry, 'blocked_geofence', 'Not at office and not a WFH day', { employeeId: person.employeeId, officeId: person.officeId })
-        return NextResponse.json({ ok: false, message: 'You are not at your office and today is not a WFH day. Please check in at the office.', decisionCode: 'blocked_wrong_context' }, { status: 403 })
+      // Not at any DILG office and not a WFH day - check if they have GPS
+      if (hasCoordinates) {
+        await writeFailedScanLog(db, entry, 'blocked_geofence', 'Not at any DILG office and not a WFH day', { employeeId: person.employeeId, officeId: person.officeId })
+        return NextResponse.json({ ok: false, message: 'You are not at a DILG office. If today is a WFH day, please ensure WFH is enabled for your office.', decisionCode: 'blocked_wrong_context' }, { status: 403 })
       }
       
-      // No location data at all
-      return NextResponse.json({ ok: false, message: 'Location required. Please enable GPS or ensure you are on a WFH day.', decisionCode: 'blocked_missing_gps' }, { status: 400 })
+      // No location data at all - this is more flexible
+      // Allow with warning if they're checking in from unknown location
+      attendanceMode = 'On-site'
+      geofenceStatus = 'Location not recorded'
+      decisionCode = 'accepted_no_location'
     }
 
     // STEP 7: Write attendance

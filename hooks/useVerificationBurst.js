@@ -35,7 +35,7 @@ export function useVerificationBurst(camera) {
         descriptor: face.embedding,
       }))
       
-      // Only accept faces that are inside the oval (same as registration)
+      // Use more lenient oval selection for verification burst (same thresholds as kiosk idle)
       const primary = selectOvalReadyFace(detections, canvas.width, canvas.height)
       if (primary?.detection?.landmarks) {
         landmarksBuffer.push(primary.detection.landmarks.positions)
@@ -50,6 +50,55 @@ export function useVerificationBurst(camera) {
       }
 
       if (attempt < VERIFICATION_BURST_FRAMES - 1) await wait(VERIFICATION_BURST_INTERVAL_MS)
+    }
+
+    // If no captures passed strict oval filter, try with ANY face (more lenient)
+    if (captures.length === 0) {
+      for (let attempt = 0; attempt < VERIFICATION_BURST_FRAMES; attempt += 1) {
+        const canvas = camera.captureImageData({
+          maxWidth: PREVIEW_MAX_DIMENSION,
+          maxHeight: PREVIEW_MAX_DIMENSION,
+          enhanced: true,
+        })
+        const result = await human.detect(canvas)
+        const detections = result.face.map(face => ({
+          detection: {
+            box: {
+              x: face.box[0],
+              y: face.box[1],
+              width: face.box[2],
+              height: face.box[3],
+            },
+            score: face.score,
+          },
+          landmarks: { positions: face.mesh },
+          descriptor: face.embedding,
+        }))
+        
+        if (detections.length > 0) {
+          // Use the best face regardless of oval position (fallback)
+          const best = detections.reduce((best, curr) => 
+            (curr.detection?.score || 0) > (best.detection?.score || 0) ? curr : best
+          , detections[0])
+          
+          if (best.landmarks?.positions) {
+            landmarksBuffer.push(best.landmarks.positions)
+          }
+          
+          const frameArea = Math.max(1, canvas.width * canvas.height)
+          const boxArea = (best.detection?.box?.width || 0) * (best.detection?.box?.height || 0)
+          const score = detections.length + (boxArea / frameArea)
+          
+          captures.push({ 
+            canvas, 
+            detections, 
+            primary: { detection: best, box: best.detection?.box }, 
+            score 
+          })
+        }
+        
+        if (attempt < VERIFICATION_BURST_FRAMES - 1) await wait(VERIFICATION_BURST_INTERVAL_MS)
+      }
     }
 
     if (captures.length === 0) return null

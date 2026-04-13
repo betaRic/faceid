@@ -39,6 +39,8 @@ export default function KioskView({
     alertDebug,
     setAlertDebug,
     resumeKey,
+    faceDistanceInfo,
+    setFaceDistanceInfo,
     confirmRef,
     confirmedTimer,
     unknownTimer,
@@ -64,6 +66,7 @@ export default function KioskView({
     setCapturedFrameUrl,
     setFlashKey,
     setAlertState,
+    setFaceDistanceInfo,
     confirmRef,
     confirmedTimer,
     unknownTimer,
@@ -146,6 +149,7 @@ export default function KioskView({
               dateStr={dateStr}
               locationState={locationState}
               errorMessage={errorMessage}
+              faceDistanceInfo={faceDistanceInfo}
             />
           )}
           <KioskAlert alertState={alertState} alertDebug={alertDebug} />

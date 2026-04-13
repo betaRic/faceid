@@ -9,6 +9,7 @@ export function useKioskState(camera) {
   const [alertState, setAlertState] = useState(null)
   const [alertDebug, setAlertDebug] = useState('')
   const [resumeKey, setResumeKey] = useState(0)
+  const [faceDistanceInfo, setFaceDistanceInfo] = useState(null) // { faceAreaRatio, status }
 
   const confirmRef = useRef(0)
   const confirmedTimer = useRef(null)
@@ -87,6 +88,8 @@ export function useKioskState(camera) {
     setAlertDebug,
     resumeKey,
     setResumeKey,
+    faceDistanceInfo,
+    setFaceDistanceInfo,
     confirmRef,
     confirmedTimer,
     unknownTimer,
