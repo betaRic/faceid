@@ -12,10 +12,12 @@ import {
   UNKNOWN_DEBOUNCE_MS,
 } from '@/lib/config'
 
-const PERFECT_POSITION_HOLD_MS = 600
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { selectPrimaryFace, getSafeDecisionMessage, drawBracketBox } from '@/lib/kiosk-utils'
-import { selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
+// buildOvalCaptureCanvas is now used here for the same reason it's used in registration:
+// detection geometry must match so that selectOvalReadyFace sees face coordinates
+// relative to the same portrait-cropped oval frame as the enrollment pipeline.
+import { buildOvalCaptureCanvas, selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
 
 export function useKioskLoop({
   camera,
@@ -41,8 +43,6 @@ export function useKioskLoop({
   const scanRef = useRef(null)
   const busyRef = useRef(false)
   const faceDetectedRef = useRef(false)
-  const perfectPositionEnteredRef = useRef(0)
-  const perfectStatusShownRef = useRef(false)
 
   const drawOverlay = useCallback((detection, sourceWidth, sourceHeight) => {
     const video = camera.videoRef.current
@@ -55,7 +55,7 @@ export function useKioskLoop({
     overlay.width = width
     overlay.height = height
 
-    // Clear overlay - no bounding box needed anymore
+    // Clear overlay — no bounding box drawn in kiosk to avoid distraction
     const ctx = overlay.getContext('2d')
     ctx.clearRect(0, 0, width, height)
   }, [camera])
@@ -67,26 +67,36 @@ export function useKioskLoop({
 
     try {
       const scanStart = performance.now()
-      const canvas = camera.captureImageData({
+
+      // ── STEP 1: capture raw frame ─────────────────────────────────────────
+      const rawCanvas = camera.captureImageData({
         maxWidth: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
         maxHeight: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
       })
-      if (!canvas) {
+      if (!rawCanvas) {
         busyRef.current = false
         return
       }
+
+      // ── STEP 2: crop to oval BEFORE detection ──────────────────────────────
+      // This is the critical fix: registration crops to oval before detectFaceBoxes,
+      // so kiosk must do the same. Without this, selectOvalReadyFace evaluates face
+      // coordinates against full-frame dimensions (e.g. 480×270) instead of the
+      // portrait oval crop (e.g. ~183×270), making the area-ratio threshold ~2.5×
+      // harder to pass at the same physical distance.
+      const canvas = buildOvalCaptureCanvas(rawCanvas)
       const detections = await detectFaceBoxes(canvas)
       const scanDuration = performance.now() - scanStart
-      
+
       if (typeof window !== 'undefined' && window.getKioskMetrics) {
         window.getKioskMetrics().recordScan(scanDuration)
       }
-      
-      // Use oval filtering - same as registration
+
+      // ── STEP 3: face-in-oval gate (identical geometry to registration) ─────
       const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
-      
-      // Update distance info even for faces NOT in oval - show "Get closer" prompt
-      // Keep showing last known distance to prevent UI flickering
+
+      // ── STEP 4: distance feedback (visual only — does NOT gate verification) ─
+      // Ratios are now oval-relative, matching what the user sees in the UI oval.
       const largestFace = detections.length > 0 ? detections.reduce((best, curr) => {
         const currBox = curr?.detection?.box || curr?.box
         const bestBox = best?.detection?.box || best?.box
@@ -103,24 +113,23 @@ export function useKioskLoop({
           const frameArea = canvas.width * canvas.height
           const faceArea = box.width * box.height
           const ratio = faceArea / frameArea
+          // Thresholds tuned for oval canvas (portrait, ~0.68 aspect ratio)
           let status = 'too-far'
-          if (ratio > 0.88) status = 'too-close'
-          else if (ratio >= 0.22 && ratio <= 0.78) status = 'perfect'
-          else if (ratio >= 0.12) status = 'good'
+          if (ratio > 0.80) status = 'too-close'
+          else if (ratio >= 0.06) status = 'perfect'
+          else if (ratio >= 0.03) status = 'good'
           else status = 'too-far'
           setFaceDistanceInfo({ faceAreaRatio: ratio, status })
         }
       } else {
-        // Only clear if we've lost face completely - keep showing last state briefly
         if (!faceDetectedRef.current) {
           setFaceDistanceInfo(null)
         }
       }
-      
-      // If face detected but NOT in oval - show indicator but don't progress yet
+
+      // ── No face in oval → reset state, start face-loss grace timer ─────────
       if (!ovalReady) {
         faceDetectedRef.current = false
-        perfectPositionEnteredRef.current = 0
         if (!confirmedTimer.current && !faceLossTimerRef.current) {
           faceLossTimerRef.current = window.setTimeout(() => {
             window.clearTimeout(unknownTimer.current)
@@ -132,14 +141,12 @@ export function useKioskLoop({
             faceLossTimerRef.current = null
           }, KIOSK_FACE_LOSS_GRACE_MS)
         }
-        // Clear any previous overlay when face is lost
         camera.clearOverlay()
         busyRef.current = false
         return
       }
 
-      // Face IS in oval - proceed with verification
-      // Note: Perfect position requirement REMOVED to work at distance
+      // ── Face IS in oval ───────────────────────────────────────────────────
       faceDetectedRef.current = true
 
       if (faceLossTimerRef.current) {
@@ -150,34 +157,25 @@ export function useKioskLoop({
       window.clearTimeout(unknownTimer.current)
       unknownTimer.current = null
 
-      const faceAreaRatio = ovalReady.faceAreaRatio || 0
-
-      // Use the oval-ready face for confirmation (any valid position works now)
       const ovalBox = ovalReady.box
       drawOverlay({ detection: { box: ovalBox } }, canvas.width, canvas.height)
 
-      // Track time in position - require hold for delay
-      if (!perfectPositionEnteredRef.current) {
-        perfectPositionEnteredRef.current = Date.now()
-        setKioskState('scanning')
-        busyRef.current = false
-        return
-      }
-
-      const heldDuration = Date.now() - perfectPositionEnteredRef.current
-      if (heldDuration < PERFECT_POSITION_HOLD_MS) {
-        busyRef.current = false
-        return
-      }
+      // ── Update scanning state ─────────────────────────────────────────────
+      // The previous PERFECT_POSITION_HOLD_MS=600 block was removed:
+      //   • It required a 600 ms hold *before* confirmRef even started counting.
+      //   • Combined with CONFIRM_FRAMES=3, users had to hold ~900ms+ before
+      //     verification was ever triggered.
+      //   • CONFIRM_FRAMES already provides a natural multi-frame debounce.
+      setKioskState('scanning')
 
       if (confirmRef.current < CONFIRM_FRAMES) {
         confirmRef.current += 1
       }
 
+      // ── Trigger verification once enough frames confirmed ─────────────────
       if (confirmRef.current >= CONFIRM_FRAMES && Date.now() >= attemptCooldownUntilRef.current) {
         const now = Date.now()
         attemptCooldownUntilRef.current = now + KIOSK_ATTEMPT_COOLDOWN_MS
-        perfectPositionEnteredRef.current = 0
         pausedRef.current = true
         setKioskState('verifying')
         camera.clearOverlay()
@@ -186,7 +184,7 @@ export function useKioskLoop({
         const burstResult = await captureVerificationBurst()
         const verifyDuration = performance.now() - verifyStart
         const networkStart = performance.now()
-        
+
         if (!burstResult) {
           if (typeof window !== 'undefined' && window.getKioskMetrics) {
             window.getKioskMetrics().recordVerification(verifyDuration, false)
@@ -211,7 +209,6 @@ export function useKioskLoop({
         }
 
         if (allCaptures.length > 1) {
-          // Check if ANY frame actually had multiple faces, not just multiple frames captured
           const multiFaceFrames = allCaptures.filter(c => c.detections && c.detections.length > 1)
           if (multiFaceFrames.length > 0) {
             setKioskState('blocked')
@@ -259,12 +256,12 @@ export function useKioskLoop({
             descriptor,
           })
           const networkDuration = performance.now() - networkStart
-          
+
           if (typeof window !== 'undefined' && window.getKioskMetrics) {
             window.getKioskMetrics().recordVerification(verifyDuration + networkDuration, result.entry !== undefined)
             window.getKioskMetrics().recordNetwork(networkDuration, result.entry !== undefined)
           }
-          
+
           if (result.entry) {
             setFlashKey(value => value + 1)
             const actionLabel = result.entry.action === 'checkout' ? 'Checked out' : 'Checked in'

@@ -8,7 +8,7 @@ export function useKioskState(camera) {
   const [flashKey, setFlashKey] = useState(0)
   const [alertState, setAlertState] = useState(null)
   const [resumeKey, setResumeKey] = useState(0)
-  const [faceDistanceInfo, setFaceDistanceInfo] = useState(null) // { faceAreaRatio, status }
+  const [faceDistanceInfo, setFaceDistanceInfo] = useState(null)
 
   const confirmRef = useRef(0)
   const confirmedTimer = useRef(null)
