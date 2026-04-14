@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
-import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
 import { toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
@@ -16,18 +15,8 @@ export async function GET(request) {
     return NextResponse.json({ ok: false, message: 'Date is required.' }, { status: 400 })
   }
 
-  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required to load daily attendance records.' }, { status: 401 })
-  }
-
   try {
     const db = getAdminDb()
-    const resolvedSession = await resolveAdminSession(db, session)
-    if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
-    }
-
     const offices = await listOfficeRecords(db)
     const legacyDateLabel = toLegacyAttendanceDate(date)
 
@@ -54,7 +43,6 @@ export async function GET(request) {
         dateKey: entry?.dateKey || date,
         dateLabel: entry?.dateLabel || entry?.date || legacyDateLabel,
       }))
-      .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
       .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
       .sort((left, right) => Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0))
 
@@ -78,4 +66,3 @@ export async function GET(request) {
     )
   }
 }
-

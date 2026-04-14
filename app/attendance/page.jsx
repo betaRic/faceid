@@ -47,7 +47,7 @@ export default function EmployeeSummaryPage() {
     if (officeFilter !== 'all') params.set('officeId', officeFilter)
 
     try {
-      const res = await fetch(`/api/attendance/daily?${params.toString()}`, { signal: abortRef.current.signal })
+      const res = await fetch(`/api/attendance/public?${params.toString()}`, { signal: abortRef.current.signal })
       const data = await res.json()
       if (data.ok) {
         setRows(data.records || [])
