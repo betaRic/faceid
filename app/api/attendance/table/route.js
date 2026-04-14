@@ -107,11 +107,17 @@ function computeUndertime(segments) {
   
   let undertime = 0
   if (segments.amOut) {
-    const amOutMin = new Date(segments.amOut.timestamp).getHours() * 60 + new Date(segments.amOut.timestamp).getMinutes()
+    const ts = segments.amOut.timestamp
+    const hour = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }))
+    const minute = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: '2-digit' }))
+    const amOutMin = hour * 60 + minute
     undertime += Math.max(0, 12 * 60 - amOutMin)
   }
   if (segments.pmOut) {
-    const pmOutMin = new Date(segments.pmOut.timestamp).getHours() * 60 + new Date(segments.pmOut.timestamp).getMinutes()
+    const ts = segments.pmOut.timestamp
+    const hour = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }))
+    const minute = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: '2-digit' }))
+    const pmOutMin = hour * 60 + minute
     undertime += Math.max(0, DEFAULT_OUT - pmOutMin)
   }
   
@@ -121,6 +127,7 @@ function computeUndertime(segments) {
 function formatTime(log) {
   if (!log) return '--'
   return new Date(log.timestamp).toLocaleTimeString('en-PH', {
+    timeZone: 'Asia/Manila',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,

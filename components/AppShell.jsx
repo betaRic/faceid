@@ -9,6 +9,7 @@ import BrandMark from './BrandMark'
 const defaultNavItems = [
   { href: '/', label: 'Home' },
   { href: '/kiosk', label: 'Kiosk' },
+  { href: '/attendance', label: 'Attendance' },
   { href: '/registration', label: 'Register' },
   { href: '/admin', label: 'Admin' },
 ]

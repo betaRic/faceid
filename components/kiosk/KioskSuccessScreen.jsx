@@ -91,6 +91,12 @@ function MonthlySummary({ employeeId }) {
 export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onViewTable }) {
   const attendanceMode = currentMatch?.attendanceMode || ''
   const isWfh = attendanceMode.toLowerCase() === 'wfh'
+
+  useEffect(() => {
+    if (currentMatch?.employeeId) {
+      sessionStorage.setItem('currentEmployeeId', currentMatch.employeeId)
+    }
+  }, [currentMatch?.employeeId])
   
   return (
     <div className="absolute inset-0 z-[6] flex items-center justify-center overflow-auto px-4 py-6 sm:px-6">

@@ -9,7 +9,8 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 
 function SummaryContent() {
   const searchParams = useSearchParams()
-  const employeeId = searchParams.get('employeeId') || ''
+  const urlEmployeeId = searchParams.get('employeeId') || ''
+  const [employeeId, setEmployeeId] = useState(urlEmployeeId)
   
   const [monthlyData, setMonthlyData] = useState(null)
   const [dailyData, setDailyData] = useState([])
@@ -17,10 +18,21 @@ function SummaryContent() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    if (urlEmployeeId) {
+      setEmployeeId(urlEmployeeId)
+    } else {
+      const stored = sessionStorage.getItem('currentEmployeeId')
+      if (stored) setEmployeeId(stored)
+    }
+  }, [urlEmployeeId])
+
+  useEffect(() => {
     if (!employeeId) {
       setLoading(false)
       return
     }
+
+    setLoading(true)
 
     async function fetchData() {
       try {
@@ -55,6 +67,7 @@ function SummaryContent() {
     if (!timestamp) return '--:--'
     const date = new Date(timestamp)
     return date.toLocaleTimeString('en-PH', { 
+      timeZone: 'Asia/Manila',
       hour: '2-digit', 
       minute: '2-digit',
       hour12: true 
@@ -83,6 +96,10 @@ function SummaryContent() {
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
+        </div>
+      ) : !employeeId ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-700">
+          Please log in through the Kiosk first to view your attendance.
         </div>
       ) : error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-red-700">
