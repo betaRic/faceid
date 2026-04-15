@@ -13,6 +13,9 @@ import { writeAuditLog } from '@/lib/audit-log'
 import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biometric-index'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
+import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/employee-access'
+import { kvDel, kvKeys } from '@/lib/kv-utils'
+import { deleteEnrollmentPhoto } from '@/lib/storage'
 import {
   getEffectivePersonApprovalStatus,
   PERSON_APPROVAL_APPROVED,
@@ -42,6 +45,32 @@ function validateBody(body) {
     PERSON_APPROVAL_REJECTED,
   ].includes(body.approvalStatus)) return 'Approval status is not valid.'
   return null
+}
+
+async function commitDeleteBatch(db, refs) {
+  if (!refs.length) return 0
+  let deleted = 0
+  for (let index = 0; index < refs.length; index += 400) {
+    const batch = db.batch()
+    refs.slice(index, index + 400).forEach(ref => {
+      batch.delete(ref)
+      deleted += 1
+    })
+    await batch.commit()
+  }
+  return deleted
+}
+
+async function invalidateDeletedEmployeeCaches(employeeId, officeId) {
+  const keys = []
+  if (employeeId) {
+    const attendanceKeys = await kvKeys(`attendance:logs:${employeeId}:*`)
+    keys.push(...attendanceKeys)
+  }
+  if (officeId) {
+    keys.push(`bioidx:${officeId}`)
+  }
+  await Promise.all(Array.from(new Set(keys)).map(key => kvDel(key)))
 }
 
 export async function PUT(request, { params }) {
@@ -168,6 +197,71 @@ export async function PUT(request, { params }) {
   }
 }
 
+async function hardDeleteEmployee(db, resolvedSession, personId, personData) {
+  const personIdStr = String(personId)
+  const employeeIdStr = String(personData.employeeId || '')
+  const officeIdStr = String(personData.officeId || '')
+  const biometricDeleted = Array.isArray(personData.descriptors) ? personData.descriptors.length : 0
+
+  const entriesToDelete = await Promise.all([
+    employeeIdStr ? db.collection('attendance').where('employeeId', '==', employeeIdStr).get() : Promise.resolve({ empty: true, docs: [] }),
+    employeeIdStr ? db.collection('attendance_daily').where('employeeId', '==', employeeIdStr).get() : Promise.resolve({ empty: true, docs: [] }),
+    employeeIdStr ? db.collection('attendance_locks').where('employeeId', '==', employeeIdStr).get() : Promise.resolve({ empty: true, docs: [] }),
+    db.collection('person_enrollment_locks').where('personId', '==', personIdStr).get(),
+  ])
+
+  const attendanceRefs = entriesToDelete[0].docs.map(doc => doc.ref)
+  const attendanceDailyRefs = entriesToDelete[1].docs.map(doc => doc.ref)
+  const attendanceLockRefs = entriesToDelete[2].docs.map(doc => doc.ref)
+  const enrollmentLockRefs = entriesToDelete[3].docs.map(doc => doc.ref)
+
+  if (employeeIdStr) {
+    attendanceLockRefs.push(db.collection('attendance_locks').doc(employeeIdStr))
+    enrollmentLockRefs.push(db.collection('person_enrollment_locks').doc(employeeIdStr))
+  }
+
+  await deletePersonBiometricIndex(db, personIdStr)
+  const attendanceDeleted = await commitDeleteBatch(db, attendanceRefs)
+  const attendanceDailyDeleted = await commitDeleteBatch(db, attendanceDailyRefs)
+  const attendanceLocksDeleted = await commitDeleteBatch(db, Array.from(new Map(attendanceLockRefs.map(ref => [ref.path, ref])).values()))
+  const enrollmentLocksDeleted = await commitDeleteBatch(db, Array.from(new Map(enrollmentLockRefs.map(ref => [ref.path, ref])).values()))
+  await db.collection('persons').doc(personIdStr).delete()
+
+  const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+  const photoDeleted = storageBucket ? await deleteEnrollmentPhoto(storageBucket, personIdStr) : false
+  await invalidateDeletedEmployeeCaches(employeeIdStr, officeIdStr)
+
+  await writeAuditLog(db, {
+    actorRole: resolvedSession.role,
+    actorScope: resolvedSession.scope,
+    actorOfficeId: resolvedSession.officeId,
+    action: 'person_hard_delete',
+    targetType: 'person',
+    targetId: personIdStr,
+    officeId: officeIdStr,
+    summary: `Hard deleted employee ${personData.name || personIdStr} and all related data`,
+    metadata: {
+      employeeId: employeeIdStr,
+      officeName: personData.officeName || '',
+      biometricDeleted,
+      attendanceDeleted,
+      attendanceDailyDeleted,
+      attendanceLocksDeleted,
+      enrollmentLocksDeleted,
+      photoDeleted,
+    },
+  })
+
+  return {
+    biometricDeleted,
+    attendanceDeleted,
+    attendanceDailyDeleted,
+    attendanceLocksDeleted,
+    enrollmentLocksDeleted,
+    photoDeleted,
+  }
+}
+
 export async function DELETE(request, { params }) {
   const checkOrigin = createOriginGuard()
   const originError = await checkOrigin(request)
@@ -179,16 +273,15 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
   }
 
-  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required to delete employees.' }, { status: 401 })
-  }
+  const { searchParams } = new URL(request.url)
+  const hardDelete = searchParams.get('hard') === 'true'
+  const confirmName = String(searchParams.get('confirm') || '').trim().toLowerCase()
 
   try {
     const db = getAdminDb()
-    const resolvedSession = await resolveAdminSession(db, session)
+    const resolvedSession = await resolveEmployeeManagementSession(request, db)
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR login with employee access is required to delete employees.' }, { status: 401 })
     }
 
     const existing = await db.collection('persons').doc(personId).get()
@@ -196,8 +289,26 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
 
-    if (!adminSessionAllowsOffice(resolvedSession, existing.data().officeId)) {
-      return NextResponse.json({ ok: false, message: 'This admin session cannot delete that employee.' }, { status: 403 })
+    const personData = existing.data()
+    if (!personData) {
+      return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
+    }
+
+    if (!sessionAllowsOffice(resolvedSession, personData.officeId)) {
+      return NextResponse.json({ ok: false, message: 'This session cannot delete that employee.' }, { status: 403 })
+    }
+
+    if (hardDelete) {
+      if (!confirmName) {
+        return NextResponse.json({ ok: false, message: 'Employee name confirmation is required for hard delete.' }, { status: 400 })
+      }
+      const employeeName = String(personData.name || '').trim().toLowerCase()
+      if (confirmName !== employeeName) {
+        return NextResponse.json({ ok: false, message: 'Employee name does not match. Hard delete requires exact name confirmation.' }, { status: 400 })
+      }
+
+      const deletedCounts = await hardDeleteEmployee(db, resolvedSession, personId, personData)
+      return NextResponse.json({ ok: true, hardDeleted: true, deletedCounts })
     }
 
     await db.collection('persons').doc(personId).delete()
@@ -209,14 +320,14 @@ export async function DELETE(request, { params }) {
       action: 'person_delete',
       targetType: 'person',
       targetId: personId,
-      officeId: existing.data().officeId || '',
-      summary: `Deleted employee record for ${existing.data().name || personId}`,
+      officeId: personData.officeId || '',
+      summary: `Deleted employee record for ${personData.name || personId}`,
       metadata: {
-        employeeId: existing.data().employeeId || '',
-        officeName: existing.data().officeName || '',
+        employeeId: personData.employeeId || '',
+        officeName: personData.officeName || '',
       },
     })
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, hardDeleted: false })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to delete employee.' },

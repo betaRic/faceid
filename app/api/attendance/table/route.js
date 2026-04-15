@@ -1,6 +1,7 @@
 import { getAdminDb } from '@/lib/firebase-admin'
-import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
-import { parseTimeToMinutes } from '@/lib/daily-attendance'
+import { listEmployeeDailyAttendanceRecords, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
+import { resolveAttendanceViewer } from '@/lib/employee-access'
+import { getAttendanceHour, getAttendanceMinutesOfDay, ATTENDANCE_TIME_ZONE } from '@/lib/attendance-time'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +18,50 @@ export async function GET(request) {
 
   try {
     const db = getAdminDb()
+    const access = await resolveAttendanceViewer(request, db, employeeId)
+    if (!access.viewer) {
+      return Response.json({ ok: false, message: access.message }, { status: access.status })
+    }
+
     const now = new Date()
     const targetYear = year ? parseInt(year) : now.getFullYear()
     const targetMonth = month ? parseInt(month) : now.getMonth() + 1
 
-    const startDate = new Date(targetYear, targetMonth - 1, 1)
-    const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999)
+    const dailyRecords = await listEmployeeDailyAttendanceRecords(db, employeeId)
+    if (dailyRecords.length > 0) {
+      const days = dailyRecords
+        .filter(record => {
+          const [recordYear, recordMonth] = String(record.dateKey || '').split('-').map(Number)
+          return recordYear === targetYear && recordMonth === targetMonth && hasDailyAttendanceLogs(record)
+        })
+        .map(record => ({
+          dateKey: record.dateKey,
+          date: formatDateDisplay(record.dateKey),
+          amIn: record.amIn || '--',
+          amOut: record.amOut || '--',
+          pmIn: record.pmIn || '--',
+          pmOut: record.pmOut || '--',
+          undertime: Number(record.undertimeMinutes ?? 0),
+          undertimeDisplay: formatUndertime(Number(record.undertimeMinutes ?? 0)),
+          totalHours: Number(record.workingMinutes ?? 0),
+          logCount: Number(record.logCount ?? 0),
+        }))
+
+      return Response.json({
+        ok: true,
+        employeeId,
+        month: targetMonth,
+        year: targetYear,
+        totalDays: days.length,
+        totalLogs: days.reduce((sum, day) => sum + Number(day.logCount || 0), 0),
+        days,
+      })
+    }
+
+    const monthLabel = String(targetMonth).padStart(2, '0')
+    const lastDay = String(new Date(targetYear, targetMonth, 0).getDate()).padStart(2, '0')
+    const startDate = new Date(`${targetYear}-${monthLabel}-01T00:00:00+08:00`)
+    const endDate = new Date(`${targetYear}-${monthLabel}-${lastDay}T23:59:59.999+08:00`)
 
     const snapshot = await db.collection('attendance')
       .where('employeeId', '==', employeeId)
@@ -86,7 +125,7 @@ function computeSegments(logs) {
   let amIn = null, amOut = null, pmIn = null, pmOut = null
 
   sorted.forEach(log => {
-    const hour = new Date(log.timestamp).getHours()
+    const hour = getAttendanceHour(log.timestamp)
     if (hour < 12) {
       if (!amIn) amIn = log
       amOut = log
@@ -107,17 +146,11 @@ function computeUndertime(segments) {
   
   let undertime = 0
   if (segments.amOut) {
-    const ts = segments.amOut.timestamp
-    const hour = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }))
-    const minute = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: '2-digit' }))
-    const amOutMin = hour * 60 + minute
+    const amOutMin = getAttendanceMinutesOfDay(segments.amOut.timestamp)
     undertime += Math.max(0, 12 * 60 - amOutMin)
   }
   if (segments.pmOut) {
-    const ts = segments.pmOut.timestamp
-    const hour = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }))
-    const minute = parseInt(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: '2-digit' }))
-    const pmOutMin = hour * 60 + minute
+    const pmOutMin = getAttendanceMinutesOfDay(segments.pmOut.timestamp)
     undertime += Math.max(0, DEFAULT_OUT - pmOutMin)
   }
   
@@ -127,7 +160,7 @@ function computeUndertime(segments) {
 function formatTime(log) {
   if (!log) return '--'
   return new Date(log.timestamp).toLocaleTimeString('en-PH', {
-    timeZone: 'Asia/Manila',
+    timeZone: ATTENDANCE_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,

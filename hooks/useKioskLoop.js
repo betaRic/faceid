@@ -1,3 +1,19 @@
+/**
+ * hooks/useKioskLoop.js — Quality gate addition
+ *
+ * Key fix: before triggering verification burst, we now check that the face
+ * meets minimum quality requirements:
+ * - faceAreaRatio >= KIOSK_MIN_FACE_AREA_RATIO (face big enough)
+ * - face center within KIOSK_MAX_CENTER_OFFSET_RATIO of oval center
+ *
+ * This prevents the "scan too fast" problem where a partially-visible or
+ * tilted face triggers verification and gets a bad embedding.
+ *
+ * CONFIRM_FRAMES is also now 5 (was 3), requiring a 400ms stable hold.
+ * Both changes together mean: user must hold face steady for ~400ms AND
+ * the face must be properly sized and centered before verification fires.
+ */
+
 import { useCallback, useRef } from 'react'
 import { detectFaceBoxes } from '@/lib/biometrics/human'
 import {
@@ -10,14 +26,37 @@ import {
   KIOSK_ATTEMPT_COOLDOWN_MS,
   KIOSK_FACE_LOSS_GRACE_MS,
   UNKNOWN_DEBOUNCE_MS,
+  KIOSK_MIN_FACE_AREA_RATIO,
+  KIOSK_MAX_CENTER_OFFSET_RATIO,
 } from '@/lib/config'
-
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
-import { selectPrimaryFace, getSafeDecisionMessage, drawBracketBox } from '@/lib/kiosk-utils'
-// buildOvalCaptureCanvas is now used here for the same reason it's used in registration:
-// detection geometry must match so that selectOvalReadyFace sees face coordinates
-// relative to the same portrait-cropped oval frame as the enrollment pipeline.
+import { selectPrimaryFace, getSafeDecisionMessage } from '@/lib/kiosk-utils'
 import { buildOvalCaptureCanvas, selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
+
+/**
+ * Returns true if the face meets minimum quality for verification.
+ * We are stricter here than the oval gate (which allows small/off-center faces
+ * for the distance indicator). Verification should only fire on a good face.
+ */
+function facePassesQualityGate(box, canvasWidth, canvasHeight) {
+  if (!box) return false
+
+  const frameArea = canvasWidth * canvasHeight
+  const faceArea = box.width * box.height
+  const faceAreaRatio = faceArea / frameArea
+
+  // Must be big enough — distant or partial faces give bad embeddings
+  if (faceAreaRatio < KIOSK_MIN_FACE_AREA_RATIO) return false
+
+  // Face center must not be too far off-center
+  const centerX = box.x + box.width / 2
+  const centerY = box.y + box.height / 2
+  const offsetX = Math.abs(centerX - canvasWidth / 2) / canvasWidth
+  const offsetY = Math.abs(centerY - canvasHeight / 2) / canvasHeight
+  if (offsetX > KIOSK_MAX_CENTER_OFFSET_RATIO || offsetY > KIOSK_MAX_CENTER_OFFSET_RATIO) return false
+
+  return true
+}
 
 export function useKioskLoop({
   camera,
@@ -44,90 +83,48 @@ export function useKioskLoop({
   const busyRef = useRef(false)
   const faceDetectedRef = useRef(false)
 
-  const drawOverlay = useCallback((detection, sourceWidth, sourceHeight) => {
-    const video = camera.videoRef.current
-    const overlay = camera.overlayRef.current
-
-    if (!overlay || !video) return
-
-    const width = video.videoWidth || 640
-    const height = video.videoHeight || 480
-    overlay.width = width
-    overlay.height = height
-
-    // Clear overlay — no bounding box drawn in kiosk to avoid distraction
-    const ctx = overlay.getContext('2d')
-    ctx.clearRect(0, 0, width, height)
-  }, [camera])
-
   const runScan = useCallback(async (captureVerificationBurst) => {
     if (busyRef.current || pausedRef.current || !camera.camOn || !modelsReady) return
 
     busyRef.current = true
-
     try {
-      const scanStart = performance.now()
-
-      // ── STEP 1: capture raw frame ─────────────────────────────────────────
       const rawCanvas = camera.captureImageData({
         maxWidth: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
         maxHeight: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
       })
-      if (!rawCanvas) {
-        busyRef.current = false
-        return
-      }
+      if (!rawCanvas) return
 
-      // ── STEP 2: crop to oval BEFORE detection ──────────────────────────────
-      // This is the critical fix: registration crops to oval before detectFaceBoxes,
-      // so kiosk must do the same. Without this, selectOvalReadyFace evaluates face
-      // coordinates against full-frame dimensions (e.g. 480×270) instead of the
-      // portrait oval crop (e.g. ~183×270), making the area-ratio threshold ~2.5×
-      // harder to pass at the same physical distance.
       const canvas = buildOvalCaptureCanvas(rawCanvas)
+      if (!canvas) return
+      
       const detections = await detectFaceBoxes(canvas)
-      const scanDuration = performance.now() - scanStart
 
-      if (typeof window !== 'undefined' && window.getKioskMetrics) {
-        window.getKioskMetrics().recordScan(scanDuration)
-      }
-
-      // ── STEP 3: face-in-oval gate (identical geometry to registration) ─────
-      const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
-
-      // ── STEP 4: distance feedback (visual only — does NOT gate verification) ─
-      // Ratios are now oval-relative, matching what the user sees in the UI oval.
-      const largestFace = detections.length > 0 ? detections.reduce((best, curr) => {
-        const currBox = curr?.detection?.box || curr?.box
-        const bestBox = best?.detection?.box || best?.box
-        if (!currBox) return best
-        if (!bestBox) return curr
-        const currArea = currBox.width * currBox.height
-        const bestArea = bestBox.width * bestBox.height
-        return currArea > bestArea ? curr : best
-      }, null) : null
+      // Distance feedback (visual only)
+      const largestFace = detections.length > 0
+        ? detections.reduce((best, curr) => {
+            const currBox = curr?.detection?.box || curr?.box
+            const bestBox = best?.detection?.box || best?.box
+            if (!currBox) return best
+            if (!bestBox) return curr
+            return currBox.width * currBox.height > bestBox.width * bestBox.height ? curr : best
+          }, null)
+        : null
 
       if (largestFace) {
         const box = largestFace?.detection?.box || largestFace?.box
         if (box) {
-          const frameArea = canvas.width * canvas.height
-          const faceArea = box.width * box.height
-          const ratio = faceArea / frameArea
-          // Thresholds tuned for oval canvas (portrait, ~0.68 aspect ratio)
-          let status = 'too-far'
-          if (ratio > 0.80) status = 'too-close'
-          else if (ratio >= 0.06) status = 'perfect'
-          else if (ratio >= 0.03) status = 'good'
-          else status = 'too-far'
-          setFaceDistanceInfo({ faceAreaRatio: ratio, status })
+          const ratio = (box.width * box.height) / (canvas.width * canvas.height)
+          setFaceDistanceInfo({
+            faceAreaRatio: ratio,
+            status: ratio > 0.80 ? 'too-close' : ratio >= 0.06 ? 'perfect' : ratio >= 0.03 ? 'good' : 'too-far',
+          })
         }
-      } else {
-        if (!faceDetectedRef.current) {
-          setFaceDistanceInfo(null)
-        }
+      } else if (!faceDetectedRef.current) {
+        setFaceDistanceInfo(null)
       }
 
-      // ── No face in oval → reset state, start face-loss grace timer ─────────
+      const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
+
       if (!ovalReady) {
         faceDetectedRef.current = false
         if (!confirmedTimer.current && !faceLossTimerRef.current) {
@@ -142,53 +139,43 @@ export function useKioskLoop({
           }, KIOSK_FACE_LOSS_GRACE_MS)
         }
         camera.clearOverlay()
-        busyRef.current = false
         return
       }
 
-      // ── Face IS in oval ───────────────────────────────────────────────────
       faceDetectedRef.current = true
-
       if (faceLossTimerRef.current) {
         window.clearTimeout(faceLossTimerRef.current)
         faceLossTimerRef.current = null
       }
-
       window.clearTimeout(unknownTimer.current)
       unknownTimer.current = null
 
       const ovalBox = ovalReady.box
-      drawOverlay({ detection: { box: ovalBox } }, canvas.width, canvas.height)
-
-      // ── Update scanning state ─────────────────────────────────────────────
-      // The previous PERFECT_POSITION_HOLD_MS=600 block was removed:
-      //   • It required a 600 ms hold *before* confirmRef even started counting.
-      //   • Combined with CONFIRM_FRAMES=3, users had to hold ~900ms+ before
-      //     verification was ever triggered.
-      //   • CONFIRM_FRAMES already provides a natural multi-frame debounce.
       setKioskState('scanning')
 
       if (confirmRef.current < CONFIRM_FRAMES) {
         confirmRef.current += 1
       }
 
-      // ── Trigger verification once enough frames confirmed ─────────────────
       if (confirmRef.current >= CONFIRM_FRAMES && Date.now() >= attemptCooldownUntilRef.current) {
+
+        // ✅ Quality gate — don't verify on partial/distant/off-center faces
+        if (!facePassesQualityGate(ovalBox, canvas.width, canvas.height)) {
+          // Don't reset confirmRef — keep counting but don't trigger yet
+          // The face just needs to get closer / more centered
+          setKioskState('scanning')
+          return
+        }
+
         const now = Date.now()
         attemptCooldownUntilRef.current = now + KIOSK_ATTEMPT_COOLDOWN_MS
         pausedRef.current = true
         setKioskState('verifying')
         camera.clearOverlay()
 
-        const verifyStart = performance.now()
         const burstResult = await captureVerificationBurst()
-        const verifyDuration = performance.now() - verifyStart
-        const networkStart = performance.now()
 
         if (!burstResult) {
-          if (typeof window !== 'undefined' && window.getKioskMetrics) {
-            window.getKioskMetrics().recordVerification(verifyDuration, false)
-          }
           setCapturedFrameUrl(null)
           setKioskState('unknown')
           pausedRef.current = true
@@ -223,16 +210,33 @@ export function useKioskLoop({
         if (descriptor.length !== DESCRIPTOR_LENGTH) {
           setKioskState('unknown')
           pausedRef.current = true
-          showAlertAndResume(`Face capture error — unexpected descriptor length ${descriptor.length}. Expected ${DESCRIPTOR_LENGTH}. Check model configuration.`, 3000)
+          showAlertAndResume(`Face capture error — unexpected descriptor length ${descriptor.length}.`, 3000)
+          confirmRef.current = 0
+          return
+        }
+
+        const antispoof = primaryVerification.detection.antispoof
+        const liveness = primaryVerification.detection.liveness
+        
+        if (antispoof !== undefined && antispoof <= 0.3) {
+          setKioskState('blocked')
+          pausedRef.current = true
+          showAlertAndResume('Photo or screen detected. Please present your live face.', 3500)
+          confirmRef.current = 0
+          return
+        }
+
+        if (liveness !== undefined && liveness <= 0.3) {
+          setKioskState('blocked')
+          pausedRef.current = true
+          showAlertAndResume('Fake face detected. Please scan your live face.', 3500)
           confirmRef.current = 0
           return
         }
 
         setCapturedFrameUrl(bestCanvas.toDataURL('image/jpeg', 0.82))
         const coordinates = locationState?.coords || null
-        const wifiSsid = locationState?.wifiSsid || null
         const timing = buildAttendanceEntryTiming(now)
-        let attendanceAccepted = false
 
         try {
           const result = await onLogAttendance({
@@ -245,6 +249,8 @@ export function useKioskLoop({
             geofenceStatus: '',
             confidence: 0,
             landmarks: landmarks || [],
+            antispoof: antispoof,
+            liveness: liveness,
             timestamp: timing.timestamp,
             dateKey: timing.dateKey,
             dateLabel: timing.dateLabel,
@@ -252,15 +258,8 @@ export function useKioskLoop({
             time: timing.time,
             latitude: coordinates?.latitude ?? null,
             longitude: coordinates?.longitude ?? null,
-            wifiSsid,
             descriptor,
           })
-          const networkDuration = performance.now() - networkStart
-
-          if (typeof window !== 'undefined' && window.getKioskMetrics) {
-            window.getKioskMetrics().recordVerification(verifyDuration + networkDuration, result.entry !== undefined)
-            window.getKioskMetrics().recordNetwork(networkDuration, result.entry !== undefined)
-          }
 
           if (result.entry) {
             setFlashKey(value => value + 1)
@@ -276,32 +275,37 @@ export function useKioskLoop({
               action: result.entry.action || '',
               attendanceMode: result.entry.attendanceMode || '',
               detail: `${actionLabel} successfully`,
+              needsReenrollment: result.needsReenrollment || false,
+              personId: result.personId || null,
             })
             setKioskState('confirmed')
             setAlertState(null)
-            attendanceAccepted = true
           } else {
             setKioskState('unknown')
             pausedRef.current = true
             showAlertAndResume('No reliable face match was found. Ensure you are enrolled.', 3000)
           }
         } catch (error) {
-          const networkDuration = performance.now() - networkStart
-          if (typeof window !== 'undefined' && window.getKioskMetrics) {
-            window.getKioskMetrics().recordVerification(verifyDuration + networkDuration, false)
-            window.getKioskMetrics().recordNetwork(networkDuration, false)
-          }
           const decisionCode = error?.decisionCode || 'blocked_server_error'
           const safeDecision = getSafeDecisionMessage(decisionCode)
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn('[KioskLoop] Attendance rejected', {
+              decisionCode,
+              message: error?.message || null,
+              detail: safeDecision.detail,
+              debug: error?.debug || null,
+              entry: error?.entry || null,
+            })
+          }
           if (decisionCode === 'blocked_no_reliable_match') {
             setKioskState('unknown')
             showAlertAndResume('No reliable face match was found.', 3000)
           } else if (decisionCode === 'blocked_ambiguous_match') {
             setKioskState('blocked')
             showAlertAndResume(safeDecision.detail, 4000)
-          } else if (decisionCode === 'blocked_liveness_failed') {
+          } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {
             setKioskState('unknown')
-            showAlertAndResume('Move slightly and try again.', 3500)
+            showAlertAndResume(safeDecision.detail, 3500)
           } else {
             setKioskState('blocked')
             showAlertAndResume(safeDecision.detail, 4000)
@@ -320,11 +324,7 @@ export function useKioskLoop({
         if (!confirmedTimer.current && !unknownTimer.current) {
           unknownTimer.current = window.setTimeout(() => {
             setKioskState(decisionCode === 'blocked_ambiguous_match' ? 'blocked' : 'unknown')
-            setCurrentMatch({
-              name: safeDecision.name,
-              confidence: 0,
-              detail: safeDecision.detail,
-            })
+            setCurrentMatch({ name: safeDecision.name, confidence: 0, detail: safeDecision.detail })
             confirmRef.current = 0
             unknownTimer.current = null
           }, UNKNOWN_DEBOUNCE_MS)
@@ -339,39 +339,31 @@ export function useKioskLoop({
           detail: safeDecision.detail,
         })
         showAlertAndResume(safeDecision.detail, 4000)
-      } else if (decisionCode === 'blocked_liveness_failed') {
+      } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {
         setKioskState('unknown')
-        showAlertAndResume('Move slightly and try again.', 3500)
+        showAlertAndResume(safeDecision.detail, 3500)
       } else {
         setKioskState('blocked')
-        setCurrentMatch({
-          name: safeDecision.name,
-          confidence: 0,
-          detail: safeDecision.detail,
-        })
+        setCurrentMatch({ name: safeDecision.name, confidence: 0, detail: safeDecision.detail })
         showAlertAndResume(safeDecision.detail, 4000)
       }
       pausedRef.current = true
     } finally {
       busyRef.current = false
     }
-  }, [camera, modelsReady, locationState, kioskState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, scheduleResume, showAlertAndResume, drawOverlay])
+  }, [camera, modelsReady, locationState, kioskState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, scheduleResume, showAlertAndResume])
 
   const startLoop = useCallback((runScanFn) => {
     if (scanRef.current) return
-
     const scheduleNext = (delay = 0) => {
       scanRef.current = window.setTimeout(async () => {
         scanRef.current = null
         await runScanFn()
-
         if (!pausedRef.current) {
-          const nextDelay = faceDetectedRef.current ? KIOSK_ACTIVE_SCAN_MS : KIOSK_IDLE_SCAN_MS
-          scheduleNext(nextDelay)
+          scheduleNext(faceDetectedRef.current ? KIOSK_ACTIVE_SCAN_MS : KIOSK_IDLE_SCAN_MS)
         }
       }, delay)
     }
-
     pausedRef.current = false
     scheduleNext()
   }, [])
@@ -383,9 +375,5 @@ export function useKioskLoop({
     }
   }, [])
 
-  return {
-    runScan,
-    startLoop,
-    stopLoop,
-  }
+  return { runScan, startLoop, stopLoop }
 }

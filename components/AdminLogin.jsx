@@ -28,14 +28,14 @@ export default function AdminLogin() {
       provider.setCustomParameters({ prompt: 'select_account' })
       const credential = await signInWithPopup(auth, provider)
       const idToken = await credential.user.getIdToken(true)
-      const response = await fetch('/api/admin/firebase-login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
+        body: JSON.stringify({ loginType: 'google', idToken }),
       })
-      const data = await response.json().catch(() => ({ ok: false, message: 'Google admin login failed.' }))
+      const data = await response.json().catch(() => ({ ok: false, message: 'Google login failed.' }))
       if (!response.ok || !data.ok) {
-        setStatus(data.message || 'Google admin login failed.')
+        setStatus(data.message || 'Google login failed.')
         await signOut(auth).catch(() => {})
         setGoogleSubmitting(false)
         return
@@ -54,14 +54,14 @@ export default function AdminLogin() {
     setPinSubmitting(true)
     setStatus('')
     try {
-      const response = await fetch('/api/admin/login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pin.trim() }),
+        body: JSON.stringify({ loginType: 'pin', pin: pin.trim() }),
       })
-      const data = await response.json().catch(() => ({ ok: false, message: 'Regional PIN login failed.' }))
+      const data = await response.json().catch(() => ({ ok: false, message: 'PIN login failed.' }))
       if (!response.ok || !data.ok) {
-        setStatus(data.message || 'Regional PIN login failed.')
+        setStatus(data.message || 'PIN login failed.')
         setPinSubmitting(false)
         return
       }
@@ -80,15 +80,15 @@ export default function AdminLogin() {
       <section className="w-full bg-hero-gradient py-14">
         <div className="container-fluid">
           <BrandMark inverted />
-          <motion.h1
+<motion.h1
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
             className="mt-5 text-3xl font-bold text-white sm:text-4xl"
           >
-            Admin Portal
+            Login Portal
           </motion.h1>
-          <p className="mt-2 text-sm text-sky/70">Regional and office administrator access.</p>
+          <p className="mt-2 text-sm text-sky/70">Admin and HR access.</p>
         </div>
       </section>
 
@@ -109,7 +109,13 @@ export default function AdminLogin() {
 
               <div className="mt-6 space-y-4">
                 {/* PIN login */}
-                <div className="rounded-xl border border-navy/8 bg-sky-light/40 p-5">
+                <form
+                  className="rounded-xl border border-navy/8 bg-sky-light/40 p-5"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    handlePinLogin()
+                  }}
+                >
                   <label className="field-label">Regional PIN</label>
                   <div className="mt-1 flex gap-2">
                     <input
@@ -118,20 +124,18 @@ export default function AdminLogin() {
                       placeholder="Enter regional PIN"
                       value={pin}
                       onChange={e => setPin(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handlePinLogin() }}
                     />
                     <button
                       className="btn btn-primary shrink-0 px-5"
                       disabled={pinSubmitting}
-                      onClick={handlePinLogin}
-                      type="button"
+                      type="submit"
                     >
                       {pinSubmitting ? (
                         <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                       ) : 'Continue'}
                     </button>
                   </div>
-                </div>
+                </form>
 
                 {/* Divider */}
                 <div className="flex items-center gap-3">
@@ -185,4 +189,3 @@ export default function AdminLogin() {
     </AppShell>
   )
 }
-

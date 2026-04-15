@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { normalizeDescriptor, euclideanDistance } from '@/lib/biometrics/descriptor-utils'
 import { buildDescriptorBuckets } from '@/lib/biometric-index'
 import { DISTANCE_THRESHOLD_KIOSK, AMBIGUOUS_MATCH_MARGIN } from '@/lib/config'
@@ -17,9 +18,16 @@ import { DISTANCE_THRESHOLD_KIOSK, AMBIGUOUS_MATCH_MARGIN } from '@/lib/config'
  * Also available as GET to show index health without a descriptor.
  */
 
-export async function GET() {
+export async function GET(request) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
+    }
+
     const snapshot = await db.collection('biometric_index')
       .where('active', '==', true)
       .where('approvalStatus', '==', 'approved')
@@ -34,6 +42,9 @@ export async function GET() {
         personId: data.personId,
         name: data.name,
         officeId: data.officeId,
+        biometricEnabled: data.biometricEnabled === true,
+        active: data.active !== false,
+        approvalStatus: data.approvalStatus,
         bucketA: data.bucketA,
         bucketB: data.bucketB,
         descriptorLength: nd.length,
@@ -45,11 +56,21 @@ export async function GET() {
 
     const healthy = entries.filter(e => e.hasValidDescriptor).length
     const broken = entries.filter(e => !e.hasValidDescriptor).length
+    const biometricEnabledTrue = entries.filter(e => e.biometricEnabled).length
+    const biometricEnabledFalse = entries.filter(e => !e.biometricEnabled).length
+    const byOffice = Object.entries(entries.reduce((acc, entry) => {
+      const officeId = String(entry.officeId || '(none)')
+      acc[officeId] = (acc[officeId] || 0) + 1
+      return acc
+    }, {})).sort((left, right) => right[1] - left[1])
 
     return NextResponse.json({
       total: entries.length,
       healthy,
       broken,
+      biometricEnabledTrue,
+      biometricEnabledFalse,
+      byOffice,
       threshold: DISTANCE_THRESHOLD_KIOSK,
       ambiguousMargin: AMBIGUOUS_MATCH_MARGIN,
       entries,
@@ -60,7 +81,16 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
+    const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
+    }
+
     const body = await request.json().catch(() => null)
     const rawDescriptor = Array.isArray(body?.descriptor) ? body.descriptor.map(Number) : []
 
@@ -75,7 +105,6 @@ export async function POST(request) {
     const queryMagnitude = Math.sqrt(rawDescriptor.reduce((s, v) => s + v * v, 0))
     const { bucketA: queryBucketA, bucketB: queryBucketB } = buildDescriptorBuckets(rawDescriptor)
 
-    const db = getAdminDb()
     const snapshot = await db.collection('biometric_index')
       .where('active', '==', true)
       .where('approvalStatus', '==', 'approved')

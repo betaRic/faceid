@@ -6,9 +6,15 @@ import { getOfficeRecord, listOfficeRecords } from '@/lib/office-directory'
 import { getNextAttendanceAction } from '@/lib/daily-attendance'
 import { buildAttendanceEntryTiming, toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
-import { analyzeLiveness } from '@/lib/biometrics/liveness'
 import { createOriginGuard } from '@/lib/csrf'
+import {
+  createEmployeeViewSessionCookieValue,
+  getEmployeeViewSessionCookieName,
+  getEmployeeViewSessionMaxAge,
+  isEmployeeViewSessionConfigured,
+} from '@/lib/employee-view-auth'
 import { isPersonApproved } from '@/lib/person-approval'
+import { needsBiometricReenrollment } from '@/lib/biometrics/descriptor-utils'
 import { FieldValue } from 'firebase-admin/firestore'
 import {
   normalizeEntry,
@@ -106,22 +112,23 @@ export async function POST(request) {
       )
     }
 
-    // Liveness check — DISABLED for testing, re-enable after verifying matching works
-    // if (entry.landmarks?.length > 0) {
-    //   const livenessResult = analyzeLiveness(entry.landmarks)
-    //   if (
-    //     !livenessResult.live &&
-    //     (livenessResult.reason === 'static_face' ||
-    //       livenessResult.reason === 'photo_detected_flat' ||
-    //       livenessResult.reason === 'photo_detected_flat_no_blink')
-    //   ) {
-    //     await writeFailedScanLog(db, entry, 'blocked_liveness_failed', livenessResult.reason)
-    //     return NextResponse.json(
-    //       { ok: false, message: 'Photo detected. Please scan your real face, not a photo.', decisionCode: livenessResult.reason },
-    //       { status: 403 },
-    //     )
-    //   }
-    // }
+    // Validate antispoof/liveness scores sent by the client.
+    // These come from @vladmandic/human's built-in models running in the browser.
+    // Server-side validation prevents raw API calls from bypassing the check.
+    if (entry.antispoof != null && entry.antispoof <= 0.3) {
+      await writeFailedScanLog(db, entry, 'blocked_antispoof', `antispoof score ${entry.antispoof}`)
+      return NextResponse.json(
+        { ok: false, message: 'Photo or screen detected.', decisionCode: 'blocked_antispoof' },
+        { status: 403 },
+      )
+    }
+    if (entry.liveness != null && entry.liveness <= 0.3) {
+      await writeFailedScanLog(db, entry, 'blocked_liveness', `liveness score ${entry.liveness}`)
+      return NextResponse.json(
+        { ok: false, message: 'Liveness check failed.', decisionCode: 'blocked_liveness' },
+        { status: 403 },
+      )
+    }
 
     // Fetch all offices once — used for both global match (office IDs) and location check
     const allOffices = await listOfficeRecords(db)
@@ -166,7 +173,23 @@ export async function POST(request) {
       )
     }
 
-    // STEP 5: Determine action and write
+    // STEP 5: Reject missing liveness/antispoof for on-site attendance.
+    // WFH scans may come from kiosk-less workflows where camera scores are unavailable.
+    // On-site scans must always supply finite scores — null means the client bypassed
+    // the biometric pipeline (e.g. raw API call). The early threshold check above (≤ 0.3)
+    // only fires when the value is non-null; this check closes the null-bypass gap.
+    if (locationResult.attendanceMode !== 'WFH') {
+      if (!Number.isFinite(entry.antispoof)) {
+        await writeFailedScanLog(db, entry, 'blocked_missing_liveness', 'antispoof score missing or non-numeric')
+        return NextResponse.json({ ok: false, message: 'Liveness check failed.', decisionCode: 'blocked_missing_liveness' }, { status: 403 })
+      }
+      if (!Number.isFinite(entry.liveness)) {
+        await writeFailedScanLog(db, entry, 'blocked_missing_liveness', 'liveness score missing or non-numeric')
+        return NextResponse.json({ ok: false, message: 'Liveness check failed.', decisionCode: 'blocked_missing_liveness' }, { status: 403 })
+      }
+    }
+
+    // STEP 6: Determine action and write
     entry.name = person.name
     entry.employeeId = person.employeeId
     entry.officeId = person.officeId
@@ -199,14 +222,36 @@ export async function POST(request) {
 
     await updateDailyAttendanceCache(db, writeResult.storedEntry, dailyLogs, person, office)
 
-    const response = { ok: true, entry: writeResult.entryPreview }
+    const responsePayload = { ok: true, entry: writeResult.entryPreview }
+    responsePayload.needsReenrollment = needsBiometricReenrollment(person)
+    responsePayload.personId = person.id || personMatch.personId || null
     if (process.env.NODE_ENV !== 'production') {
       const d = personMatch.debug
-      response.debug = d
+      responsePayload.debug = d
         ? { source: d.source, candidateCount: d.candidateCount, bestDistance: d.bestDistance, secondDistance: d.secondDistance, threshold: d.threshold }
         : null
     }
-    return NextResponse.json(response)
+
+    const response = NextResponse.json(responsePayload)
+    if (isEmployeeViewSessionConfigured()) {
+      try {
+        response.cookies.set(getEmployeeViewSessionCookieName(), createEmployeeViewSessionCookieValue({
+          employeeId: person.employeeId,
+          personId: person.id || personMatch.personId || '',
+          officeId: person.officeId || '',
+        }), {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: getEmployeeViewSessionMaxAge(),
+          path: '/',
+        })
+      } catch (cookieError) {
+        console.warn('[Attendance] Failed to create employee view session:', cookieError?.message)
+      }
+    }
+
+    return response
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to log attendance.'
     if (message.includes('FAILED_PRECONDITION') && message.includes('query requires an index')) {

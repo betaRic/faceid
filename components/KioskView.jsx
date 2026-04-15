@@ -25,6 +25,7 @@ export default function KioskView({
   const playAudioCue = useAudioCue()
   useKioskMetrics()
   const previousStateRef = useRef('idle')
+  const [todaysCount, setTodaysCount] = useState(null)
 
   const {
     kioskState,
@@ -78,6 +79,16 @@ export default function KioskView({
 
   const { clock, dateStr } = useKioskClock()
 
+  const fetchTodaysCount = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/attendance/count?date=${formatAttendanceDateKey(new Date())}`)
+      const data = await res.json()
+      if (data.ok) setTodaysCount(data.count)
+    } catch {}
+  }, [])
+
+  useEffect(() => { fetchTodaysCount() }, [fetchTodaysCount])
+
   const handleRunScan = useCallback(() => {
     return runScan(captureVerificationBurst)
   }, [runScan, captureVerificationBurst])
@@ -93,11 +104,24 @@ export default function KioskView({
     const previous = previousStateRef.current
     if (previous === kioskState) return
 
-    if (kioskState === 'confirmed') playAudioCue('success')
+    if (kioskState === 'confirmed') {
+      playAudioCue('success')
+      setTodaysCount(prev => (prev ?? 0) + 1)
+      if (currentMatch?.employeeId) {
+        try {
+          sessionStorage.setItem('currentEmployeeId', currentMatch.employeeId)
+          localStorage.setItem('lastScanMatch', JSON.stringify({
+            name: currentMatch.name,
+            employeeId: currentMatch.employeeId,
+            officeName: currentMatch.officeName || '',
+            timestamp: Date.now(),
+          }))
+        } catch {}
+      }
+    }
     if ((kioskState === 'blocked' || kioskState === 'unknown') && previous !== 'blocked' && previous !== 'unknown') {
       playAudioCue('notify')
     }
-
     previousStateRef.current = kioskState
   }, [kioskState, playAudioCue])
 
@@ -110,19 +134,18 @@ export default function KioskView({
     scheduleResume(250)
   }, [scheduleResume])
 
-  
-
   return (
     <AppShell
+      fitViewport
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
       onBeforeNavigate={pauseScanning}
     >
-      <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
+      <div className="page-frame h-full min-h-0">
         <motion.section
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className={`relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] xl:min-h-[calc(100dvh-10.5rem)] ${showSuccessScreen ? 'bg-white' : 'bg-black'}`}
+          className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] ${showSuccessScreen ? 'bg-white' : 'bg-black'}`}
         >
           {showSuccessScreen ? (
             <AttendanceTableView
@@ -143,6 +166,7 @@ export default function KioskView({
               locationState={locationState}
               errorMessage={errorMessage}
               faceDistanceInfo={faceDistanceInfo}
+              todaysCount={todaysCount}
             />
           )}
           <KioskAlert alertState={alertState} />

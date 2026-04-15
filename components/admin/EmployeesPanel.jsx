@@ -51,8 +51,7 @@ function EmployeesPanelInner() {
     employeeStatusFilter, setEmployeeStatusFilter,
     employeeApprovalFilter, setEmployeeApprovalFilter,
     handlePreviousPage, handleNextPage, refreshEmployees,
-    handleEmployeeUpdate, handleEmployeeDelete,
-    editingEmployee, setEditingEmployee, isPending,
+    setEditingEmployee, setDeletingEmployee,
   } = useEmployees()
   const { visibleOffices } = useOffices()
 
@@ -118,7 +117,7 @@ function EmployeesPanelInner() {
           <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={!employeeHasMore} onClick={handleNextPage}>
             Next →
           </ActionButton>
-          <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" onClick={refreshEmployees}>
+          <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" onClick={refreshEmployees} busy={!employeesLoaded}>
             Refresh
           </ActionButton>
         </div>
@@ -162,12 +161,20 @@ function EmployeesPanelInner() {
                   <td className="px-5 py-3"><ApprovalBadge status={person.approvalStatus} /></td>
                   <td className="px-5 py-3"><StatusBadge active={person.active !== false} /></td>
                   <td className="px-5 py-3">
-                    <ActionButton
-                      className="border-black/10 bg-white text-ink hover:bg-stone-100"
-                      onClick={() => setEditingEmployee(person)}
-                    >
-                      {person.approvalStatus === 'pending' ? 'Review' : 'Manage'}
-                    </ActionButton>
+                    <div className="flex items-center gap-2">
+                      <ActionButton
+                        className="border-black/10 bg-white text-ink hover:bg-stone-100"
+                        onClick={() => setEditingEmployee(person)}
+                      >
+                        {person.approvalStatus === 'pending' ? 'Review' : 'Manage'}
+                      </ActionButton>
+                      <ActionButton
+                        className="border-red-200 bg-white text-red-700 hover:bg-red-50"
+                        onClick={() => setDeletingEmployee(person)}
+                      >
+                        Delete
+                      </ActionButton>
+                    </div>
                   </td>
                 </tr>
               ))

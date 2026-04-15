@@ -14,6 +14,7 @@ function AdminsPanelInner() {
   const [adminDisplayName, setAdminDisplayName] = useState('')
   const [adminScope, setAdminScope] = useState('office')
   const [adminOfficeId, setAdminOfficeId] = useState('')
+  const [adminRole, setAdminRole] = useState('admin')
 
   if (roleScope !== 'regional') {
     return (
@@ -32,11 +33,12 @@ function AdminsPanelInner() {
 
   const onCreate = () => {
     if (!adminEmail) return
-    handleCreateAdmin({ email: adminEmail, displayName: adminDisplayName, scope: adminScope, officeId: adminOfficeId })
+    handleCreateAdmin({ email: adminEmail, displayName: adminDisplayName, scope: adminScope, officeId: adminOfficeId, role: adminRole })
     setAdminEmail('')
     setAdminDisplayName('')
     setAdminScope('office')
     setAdminOfficeId('')
+    setAdminRole('admin')
   }
 
   return (
@@ -54,9 +56,14 @@ function AdminsPanelInner() {
       <div className="grid gap-3 rounded-xl border border-black/5 bg-stone-50 p-4 lg:grid-cols-2 xl:grid-cols-4">
         <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminEmail(e.target.value)} placeholder="Email" type="email" value={adminEmail} />
         <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminDisplayName(e.target.value)} placeholder="Display name" value={adminDisplayName} />
+        <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminRole(e.target.value)} value={adminRole}>
+          <option value="admin">Admin</option>
+          <option value="hr">HR</option>
+          <option value="viewer">Viewer</option>
+        </select>
         <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminScope(e.target.value)} value={adminScope}>
-          <option value="office">Office admin</option>
-          <option value="regional">Regional admin</option>
+          <option value="office">Office</option>
+          <option value="regional">Regional</option>
         </select>
         <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" disabled={adminScope !== 'office'} onChange={(e) => setAdminOfficeId(e.target.value)} value={adminOfficeId}>
           <option value="">Select office</option>
@@ -78,7 +85,8 @@ function AdminsPanelInner() {
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
             <tr>
-              <th className="px-5 py-3">Admin</th>
+              <th className="px-5 py-3">User</th>
+              <th className="px-5 py-3">Role</th>
               <th className="px-5 py-3">Scope</th>
               <th className="px-5 py-3">Office</th>
               <th className="px-5 py-3">Status</th>
@@ -87,15 +95,26 @@ function AdminsPanelInner() {
           </thead>
           <tbody className="divide-y divide-black/5 bg-white">
             {!adminsLoaded ? (
-              <tr><td className="px-5 py-8 text-center text-muted" colSpan={5}>Loading...</td></tr>
+              <tr><td className="px-5 py-8 text-center text-muted" colSpan={6}>Loading...</td></tr>
             ) : admins.length === 0 ? (
-              <tr><td className="px-5 py-8 text-center text-muted" colSpan={5}>No admin records yet.</td></tr>
+              <tr><td className="px-5 py-8 text-center text-muted" colSpan={6}>No user records yet.</td></tr>
             ) : (
               admins.map((admin) => (
                 <tr key={admin.id} className="bg-white">
                   <td className="px-5 py-3">
                     <div className="font-medium text-ink">{admin.displayName || admin.email}</div>
                     <div className="text-xs text-muted">{admin.email}</div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <select
+                      className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy capitalize"
+                      onChange={(e) => handleUpdateAdmin(admin, { role: e.target.value })}
+                      value={admin.role || 'admin'}
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="hr">HR</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
                   </td>
                   <td className="px-5 py-3">
                     <select

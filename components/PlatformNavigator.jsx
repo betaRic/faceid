@@ -23,9 +23,9 @@ const fadeIn = {
 
 /* ─── Data ───────────────────────────────────────────────── */
 const stats = [
-  { value: '5', label: 'Active Offices', icon: '🏛️' },
+  { value: 'DILG R12', label: 'Deployment Scope', icon: '🏛️' },
   { value: 'GPS', label: 'Location Verified', icon: '📍' },
-  { value: '99%', label: 'Match Accuracy', icon: '🎯' },
+  { value: '3-Angle', label: 'Face Capture', icon: '🎯' },
   { value: 'Live', label: 'Real-time Logs', icon: '⚡' },
 ]
 
@@ -35,8 +35,8 @@ const modules = [
     tag: 'Live',
     tagStyle: 'bg-emerald-100 text-emerald-700',
     href: '/kiosk',
-    description: 'Walk-up face scanning for enrolled employees. The camera detects your face automatically, verifies identity on the server, and records your attendance in real time.',
-    features: ['Auto face detection', 'Server-side matching', 'GPS geofence validation', 'AM / PM session tracking'],
+    description: 'Walk-up face scanning for enrolled employees. The camera detects your face automatically, verifies identity server-side, validates your GPS location, and records AM/PM attendance.',
+    features: ['Auto face detection', 'Server-side biometric matching', 'GPS + Wi-Fi location check', 'AM / PM session tracking'],
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -51,8 +51,8 @@ const modules = [
     tag: 'Open',
     tagStyle: 'bg-amber-100 text-amber-700',
     href: '/registration',
-    description: 'Enroll a new employee or add biometric samples to an existing record. Submissions go through an admin approval workflow before attendance is unlocked.',
-    features: ['Burst multi-frame capture', 'Oval face alignment guide', 'Duplicate face detection', 'Pending admin approval'],
+    description: 'Enroll a new employee with a 3-angle guided face capture. A server-side duplicate check runs before submission. Records are locked until an admin approves them.',
+    features: ['3-angle guided capture', 'Server-side duplicate check', 'Oval alignment guide', 'Pending admin approval'],
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
@@ -62,13 +62,13 @@ const modules = [
     border: 'border-amber/20',
     bg: 'bg-white',
   },
-  {
-    title: 'Admin Portal',
+{
+    title: 'Login Portal',
     tag: 'Restricted',
     tagStyle: 'bg-slate-100 text-slate',
-    href: '/admin/login',
-    description: 'Full-featured administration dashboard. Manage offices, GPS geofences, work schedules, employee records, approval queues, and export daily attendance summaries.',
-    features: ['Office & GPS setup', 'Employee CRUD + approval', 'Daily attendance summary', 'CSV export & audit logs'],
+    href: '/login',
+    description: 'Separate Admin and HR portals. Admins manage offices, GPS geofences, employee records, and approval queues. HR handles DTR exports and employee face data resets.',
+    features: ['Office & GPS geofence setup', 'Employee approval + face reset', 'Daily DTR summary & export', 'Audit logs & HR portal'],
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -84,30 +84,30 @@ const howItWorks = [
   {
     step: '01',
     title: 'Employee Enrolls',
-    body: 'A new employee visits the registration page, aligns their face in the oval guide, and submits their details. Multiple burst frames are captured for accuracy.',
+    body: 'A new employee visits the registration page, completes a 3-angle guided face capture, and submits their name, ID, and assigned office. A server-side duplicate check runs automatically.',
   },
   {
     step: '02',
     title: 'Admin Approves',
-    body: 'The enrollment lands in the admin approval queue. The admin reviews the submitted photo and activates the record. Pending records cannot clock in.',
+    body: 'The enrollment lands in the admin approval queue. The admin reviews the submitted photo and approves the record. Pending records are blocked from clocking in.',
   },
   {
     step: '03',
     title: 'Kiosk Scans',
-    body: 'At the office, the employee steps in front of the kiosk. The camera detects the face, the server matches the descriptor, and GPS confirms the location.',
+    body: 'At the office, the employee walks up to the kiosk. The camera detects and verifies their face server-side, then GPS confirms they are within the approved geofence.',
   },
   {
     step: '04',
     title: 'Attendance Recorded',
-    body: 'Check-in and check-out are logged with timestamps. The admin portal shows AM/PM sessions, late minutes, undertime, and exportable daily summaries.',
+    body: 'Check-in and check-out are logged with timestamps and mode (on-site or WFH). HR and admin portals show AM/PM sessions, late/undertime minutes, and exportable DTR summaries.',
   },
 ]
 
 const trustPoints = [
-  { label: 'Server-side identity decisions', desc: 'Face matching and GPS validation happen on the server — not the browser.' },
-  { label: 'Approval-gated biometrics', desc: 'Public enrollments cannot access attendance until an admin explicitly approves the record.' },
-  { label: 'Rate limiting & audit logs', desc: 'Every login, approval, and attendance event is rate-limited and logged for accountability.' },
-  { label: 'Geofence enforcement', desc: 'On-site attendance is only accepted when the device is within the configured office GPS radius.' },
+  { label: 'Server-side identity decisions', desc: 'Face matching, liveness checks, and GPS validation happen on the server — not the browser. The client never makes approval decisions.' },
+  { label: 'Approval-gated biometrics', desc: 'Public enrollments cannot access attendance until an admin explicitly approves the record. Admins can also reset face data and require re-enrollment.' },
+  { label: 'Rate limiting & audit logs', desc: 'Every login, approval, attendance scan, and admin action is rate-limited and written to an audit log for accountability.' },
+  { label: 'Geofence + liveness enforcement', desc: 'On-site attendance requires GPS within the configured office radius. Anti-spoofing rejects printed photos and screen replays.' },
 ]
 
 /* ─── Component ──────────────────────────────────────────── */
@@ -166,8 +166,8 @@ export default function PlatformNavigator() {
               <Link href="/registration" className="btn btn-white text-base px-7 py-3.5">
                 Register Employee
               </Link>
-              <Link href="/admin/login" className="btn text-sm px-6 py-3.5 border border-sky/30 text-sky hover:bg-sky/10 rounded-full transition-all duration-200">
-                Admin Login →
+<Link href="/login" className="btn text-sm px-6 py-3.5 border border-sky/30 text-sky hover:bg-sky/10 rounded-full transition-all duration-200">
+                Login Portal →
               </Link>
             </motion.div>
           </motion.div>
@@ -366,7 +366,7 @@ export default function PlatformNavigator() {
             </div>
             <div className="flex shrink-0 flex-wrap gap-3">
               <Link href="/kiosk" className="btn btn-primary px-6 py-3">Open Kiosk</Link>
-              <Link href="/admin/login" className="btn btn-ghost px-6 py-3">Admin Portal</Link>
+              <Link href="/login" className="btn btn-ghost px-6 py-3">Admin Portal</Link>
             </div>
           </motion.div>
         </div>

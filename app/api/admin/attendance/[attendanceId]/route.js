@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminDb } from '@/lib/firebase-admin'
 import {
   adminSessionAllowsOffice,
@@ -11,6 +12,8 @@ import {
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { kvDel } from '@/lib/kv-utils'
+import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
+import { getOfficeRecord } from '@/lib/office-directory'
 
 // DELETE /api/admin/attendance/[attendanceId]
 export async function DELETE(request, { params }) {
@@ -58,6 +61,33 @@ export async function DELETE(request, { params }) {
     // Invalidate the KV cache so the summary panel refreshes correctly
     if (data.employeeId && data.dateKey) {
       await kvDel(`attendance:logs:${data.employeeId}:${data.dateKey}`)
+
+      // Refresh attendance_daily Firestore doc so HR sees correct data immediately
+      // (fetch AFTER delete so the removed entry is excluded from the fresh logs)
+      try {
+        const freshSnapshot = await db
+          .collection('attendance')
+          .where('employeeId', '==', data.employeeId)
+          .where('dateKey', '==', data.dateKey)
+          .orderBy('timestamp', 'asc')
+          .get()
+        const freshLogs = freshSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        const officeRecord = await getOfficeRecord(db, data.officeId)
+        if (officeRecord) {
+          const dailyRecord = deriveDailyAttendanceRecord({
+            logs: freshLogs,
+            person: { employeeId: data.employeeId, name: data.name, officeId: data.officeId, officeName: data.officeName },
+            office: officeRecord,
+            targetDateKey: data.dateKey,
+          })
+          await db.collection('attendance_daily').doc(`${data.employeeId}_${data.dateKey}`).set({
+            ...dailyRecord,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true })
+        }
+      } catch (cacheErr) {
+        console.error('[Admin] Failed to refresh attendance_daily after delete:', cacheErr?.message)
+      }
     }
 
     await writeAuditLog(db, {

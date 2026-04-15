@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
+import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 
 function safeTimestamp(value) {
   if (!value) return null
@@ -28,8 +29,15 @@ function safeSerialize(value) {
 }
 
 export async function GET(request) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
     const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100)

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
 import { toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
@@ -26,6 +27,16 @@ export async function GET(request) {
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
+    const cachedRecords = await listDailyAttendanceRecordsForDate(db, date)
+    if (cachedRecords.length > 0) {
+      const records = cachedRecords
+        .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+        .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
+        .sort((left, right) => left.name.localeCompare(right.name))
+
+      return NextResponse.json({ ok: true, records })
     }
 
     const offices = await listOfficeRecords(db)

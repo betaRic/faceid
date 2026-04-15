@@ -161,7 +161,7 @@ export async function POST(request) {
       personId: transactionResult.personId,
       approvalStatus: transactionResult.nextPerson.approvalStatus,
       sampleCount,
-      savedSampleCount: body.descriptors.length,
+      savedSampleCount: transactionResult.uniqueCount,
       message: indexSyncWarning ? `${message} Warning: ${indexSyncWarning}` : message,
     })
   } catch (error) {

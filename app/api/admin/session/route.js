@@ -41,8 +41,8 @@ export async function GET(request) {
     ok: true,
     needsRefresh: true,
     refreshed: true,
-    timeRemaining: getAdminSessionMaxAge(),
-    expiresIn: '30 days',
+    timeRemaining: timeRemaining,
+    expiresIn: `${Math.floor(timeRemaining / 3600)} hours`,
   })
 
   response.cookies.set(getAdminSessionCookieName(), newCookieValue, {

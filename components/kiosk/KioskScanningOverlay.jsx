@@ -33,6 +33,7 @@ export default function KioskScanningOverlay({
   const hasCapturedFrame = Boolean(capturedFrameUrl)
 
   const distanceStatus = faceDistanceInfo?.status || null
+  const faceAreaRatio = faceDistanceInfo?.faceAreaRatio || 0
 
   // Labels and colors — "perfect" covers a wide range to reduce anxiety
   const distanceLabel = distanceStatus === 'too-close' ? 'Move back'
@@ -46,7 +47,6 @@ export default function KioskScanningOverlay({
     : 'bg-white/30'
 
   // Distance bar — positions mapped to oval-canvas ratios (post-crop values)
-  const faceAreaRatio = faceDistanceInfo?.faceAreaRatio || 0
   const getBarPosition = () => {
     if (faceAreaRatio <= 0) return 0
     if (faceAreaRatio < 0.03) return 0        // too far
@@ -111,6 +111,7 @@ export default function KioskScanningOverlay({
                 muted
                 autoPlay
                 className="absolute inset-0 h-full w-full object-cover"
+                style={{ transform: 'scaleX(-1)' }}
               />
             )}
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
@@ -138,26 +139,24 @@ export default function KioskScanningOverlay({
         <div className="mt-1 text-[9px] text-slate-100/70 sm:text-xs">{wifiStatus}</div>
       </div>
 
-      {/* Status pill */}
-      <div className="absolute inset-x-0 bottom-16 z-[4] flex justify-center pointer-events-none sm:bottom-20">
-        <div className={`rounded-full px-5 py-2 text-sm font-semibold backdrop-blur shadow-lg ${
-          isVerifying
-            ? 'bg-blue-500/80 text-white'
-            : isConfirmed
-              ? 'bg-emerald-500/80 text-white'
-              : isBlocked || isUnknown
-                ? 'bg-red-500/80 text-white'
+      {/* Status pill — hidden when blocked/unknown (alert takes over) */}
+      {!isBlocked && !isUnknown && (
+        <div className="absolute inset-x-0 bottom-16 z-[4] flex justify-center pointer-events-none sm:bottom-20">
+          <div className={`rounded-full px-5 py-2 text-sm font-semibold backdrop-blur shadow-lg ${
+            isVerifying
+              ? 'bg-blue-500/80 text-white'
+              : isConfirmed
+                ? 'bg-emerald-500/80 text-white'
                 : 'bg-black/50 text-white/80'
-        }`}>
-          {statusMessage}
+          }`}>
+            {statusMessage}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Distance indicator bar */}
-      {faceDistanceInfo && !isVerifying && (
-        <div className={`absolute inset-x-0 bottom-28 z-[4] flex flex-col items-center gap-2 pointer-events-none sm:bottom-32 transition-opacity duration-300 ${
-          isConfirmed ? 'opacity-0' : 'opacity-100'
-        }`}>
+      {/* Distance indicator bar — hidden during verification, confirmed, blocked, or unknown */}
+      {faceDistanceInfo && !isVerifying && !isConfirmed && !isBlocked && !isUnknown && (
+        <div className="absolute inset-x-0 bottom-28 z-[4] flex flex-col items-center gap-2 pointer-events-none sm:bottom-32">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-medium text-white/50">FAR</span>
             <div className="relative h-2 w-32 overflow-hidden rounded-full bg-white/20">
@@ -185,8 +184,8 @@ export default function KioskScanningOverlay({
         </div>
       )}
 
-      {/* Today's attendance count */}
-      {todaysCount != null && (
+      {/* Today's attendance count — hidden during blocked/unknown to avoid clutter under alert */}
+      {todaysCount != null && !isBlocked && !isUnknown && (
         <div className="absolute bottom-3 left-3 z-[4] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 shadow-lg backdrop-blur sm:left-5 sm:bottom-5 sm:px-5 sm:py-3">
           <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-100/92 sm:text-xs">Today&apos;s attendance</div>
           <div className="mt-0.5 font-display text-xl text-white sm:text-2xl">{todaysCount}</div>

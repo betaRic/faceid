@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import AppShell from '@/components/AppShell'
+import { formatAttendanceDateKey } from '@/lib/attendance-time'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -39,7 +40,7 @@ function SummaryContent() {
         const monthlyRes = await fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`)
         const monthlyJson = await monthlyRes.json()
         
-        const date = new Date().toISOString().split('T')[0]
+        const date = formatAttendanceDateKey(Date.now())
         const dailyRes = await fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`)
         const dailyJson = await dailyRes.json()
         
@@ -51,7 +52,13 @@ function SummaryContent() {
         }
         
         if (!monthlyJson.ok && !dailyJson.ok) {
-          setError('Failed to load attendance')
+          const accessDenied = monthlyRes.status === 401 || monthlyRes.status === 403 || dailyRes.status === 401 || dailyRes.status === 403
+          if (accessDenied) {
+            sessionStorage.removeItem('currentEmployeeId')
+            setError('Attendance view expired. Scan again at the kiosk.')
+          } else {
+            setError(monthlyJson.message || dailyJson.message || 'Failed to load attendance')
+          }
         }
       } catch (err) {
         setError('Failed to load attendance')
@@ -190,8 +197,8 @@ function SummaryContent() {
 
 export default function SummaryPage() {
   return (
-    <AppShell contentClassName="px-4 py-4 sm:px-6">
-      <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
+    <AppShell fitViewport contentClassName="px-4 py-4 sm:px-6">
+      <div className="page-frame h-full min-h-0">
         <Suspense fallback={
           <div className="flex items-center justify-center py-20">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />

@@ -13,6 +13,8 @@ import { writeAuditLog } from '@/lib/audit-log'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { createOriginGuard } from '@/lib/csrf'
 import { kvDel } from '@/lib/kv-utils'
+import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
+import { getOfficeRecord } from '@/lib/office-directory'
 
 // GET /api/admin/attendance?employeeId=EMP-001&date=2026-04-09
 export async function GET(request) {
@@ -170,6 +172,33 @@ export async function POST(request) {
 
     // Invalidate the KV cache for this employee+date so the next summary fetch is fresh
     await kvDel(`attendance:logs:${employeeId}:${dateKey}`)
+
+    // Refresh the attendance_daily Firestore doc immediately so HR sees correct data
+    // without waiting for the next cron run or cache expiry.
+    try {
+      const freshSnapshot = await db
+        .collection('attendance')
+        .where('employeeId', '==', employeeId)
+        .where('dateKey', '==', dateKey)
+        .orderBy('timestamp', 'asc')
+        .get()
+      const freshLogs = freshSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      const officeRecord = await getOfficeRecord(db, officeId)
+      if (officeRecord) {
+        const dailyRecord = deriveDailyAttendanceRecord({
+          logs: freshLogs,
+          person: { employeeId, name, officeId, officeName },
+          office: officeRecord,
+          targetDateKey: dateKey,
+        })
+        await db.collection('attendance_daily').doc(`${employeeId}_${dateKey}`).set({
+          ...dailyRecord,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true })
+      }
+    } catch (cacheErr) {
+      console.error('[Admin] Failed to refresh attendance_daily:', cacheErr?.message)
+    }
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

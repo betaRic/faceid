@@ -2,22 +2,39 @@ import DynamicAdminDashboard from '@/components/DynamicAdminDashboard'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { getAdminDb } from '@/lib/firebase-admin'
 
 export default async function AdminPage() {
   const cookieStore = await cookies()
-  const session = cookieStore.get(getAdminSessionCookieName())?.value
-  const adminSession = parseAdminSessionCookieValue(session)
-
-  if (!adminSession) {
-    redirect('/admin/login')
-  }
-
   const db = getAdminDb()
-  const resolvedSession = await resolveAdminSession(db, adminSession)
-  if (!resolvedSession) {
-    redirect('/admin/login')
+
+  // Check admin session first
+  const adminSession = parseAdminSessionCookieValue(cookieStore.get(getAdminSessionCookieName())?.value)
+  if (adminSession) {
+    const resolvedSession = await resolveAdminSession(db, adminSession)
+    if (resolvedSession) {
+      return <DynamicAdminDashboard 
+        initialOfficeId={resolvedSession.officeId} 
+        initialRoleScope={resolvedSession.scope}
+        permissions={resolvedSession.permissions || ['dashboard', 'office', 'employees', 'summary', 'settings', 'roles']}
+      />
+    }
   }
 
-  return <DynamicAdminDashboard initialOfficeId={resolvedSession.officeId} initialRoleScope={resolvedSession.scope} />
+  // Check HR session
+  const hrSession = parseHrSessionCookieValue(cookieStore.get(getHrSessionCookieName())?.value)
+  if (hrSession) {
+    const resolvedSession = await resolveHrSession(db, hrSession)
+    if (resolvedSession) {
+      return <DynamicAdminDashboard
+        initialOfficeId={resolvedSession.officeId}
+        initialRoleScope={resolvedSession.scope}
+        permissions={resolvedSession.permissions || ['employees', 'summary']}
+      />
+    }
+  }
+
+  // No valid session
+  redirect('/admin/login')
 }

@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 import { getHumanVerification } from '@/lib/biometrics/human'
 import { PREVIEW_MAX_DIMENSION, VERIFICATION_BURST_FRAMES, VERIFICATION_BURST_INTERVAL_MS } from '@/lib/config'
-import { selectPrimaryFace } from '@/lib/kiosk-utils'
 import { selectOvalReadyFace, buildOvalCaptureCanvas } from '@/lib/biometrics/oval-capture'
 
 const wait = duration => new Promise(resolve => {
@@ -22,6 +21,8 @@ export function useVerificationBurst(camera) {
       })
       // Crop to oval BEFORE descriptor extraction — must match enrollment pipeline
       const canvas = buildOvalCaptureCanvas(rawCanvas)
+      if (!canvas) { await wait(VERIFICATION_BURST_INTERVAL_MS); continue }
+      if (!camera.camOn) break
       const result = await human.detect(canvas)
       const detections = result.face.map(face => ({
         detection: {
@@ -35,6 +36,8 @@ export function useVerificationBurst(camera) {
         },
         landmarks: { positions: face.mesh },
         descriptor: face.embedding,
+        antispoof: face.real ?? null,
+        liveness: face.live ?? null,
       }))
       
       // Use more lenient oval selection for verification burst (same thresholds as kiosk idle)
@@ -64,6 +67,8 @@ export function useVerificationBurst(camera) {
         })
         // Crop to oval even in fallback — descriptor geometry must match enrollment
         const canvas = buildOvalCaptureCanvas(rawCanvas)
+        if (!canvas) { await wait(VERIFICATION_BURST_INTERVAL_MS); continue }
+        if (!camera.camOn) break
         const result = await human.detect(canvas)
         const detections = result.face.map(face => ({
           detection: {
@@ -77,6 +82,8 @@ export function useVerificationBurst(camera) {
           },
           landmarks: { positions: face.mesh },
           descriptor: face.embedding,
+          antispoof: face.real ?? null,
+          liveness: face.live ?? null,
         }))
 
         if (detections.length > 0) {

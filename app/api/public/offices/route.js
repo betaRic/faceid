@@ -14,21 +14,6 @@ function toPublicOffice(office) {
     location: String(office?.location || ''),
     provinceOrCity: String(office?.provinceOrCity || ''),
     status: String(office?.status || 'active'),
-    wifiSsid: office?.wifiSsid || [],
-    gps: {
-      latitude: office?.gps?.latitude,
-      longitude: office?.gps?.longitude,
-      radiusMeters: office?.gps?.radiusMeters,
-    },
-    workPolicy: {
-      schedule: office?.workPolicy?.schedule || '',
-      workingDays: office?.workPolicy?.workingDays || [],
-      wfhDays: office?.workPolicy?.wfhDays || [],
-      morningIn: office?.workPolicy?.morningIn || '08:00',
-      morningOut: office?.workPolicy?.morningOut || '12:00',
-      afternoonIn: office?.workPolicy?.afternoonIn || '13:00',
-      afternoonOut: office?.workPolicy?.afternoonOut || '17:00',
-    },
   }
 }
 

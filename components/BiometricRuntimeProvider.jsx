@@ -13,7 +13,7 @@ import {
 const BiometricRuntimeContext = createContext(null)
 
 function isBiometricRoute(pathname) {
-  return pathname === '/kiosk' || pathname === '/registration'
+  return pathname === '/kiosk' || pathname === '/registration' || pathname.startsWith('/admin/employee/')
 }
 
 function isKioskRoute(pathname) {

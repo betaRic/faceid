@@ -1,9 +1,22 @@
 import { NextResponse } from 'next/server'
+import { getAdminDb } from '@/lib/firebase-admin'
+import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { getRuntimeReadiness } from '@/lib/runtime-readiness'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request) {
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Regional admin login is required.' }, { status: 401 })
+  }
+
+  const db = getAdminDb()
+  const resolvedSession = await resolveAdminSession(db, session)
+  if (!resolvedSession?.active || resolvedSession.scope !== 'regional') {
+    return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+  }
+
   const readiness = getRuntimeReadiness()
 
   return NextResponse.json({

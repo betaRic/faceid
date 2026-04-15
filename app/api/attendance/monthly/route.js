@@ -1,7 +1,13 @@
 import { getAdminDb } from '@/lib/firebase-admin'
+import { listEmployeeDailyAttendanceRecords, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
+import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 
 export const dynamic = 'force-dynamic'
+
+function normalizeAttendanceMode(value) {
+  return String(value || '').trim().toLowerCase()
+}
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -13,9 +19,52 @@ export async function GET(request) {
 
   try {
     const db = getAdminDb()
+    const access = await resolveAttendanceViewer(request, db, employeeId)
+    if (!access.viewer) {
+      return Response.json({ ok: false, message: access.message }, { status: access.status })
+    }
 
-    const { currentMonth, currentYear } = buildAttendanceEntryTiming(Date.now())
+    const { dateKey } = buildAttendanceEntryTiming(Date.now())
+    const [currentYear, currentMonth] = String(dateKey).split('-').map(Number)
     const { attendanceStartOfMonth, attendanceEndOfMonth } = getMonthRange(currentYear, currentMonth)
+
+    const dailyRecords = await listEmployeeDailyAttendanceRecords(db, employeeId)
+    if (dailyRecords.length > 0) {
+      const records = dailyRecords
+        .filter(record => {
+          const [recordYear, recordMonth] = String(record.dateKey || '').split('-').map(Number)
+          return recordYear === currentYear && recordMonth === currentMonth && hasDailyAttendanceLogs(record)
+        })
+        .map(record => ({
+          id: record.id,
+          dateKey: record.dateKey,
+          dateLabel: record.dateLabel,
+          amInTimestamp: record.amInTimestamp,
+          amOutTimestamp: record.amOutTimestamp,
+          pmInTimestamp: record.pmInTimestamp,
+          pmOutTimestamp: record.pmOutTimestamp,
+          decisionCodes: record.decisionCodes || [],
+        }))
+
+      const dateKeySet = new Set(records.map(r => r.dateKey))
+      const checkIns = records.reduce((sum, record) => sum + (record.amInTimestamp ? 1 : 0) + (record.pmInTimestamp ? 1 : 0), 0)
+      const checkOuts = records.reduce((sum, record) => sum + (record.amOutTimestamp ? 1 : 0) + (record.pmOutTimestamp ? 1 : 0), 0)
+      const wfhCount = records.filter(r => r.decisionCodes.some(code => normalizeAttendanceMode(code) === 'accepted_wfh')).length
+      const onSiteCount = records.filter(r => r.decisionCodes.some(code => normalizeAttendanceMode(code).startsWith('accepted_onsite'))).length
+
+      return Response.json({
+        ok: true,
+        month: currentMonth,
+        year: currentYear,
+        totalDays: dateKeySet.size,
+        checkIns,
+        checkOuts,
+        wfhCount,
+        onSiteCount,
+        dates: Array.from(dateKeySet).sort(),
+        records: records.slice(0, 50),
+      })
+    }
 
     const snapshot = await db.collection('attendance')
       .where('employeeId', '==', employeeId)
@@ -42,8 +91,8 @@ export async function GET(request) {
 
     const checkIns = records.filter(r => r.action === 'checkin')
     const checkOuts = records.filter(r => r.action === 'checkout')
-    const wfhCount = records.filter(r => r.attendanceMode === 'wfh').length
-    const onSiteCount = records.filter(r => r.attendanceMode === 'onsite').length
+    const wfhCount = records.filter(r => normalizeAttendanceMode(r.attendanceMode) === 'wfh').length
+    const onSiteCount = records.filter(r => ['onsite', 'on-site'].includes(normalizeAttendanceMode(r.attendanceMode))).length
 
     return Response.json({
       ok: true,
@@ -64,8 +113,8 @@ export async function GET(request) {
 }
 
 function getMonthRange(year, month) {
-  const start = new Date(year, month - 1, 1)
-  const end = new Date(year, month, 0, 23, 59, 59, 999)
+  const start = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+08:00`)
+  const end = new Date(`${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}T23:59:59.999+08:00`)
   return {
     attendanceStartOfMonth: start.getTime(),
     attendanceEndOfMonth: end.getTime(),

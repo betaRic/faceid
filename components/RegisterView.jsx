@@ -5,10 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PERSON_APPROVAL_PENDING } from '../lib/person-approval'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '../lib/biometrics/oval-capture'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
-import { DUPLICATE_FACE_THRESHOLD, DISTANCE_THRESHOLD_KIOSK } from '../lib/config'
+import { checkEnrollmentDuplicate } from '../lib/data-store'
 import { useAudioCue } from '../hooks/useAudioCue'
-import { useEnrollmentCapture, CAPTURE_PHASES, classifyPose } from '../hooks/useEnrollmentCapture'
-import { findClosestPerson } from '../lib/biometrics/descriptor-utils'
+import { useEnrollmentCapture, CAPTURE_PHASES } from '../hooks/useEnrollmentCapture'
 import AppShell from './AppShell'
 
 const STEPS = [
@@ -34,10 +33,13 @@ function PoseArcIndicator({ yaw, poseOk, phaseType, sideAYw }) {
       leftFill = deviation
       rightFill = deviation
     } else {
+      // Raw canvas is non-mirrored; display has scaleX(-1).
+      // Positive yaw = nose moved right in raw = user turned LEFT in mirror.
+      // Fill left arc when yaw > 0 so the glow matches what the user sees.
       if (yaw > 0) {
-        rightFill = Math.min(1, (yaw - 0.08) / 0.20)
+        leftFill = Math.min(1, (yaw - 0.08) / 0.20)
       } else {
-        leftFill = Math.min(1, (-yaw - 0.08) / 0.20)
+        rightFill = Math.min(1, (-yaw - 0.08) / 0.20)
       }
     }
   }
@@ -69,7 +71,7 @@ function PoseArcIndicator({ yaw, poseOk, phaseType, sideAYw }) {
   )
 }
 
-function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statusMsg }) {
+function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statusMsg, sideAYaw }) {
   if (capturePhase < 0) return null
   const phase = CAPTURE_PHASES[capturePhase]
 
@@ -101,7 +103,7 @@ function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statu
           yaw={currentYaw}
           poseOk={poseOk}
           phaseType={phase.poseType}
-          sideAYw={null}
+          sideAYw={sideAYaw}
         />
         <div className="h-4 w-px bg-white/20" />
         <span className={`text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
@@ -170,8 +172,8 @@ export default function RegisterView({
   const [burstSummary, setBurstSummary] = useState(null)
   const [lastSavedSummary, setLastSavedSummary] = useState(null)
   const [savingEnrollment, setSavingEnrollment] = useState(false)
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false)
   const [toast, setToast] = useState(null)
-  const [duplicateError, setDuplicateError] = useState(null)
 
   const playAudioCue = useAudioCue()
   const nameRef = useRef(null)
@@ -182,9 +184,9 @@ export default function RegisterView({
     faceFound,
     faceNeedsAlignment,
     statusMsg,
-    setStatusMsg,
     currentYaw,
     poseOk,
+    sideAYaw,
     startDetect,
     stopDetect,
     resetCapture,
@@ -210,49 +212,52 @@ export default function RegisterView({
     setEmployeeIdError(val !== sanitized ? 'Only letters, numbers, and dashes (-)' : '')
   }
 
-  // ─── FIXED: Removed the early `if (persons.length === 0) return` that
-  // silently killed the entire capture flow on fresh/empty systems.
-  // The duplicate check is now correctly skipped when there's nothing to check,
-  // and the flow always proceeds to review when a valid capture is obtained.
-  useEffect(() => {
-    if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
-
-    startDetect(result => {
-      // Only run duplicate check when there are persons with descriptors to compare against.
-      // When the system is empty (first enrollment), skip directly to review.
-      const personsWithDescriptors = persons.filter(p => p.descriptors?.length > 0)
-      if (personsWithDescriptors.length > 0) {
-        for (const descriptor of result.descriptors) {
-          const dup = findClosestPerson(persons, '', descriptor, DUPLICATE_FACE_THRESHOLD)
-          if (dup) {
-            setDuplicateError(`Face already enrolled as ${dup.person.name} (${dup.person.employeeId || 'no ID'}). Duplicate not allowed.`)
-            playAudioCue('notify')
-            return
-          }
-          const close = findClosestPerson(persons, '', descriptor, DISTANCE_THRESHOLD_KIOSK)
-          if (close && close.distance <= 0.50) {
-            setDuplicateError(`Face resembles ${close.person.name} (${close.person.employeeId || 'no ID'}). Too similar to existing enrollment.`)
-            playAudioCue('notify')
-            return
-          }
-        }
+  const handleCaptureComplete = useCallback(async (result) => {
+    setCheckingDuplicate(true)
+    try {
+      const duplicateCheck = await checkEnrollmentDuplicate(result.descriptors)
+      if (duplicateCheck.duplicate) {
+        setPendingDescriptors([])
+        setPreviewUrl(null)
+        setCaptureFeedback(null)
+        setBurstSummary(null)
+        playAudioCue('error')
+        showToast(duplicateCheck.message || 'Duplicate enrollment blocked.', 5000)
+        resetCapture()
+        camera.clearOverlay()
+        setStep('capture')
+        return
       }
 
-      // Always proceed here — whether the persons list is empty or not
-      setDuplicateError(null)
       setPendingDescriptors(result.descriptors)
       setPreviewUrl(result.previewUrl)
       setCaptureFeedback(result.qualitySummary)
       setBurstSummary(result.burstSummary)
       playAudioCue('notify')
       setStep('review')
-    }, modelsReady)
+    } catch (err) {
+      showToast(err?.message || 'Failed to verify duplicate enrollment', 5000)
+      setPendingDescriptors([])
+      setPreviewUrl(null)
+      setCaptureFeedback(null)
+      setBurstSummary(null)
+      resetCapture()
+      camera.clearOverlay()
+      setStep('capture')
+    } finally {
+      setCheckingDuplicate(false)
+    }
+  }, [camera, playAudioCue, resetCapture])
+
+  useEffect(() => {
+    if (!workspaceReady || !modelsReady || !camera.camOn || step !== 'capture') return () => {}
+
+    startDetect(handleCaptureComplete, modelsReady)
 
     return stopDetect
-  }, [camera.camOn, modelsReady, workspaceReady, step, startDetect, stopDetect, playAudioCue, persons])
+  }, [camera.camOn, handleCaptureComplete, modelsReady, startDetect, step, stopDetect, workspaceReady])
 
   const handleRetake = useCallback(() => {
-    setDuplicateError(null)
     setPreviewUrl(null)
     setPendingDescriptors([])
     setCaptureFeedback(null)
@@ -277,13 +282,14 @@ export default function RegisterView({
     setSavingEnrollment(true)
     let result = null
     try {
+      const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
       result = await onEnrollPerson(
         {
           name: name.trim(),
           employeeId: employeeId.trim(),
           officeId,
           officeName: selectedOffice?.name || 'Unassigned',
-          photoDataUrl: previewUrl,
+          ...(storageBucket ? { photoDataUrl: previewUrl } : {}),
         },
         pendingDescriptors,
       )
@@ -317,31 +323,12 @@ export default function RegisterView({
     handleRetake()
   }, [offices, handleRetake])
 
-  const captureStateLabel = !modelsReady
-    ? 'Loading models…'
-    : capturePhase >= 0
-      ? CAPTURE_PHASES[capturePhase]?.label
-      : faceFound
-        ? 'Face ready — hold still'
-        : faceNeedsAlignment
-          ? 'Move into the oval guide'
-          : 'Scanning for face…'
-
-  const captureStateCls = capturePhase >= 0
-    ? poseOk
-      ? 'bg-emerald-500/25 text-emerald-100 ring-1 ring-emerald-400/50'
-      : 'bg-blue-500/20 text-blue-100 ring-1 ring-blue-400/40'
-    : faceFound
-      ? 'bg-emerald-400/20 text-emerald-50 ring-1 ring-emerald-300/40'
-      : faceNeedsAlignment
-        ? 'bg-amber-300/16 text-amber-50 ring-1 ring-amber-300/35'
-        : 'bg-white/15 text-stone-100 ring-1 ring-white/12'
-
   return (
     <AppShell
+      fitViewport
       actions={
         <div className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm">
-          {persons.length} enrolled
+          Enrollment
         </div>
       }
       contentClassName="px-3 py-3 sm:px-5 lg:px-8 min-h-0 flex flex-col"
@@ -352,25 +339,25 @@ export default function RegisterView({
         </div>
       )}
 
-      {savingEnrollment && (
+      {(savingEnrollment || checkingDuplicate) && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/35 px-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-[1.8rem] border border-black/5 bg-white px-6 py-6 text-center shadow-2xl">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-navy/10">
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-navy border-t-transparent" />
             </div>
-            <h2 className="mt-4 text-xl font-bold text-ink">Saving enrollment</h2>
-            <p className="mt-2 text-sm text-muted">Submitting to server…</p>
+            <h2 className="mt-4 text-xl font-bold text-ink">{checkingDuplicate ? 'Checking duplicate face' : 'Saving enrollment'}</h2>
+            <p className="mt-2 text-sm text-muted">{checkingDuplicate ? 'Comparing this capture against enrolled staff…' : 'Submitting to server…'}</p>
           </div>
         </div>
       )}
 
       {step === 'capture' && (
-        <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
+        <div className="page-frame h-full min-h-0">
           <motion.section
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.35 }}
-            className="relative min-h-[calc(100dvh-8.25rem)] overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow xl:min-h-[calc(100dvh-10.5rem)]"
+            className="relative min-h-0 w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow"
           >
             <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
@@ -395,7 +382,7 @@ export default function RegisterView({
                   style={OVAL_FRAME_STYLE}
                 />
                 <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_FRAME_STYLE}>
-                  <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" />
+                  <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
                   <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
                 </div>
@@ -427,6 +414,7 @@ export default function RegisterView({
               poseOk={poseOk}
               currentYaw={currentYaw}
               statusMsg={statusMsg}
+              sideAYaw={sideAYaw}
             />
 
             {errorMessage && (
@@ -434,18 +422,12 @@ export default function RegisterView({
                 {errorMessage}
               </div>
             )}
-
-            {duplicateError && (
-              <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-red-600 px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
-                {duplicateError}
-              </div>
-            )}
           </motion.section>
         </div>
       )}
 
       {step !== 'capture' && (
-        <div className="page-frame flex h-[calc(100dvh-8.25rem)] flex-col gap-3 overflow-hidden xl:h-[calc(100dvh-10.5rem)]">
+        <div className="page-frame h-full min-h-0 flex-col gap-3 overflow-hidden">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}

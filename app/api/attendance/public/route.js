@@ -2,11 +2,17 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
+import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
 import { toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
+import { isPublicAttendanceEnabled } from '@/lib/public-features'
 
 export async function GET(request) {
+  if (!isPublicAttendanceEnabled()) {
+    return NextResponse.json({ ok: false, message: 'Public attendance is disabled.' }, { status: 404 })
+  }
+
   const { searchParams } = new URL(request.url)
   const date = String(searchParams.get('date') || '').trim()
   const officeIdFilter = String(searchParams.get('officeId') || 'all').trim()
@@ -17,6 +23,15 @@ export async function GET(request) {
 
   try {
     const db = getAdminDb()
+    const cachedRecords = await listDailyAttendanceRecordsForDate(db, date)
+    if (cachedRecords.length > 0) {
+      const records = cachedRecords
+        .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
+        .sort((left, right) => left.name.localeCompare(right.name))
+
+      return NextResponse.json({ ok: true, records })
+    }
+
     const offices = await listOfficeRecords(db)
     const legacyDateLabel = toLegacyAttendanceDate(date)
 

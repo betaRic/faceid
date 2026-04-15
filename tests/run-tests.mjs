@@ -1,9 +1,35 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
+const projectRootUrl = new URL('../', import.meta.url)
+
+function ensureJsExtension(specifier) {
+  return /\.[a-z0-9]+$/i.test(specifier) ? specifier : `${specifier}.js`
+}
+
+function resolveImportSpecifier(specifier, fileUrl) {
+  if (specifier.startsWith('@/')) {
+    return new URL(ensureJsExtension(specifier.slice(2)), projectRootUrl).href
+  }
+  if (specifier.startsWith('./') || specifier.startsWith('../')) {
+    return new URL(ensureJsExtension(specifier), fileUrl).href
+  }
+  return specifier
+}
+
+function rewriteModuleSpecifiers(source, fileUrl) {
+  return source
+    .replace(/(from\s+['"])([^'"]+)(['"])/g, (_, prefix, specifier, suffix) => (
+      `${prefix}${resolveImportSpecifier(specifier, fileUrl)}${suffix}`
+    ))
+    .replace(/(import\s*\(\s*['"])([^'"]+)(['"]\s*\))/g, (_, prefix, specifier, suffix) => (
+      `${prefix}${resolveImportSpecifier(specifier, fileUrl)}${suffix}`
+    ))
+}
+
 async function importLocalModule(relativePath) {
   const fileUrl = new URL(relativePath, import.meta.url)
-  const source = await readFile(fileUrl, 'utf8')
+  const source = rewriteModuleSpecifiers(await readFile(fileUrl, 'utf8'), fileUrl)
   return import(`data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`)
 }
 
@@ -25,10 +51,16 @@ const personDirectoryModule = await importLocalModule('../lib/person-directory.j
 const personApprovalModule = await importLocalModule('../lib/person-approval.js')
 const enrollmentBurstModule = await importLocalModule('../lib/biometrics/enrollment-burst.js')
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
+const dtrModule = await importLocalModule('../lib/dtr.js')
 
 const { calculateDistanceMeters, isOfficeWfhDay } = officesModule
 const { deriveDailyAttendanceRecord } = dailyAttendanceModule
-const { buildAttendanceEntryTiming, toLegacyAttendanceDate } = attendanceTimeModule
+const {
+  buildAttendanceEntryTiming,
+  getAttendanceHour,
+  getAttendanceMinutesOfDay,
+  toLegacyAttendanceDate,
+} = attendanceTimeModule
 const {
   clampPersonDirectoryLimit,
   decodePersonDirectoryCursor,
@@ -52,6 +84,11 @@ const {
   isFaceInsideCaptureOval,
   selectOvalReadyFace,
 } = ovalCaptureModule
+const {
+  buildDtrDocument,
+  buildDtrRangeSpec,
+  filterAttendanceDaysByRange,
+} = dtrModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -227,6 +264,13 @@ await run('toLegacyAttendanceDate converts ISO date keys to legacy labels', () =
   assert.equal(toLegacyAttendanceDate(''), '')
 })
 
+await run('attendance time helpers stay in Manila time instead of server local time', () => {
+  const timestamp = new Date('2026-04-09T23:30:00Z').getTime()
+
+  assert.equal(getAttendanceHour(timestamp), 7)
+  assert.equal(getAttendanceMinutesOfDay(timestamp), (7 * 60) + 30)
+})
+
 await run('person directory search mode distinguishes names from employee IDs', () => {
   assert.equal(inferPersonDirectorySearchMode('EMP-001'), 'employeeId')
   assert.equal(inferPersonDirectorySearchMode('Jane Doe'), 'name')
@@ -259,18 +303,19 @@ await run('person approval defaults legacy records to approved and blocks pendin
 })
 
 await run('enrollment descriptor batch wraps a single descriptor and validates multiple samples', () => {
-  const normalizedSingle = normalizeEnrollmentDescriptorBatch([0.1, 0.2, 0.3])
-  assert.deepEqual(normalizedSingle, [[0.1, 0.2, 0.3]])
+  const singleDescriptor = Array.from({ length: 1024 }, (_, index) => index / 1024)
+  const normalizedSingle = normalizeEnrollmentDescriptorBatch(singleDescriptor)
+  assert.deepEqual(normalizedSingle, [singleDescriptor])
 
   const normalizedBatch = normalizeEnrollmentDescriptorBatch([
-    [0.1, 0.2, 0.3],
-    [0.4, 0.5, 0.6],
+    singleDescriptor,
+    Array.from({ length: 1024 }, (_, index) => (index + 1) / 1024),
   ])
 
   assert.equal(validateEnrollmentDescriptorBatch(normalizedBatch), null)
   assert.match(
     validateEnrollmentDescriptorBatch([[0.1, 0.2], [0.1]]),
-    /same length/i,
+    /1024 dimensions/i,
   )
 })
 
@@ -302,7 +347,7 @@ await run('burst sample selector keeps distinct top-ranked captures', () => {
     },
   ]
 
-  const selected = selectEnrollmentBurstSamples(captures)
+  const selected = selectEnrollmentBurstSamples(captures, { maxSamples: 3 })
 
   assert.equal(selected.length, 3)
   assert.deepEqual(selected.map(item => item.attempt), [0, 3, 5])
@@ -318,7 +363,7 @@ await run('capture quality summary flags dim low-contrast frames', () => {
   })
 
   assert.equal(summary.tone, 'warn')
-  assert.match(summary.text, /Lighting is too dim/i)
+  assert.match(summary.text, /face is too small/i)
 })
 
 await run('oval capture region center-crops wide frames to portrait view', () => {
@@ -337,7 +382,7 @@ await run('oval fit gate accepts centered faces and rejects off-center faces', (
   )
 
   assert.equal(
-    isFaceInsideCaptureOval({ x: -5, y: 140, width: 160, height: 160 }, 340, 500),
+    isFaceInsideCaptureOval({ x: -80, y: 140, width: 160, height: 160 }, 340, 500),
     false,
   )
 })
@@ -352,6 +397,65 @@ await run('oval ready face selector ignores detections outside the live oval', (
 
   assert.ok(ready)
   assert.deepEqual(ready.box, detections[1].box)
+})
+
+await run('DTR range spec normalizes custom and preset ranges', () => {
+  const firstHalf = buildDtrRangeSpec({ month: 4, year: 2026, range: '1-15' })
+  const custom = buildDtrRangeSpec({ month: 4, year: 2026, range: 'custom', customStartDay: 22, customEndDay: 18 })
+
+  assert.deepEqual(
+    { start: firstHalf.startDay, end: firstHalf.endDay, label: firstHalf.label },
+    { start: 1, end: 15, label: '1-15' },
+  )
+  assert.deepEqual(
+    { start: custom.startDay, end: custom.endDay, label: custom.label },
+    { start: 18, end: 22, label: '18-22' },
+  )
+})
+
+await run('filterAttendanceDaysByRange keeps only selected rows', () => {
+  const rangeSpec = buildDtrRangeSpec({ month: 4, year: 2026, range: '16-end' })
+  const days = [
+    { dateKey: '2026-04-10' },
+    { dateKey: '2026-04-16' },
+    { dateKey: '2026-04-28' },
+  ]
+
+  assert.deepEqual(
+    filterAttendanceDaysByRange(days, rangeSpec).map(day => day.dateKey),
+    ['2026-04-16', '2026-04-28'],
+  )
+})
+
+await run('buildDtrDocument shades inactive half-month rows and preserves active day data', () => {
+  const dtr = buildDtrDocument({
+    employee: { name: 'Test Employee', employeeId: 'EMP-777', office: 'Main Office' },
+    month: 4,
+    year: 2026,
+    range: '16-end',
+    dayRecords: [
+      {
+        dateKey: '2026-04-16',
+        day: 16,
+        amIn: '08:01 AM',
+        amOut: '12:00 PM',
+        pmIn: '01:02 PM',
+        pmOut: '05:00 PM',
+        undertime: 3,
+        totalHours: 477,
+      },
+    ],
+  })
+
+  const day10 = dtr.rows.find(row => row.day === 10)
+  const day16 = dtr.rows.find(row => row.day === 16)
+
+  assert.equal(day10.isActive, false)
+  assert.equal(day10.isDisabled, true)
+  assert.equal(day10.amIn, '')
+  assert.equal(day16.isActive, true)
+  assert.equal(day16.amIn, '08:01 AM')
+  assert.equal(dtr.period.periodLabel, 'APRIL 16-30, 2026')
 })
 
 await run('firestore index manifest loads from repo root', async () => {

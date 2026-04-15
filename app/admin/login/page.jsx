@@ -1,5 +1,5 @@
-import DynamicAdminLogin from '@/components/DynamicAdminLogin'
+import { redirect } from 'next/navigation'
 
 export default function AdminLoginPage() {
-  return <DynamicAdminLogin />
+  redirect('/login')
 }

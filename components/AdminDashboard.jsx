@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from './AppShell'
@@ -12,25 +12,37 @@ import { DashboardPanel } from './admin/DashboardPanel'
 import { EmployeesPanel } from './admin/EmployeesPanel'
 import { SummaryPanel } from './admin/SummaryPanel'
 import { AdminsPanel } from './admin/AdminsPanel'
+import { HrUsersPanel } from './admin/HrUsersPanel'
 import OfficePanel from './admin/OfficePanel'
 import EmployeeEditorModal from './admin/EmployeeEditorModal'
+import EmployeeDeleteModal from '@/components/admin/EmployeeDeleteModal'
+import { HrEmployeesPanel } from './admin/HrEmployeesPanel'
+import { ThresholdSettings } from './admin/ThresholdSettings'
 
-const navItems = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'office', label: 'Office' },
-  { id: 'employees', label: 'Employees' },
-  { id: 'summary', label: 'Summary' },
-  { id: 'admins', label: 'Admins' },
-]
-
-export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '' }) {
+export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '', permissions = [] }) {
   const router = useRouter()
   const {
     roleScope, setRoleScope,
     activePanel, setActivePanel,
     editingEmployee, setEditingEmployee,
+    deletingEmployee, setDeletingEmployee,
     officesLoaded, setSelectedOfficeId,
   } = useAdminStore()
+
+  const isRegional = roleScope === 'regional'
+  const isHr = !permissions.includes('dashboard') && !permissions.includes('office')
+
+  const navItems = useMemo(() => {
+    const allItems = [
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'office', label: 'Office' },
+      { id: 'employees', label: 'Employees' },
+      { id: 'summary', label: 'Summary' },
+      { id: 'settings', label: 'Settings' },
+      { id: 'roles', label: 'Roles' },
+    ]
+    return allItems.filter(item => permissions.includes(item.id))
+  }, [permissions])
 
   // Boot office subscription here so it isn't gated behind officesLoaded
   useOffices()
@@ -41,11 +53,15 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   useEffect(() => {
     setRoleScope(initialRoleScope)
     if (initialOfficeId) setSelectedOfficeId(initialOfficeId)
-  }, [initialRoleScope, initialOfficeId, setRoleScope, setSelectedOfficeId])
+    // Set default panel based on role
+    if (isHr && activePanel === 'dashboard') {
+      setActivePanel('employees')
+    }
+  }, [initialRoleScope, initialOfficeId, setRoleScope, setSelectedOfficeId, isHr, activePanel, setActivePanel])
 
   const handleLogout = useCallback(async () => {
     await fetch('/api/admin/logout', { method: 'POST' })
-    router.push('/admin/login')
+    router.push('/login')
     router.refresh()
   }, [router])
 
@@ -64,6 +80,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
   return (
     <AppShell
+      fitViewport
       actions={
         <div className="flex items-center gap-3">
           <button
@@ -77,13 +94,13 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       }
       contentClassName="px-4 py-5 sm:px-6 lg:px-8"
     >
-      <div className="grid min-h-[calc(100dvh-8rem)] gap-5 xl:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[240px_minmax(0,1fr)]">
         {/* Sidebar nav */}
         <aside className="xl:sticky xl:top-20 xl:h-fit">
           <div className="flex flex-col gap-3 rounded-2xl border border-black/5 bg-white/90 p-4 shadow-glow backdrop-blur">
             <nav className="flex flex-col gap-1">
               {navItems.map(item => {
-                const disabled = item.id === 'admins' && roleScope !== 'regional'
+                const disabled = item.id === 'roles' && roleScope !== 'regional'
                 const badge = item.id === 'employees' && pendingCount > 0 ? pendingCount : null
                 return (
                   <button
@@ -115,19 +132,35 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             </nav>
             <div className="mt-auto rounded-xl border border-black/5 bg-stone-50 px-3 py-3">
               <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">
-                {roleScope === 'regional' ? 'Regional Admin' : 'Office Admin'}
+                {roleScope === 'regional' ? 'Regional' : 'Office'}
               </div>
+              <div className="text-[10px] text-muted capitalize">{isHr ? 'HR' : 'Admin'}</div>
             </div>
           </div>
         </aside>
 
         {/* Main content */}
-        <div className="min-h-0">
-          {activePanel === 'dashboard' && <DashboardPanel />}
-          {activePanel === 'office' && <OfficePanel />}
-          {activePanel === 'employees' && <EmployeesPanel />}
-          {activePanel === 'summary' && <SummaryPanel />}
-          {activePanel === 'admins' && <AdminsPanel />}
+        <div className="min-h-0 overflow-y-auto">
+          {isHr ? (
+            <>
+              {activePanel === 'employees' && <HrEmployeesPanel />}
+              {activePanel === 'summary' && <SummaryPanel />}
+            </>
+          ) : (
+            <>
+              {activePanel === 'dashboard' && <DashboardPanel />}
+              {activePanel === 'office' && <OfficePanel />}
+              {activePanel === 'employees' && <EmployeesPanel />}
+              {activePanel === 'summary' && <SummaryPanel />}
+              {activePanel === 'settings' && <ThresholdSettings />}
+              {activePanel === 'roles' && (
+                <>
+                  <AdminsPanel />
+                  <div className="mt-5"><HrUsersPanel /></div>
+                </>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -141,6 +174,13 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             setEditingEmployee(null)
           }}
           onCancel={() => setEditingEmployee(null)}
+        />
+      )}
+
+      {deletingEmployee && (
+        <EmployeeDeleteModal
+          person={deletingEmployee}
+          onCancel={() => setDeletingEmployee(null)}
         />
       )}
     </AppShell>

@@ -153,7 +153,7 @@ export default function FaceAttendanceApp({
 
   if (productionFirebaseRequired && !firebaseEnabled) {
     return (
-      <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
+      <AppShell fitViewport contentClassName="px-4 py-6 sm:px-6 lg:px-8">
         <div className="page-frame">
           <div className="mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-red-200 bg-white/90 p-6 shadow-glow backdrop-blur">
             <h1 className="font-display text-3xl text-ink">Deployment blocked</h1>
@@ -172,7 +172,7 @@ export default function FaceAttendanceApp({
 
   if (!firebaseEnabled && !localFallbackAllowed) {
     return (
-      <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
+      <AppShell fitViewport contentClassName="px-4 py-6 sm:px-6 lg:px-8">
         <div className="page-frame">
           <div className="mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-amber-200 bg-white/90 p-6 shadow-glow backdrop-blur">
             <h1 className="font-display text-3xl text-ink">Firebase required for biometric mode</h1>
@@ -192,8 +192,8 @@ export default function FaceAttendanceApp({
 
   if (page === 'register' ? !registrationReady : !workspaceReady) {
     return (
-      <AppShell contentClassName="px-4 py-6 sm:px-6 lg:px-8">
-        <div className="page-frame min-h-[calc(100dvh-8.25rem)] xl:min-h-[calc(100dvh-10.5rem)]">
+      <AppShell fitViewport contentClassName="px-4 py-6 sm:px-6 lg:px-8">
+        <div className="page-frame h-full min-h-0">
           <BiometricWorkspaceGate
             bootStage={bootStage}
             canBypassLocation={canBypassLocation}
@@ -284,7 +284,7 @@ function BiometricWorkspaceGate({
       : modelStatus
 
   return (
-    <div className="mx-auto flex h-full min-h-[calc(100dvh-8.25rem)] max-w-4xl items-center justify-center xl:min-h-[calc(100dvh-10.5rem)]">
+    <div className="mx-auto flex h-full min-h-0 max-w-4xl flex-1 items-center justify-center">
       <div className="w-full rounded-[2rem] border border-black/5 bg-[linear-gradient(180deg,rgba(12,108,88,0.08),rgba(255,255,255,0.98))] p-6 shadow-glow backdrop-blur sm:p-8">
         <div className="mx-auto max-w-2xl text-center">
           <div className="text-xs font-semibold uppercase tracking-[0.24em] text-navy-dark">{statusLabel}</div>

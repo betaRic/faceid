@@ -6,12 +6,13 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import BrandMark from './BrandMark'
 
+const PUBLIC_ATTENDANCE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_ATTENDANCE === 'true'
 const defaultNavItems = [
   { href: '/', label: 'Home' },
   { href: '/kiosk', label: 'Kiosk' },
-  { href: '/attendance', label: 'Attendance' },
+  ...(PUBLIC_ATTENDANCE_ENABLED ? [{ href: '/attendance', label: 'Attendance' }] : []),
   { href: '/registration', label: 'Register' },
-  { href: '/admin', label: 'Admin' },
+  { href: '/login', label: 'Login' },
 ]
 
 export default function AppShell({
@@ -20,6 +21,7 @@ export default function AppShell({
   navItems = defaultNavItems,
   contentClassName = '',
   onBeforeNavigate = null,
+  fitViewport = false,
 }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -31,7 +33,7 @@ export default function AppShell({
   }
 
   return (
-    <div className="app-shell flex min-h-screen flex-col">
+    <div className={`app-shell flex flex-col ${fitViewport ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
       {/* ── Header ── */}
       <header className="sticky top-0 z-50 nav-header">
         <div className="container-fluid flex w-full items-center gap-3 py-3">
@@ -107,7 +109,7 @@ export default function AppShell({
       </header>
 
       {/* ── Main Content — full width ── */}
-      <main className={`w-full flex-1 ${contentClassName}`}>
+      <main className={`flex min-h-0 w-full flex-1 flex-col ${fitViewport ? 'overflow-hidden' : ''} ${contentClassName}`}>
         {children}
       </main>
 

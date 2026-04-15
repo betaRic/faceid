@@ -1,0 +1,225 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+import { useEnrollmentCapture, CAPTURE_PHASES, estimateHeadYaw, getPoseGuidanceMessage } from '@/hooks/useEnrollmentCapture'
+
+const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
+
+function PromptScreen({ name, onAccept, onSkip }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-6 bg-white px-6 text-center">
+      <div className="rounded-full bg-amber-50 p-4">
+        <svg className="h-10 w-10 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+      </div>
+      <div>
+        <h2 className="font-display text-xl font-bold text-ink">Update Face Data</h2>
+        <p className="mt-2 text-sm text-muted">
+          {name}, your stored face data is outdated. A quick re-scan will improve future recognition.
+        </p>
+      </div>
+      <p className="text-xs text-muted">This takes about 15 seconds — same 3-angle capture.</p>
+      <div className="flex w-full max-w-xs flex-col gap-3">
+        <button
+          onClick={onAccept}
+          className="w-full rounded-xl bg-navy py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-navy-light"
+        >
+          Update now
+        </button>
+        <button
+          onClick={onSkip}
+          className="w-full rounded-xl border border-black/10 bg-white py-3 text-sm font-medium text-muted transition hover:bg-stone-50"
+        >
+          Skip for now
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CaptureScreen({ camera, capturePhase, phaseProgress, poseOk, currentYaw, statusMsg }) {
+  const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-black px-4">
+      <div className="text-center">
+        <h2 className="font-display text-lg font-bold text-white">Re-enrolling Face</h2>
+        <p className="mt-1 text-sm text-white/70">
+          {phase ? `Phase ${capturePhase + 1}/3 — ${phase.label}` : 'Preparing...'}
+        </p>
+      </div>
+
+      <div
+        className="relative w-full max-w-[280px]"
+        style={{ aspectRatio: '0.68' }}
+      >
+        <div
+          className={`absolute inset-0 transition-all duration-300 ${
+            poseOk
+              ? 'ring-2 ring-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+              : 'ring-2 ring-amber-400/60'
+          }`}
+          style={OVAL_FRAME_STYLE}
+        />
+        <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_FRAME_STYLE}>
+          <video
+            ref={camera.setVideoRef}
+            playsInline
+            muted
+            autoPlay
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ transform: 'scaleX(-1)' }}
+          />
+          <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
+        </div>
+      </div>
+
+      {phase && (
+        <div className="flex items-center gap-3 rounded-full border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
+          <div className="flex items-center gap-1.5">
+            {CAPTURE_PHASES.map((p, i) => (
+              <div
+                key={p.id}
+                className={`h-2 w-2 rounded-full transition-all ${
+                  i < capturePhase ? 'bg-emerald-400'
+                    : i === capturePhase ? (poseOk ? 'bg-emerald-400' : 'bg-amber-400')
+                    : 'bg-white/30'
+                }`}
+              />
+            ))}
+          </div>
+          <div className="h-3 w-px bg-white/20" />
+          <span className={`text-xs font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
+            {statusMsg}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SavingScreen() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-white px-6 text-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-3 border-navy border-t-transparent" />
+      <p className="text-sm font-medium text-ink">Saving new face data...</p>
+    </div>
+  )
+}
+
+function DoneScreen({ success, message, onContinue }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-5 bg-white px-6 text-center">
+      {success ? (
+        <div className="rounded-full bg-emerald-50 p-4">
+          <svg className="h-10 w-10 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+      ) : (
+        <div className="rounded-full bg-red-50 p-4">
+          <svg className="h-10 w-10 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </div>
+      )}
+      <div>
+        <h2 className="font-display text-lg font-bold text-ink">
+          {success ? 'Face Data Updated' : 'Update Failed'}
+        </h2>
+        <p className="mt-1 text-sm text-muted">{message}</p>
+      </div>
+      <button
+        onClick={onContinue}
+        className="rounded-xl bg-navy px-8 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-navy-light"
+      >
+        Continue
+      </button>
+    </div>
+  )
+}
+
+export default function KioskReenrollFlow({ camera, currentMatch, onComplete, onSkip }) {
+  const [stage, setStage] = useState('prompt') // prompt | capturing | saving | done
+  const [result, setResult] = useState(null)
+
+  const {
+    capturePhase,
+    phaseProgress,
+    poseOk,
+    currentYaw,
+    statusMsg,
+    startDetect,
+    stopDetect,
+    resetCapture,
+  } = useEnrollmentCapture(camera)
+
+  const handleAccept = useCallback(() => {
+    setStage('capturing')
+    startDetect(async (captureResult) => {
+      stopDetect()
+      if (!captureResult?.descriptors?.length) {
+        setResult({ success: false, message: 'Could not capture enough face data. Try again later.' })
+        setStage('done')
+        return
+      }
+
+      setStage('saving')
+      try {
+        const res = await fetch(`/api/persons/${currentMatch.personId}/reenroll`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ descriptors: captureResult.descriptors }),
+        })
+        const data = await res.json()
+        if (data.ok) {
+          setResult({ success: true, message: `Saved ${data.sampleCount} face samples. Future scans will be faster.` })
+        } else {
+          setResult({ success: false, message: data.message || 'Failed to save face data.' })
+        }
+      } catch {
+        setResult({ success: false, message: 'Network error — try again later.' })
+      }
+      setStage('done')
+    }, true)
+  }, [camera, currentMatch, startDetect, stopDetect])
+
+  const handleSkip = useCallback(() => {
+    stopDetect()
+    resetCapture()
+    onSkip()
+  }, [stopDetect, resetCapture, onSkip])
+
+  const handleContinue = useCallback(() => {
+    stopDetect()
+    resetCapture()
+    onComplete()
+  }, [stopDetect, resetCapture, onComplete])
+
+  if (stage === 'prompt') {
+    return <PromptScreen name={currentMatch?.name || 'Employee'} onAccept={handleAccept} onSkip={handleSkip} />
+  }
+
+  if (stage === 'capturing') {
+    return (
+      <CaptureScreen
+        camera={camera}
+        capturePhase={capturePhase}
+        phaseProgress={phaseProgress}
+        poseOk={poseOk}
+        currentYaw={currentYaw}
+        statusMsg={statusMsg}
+      />
+    )
+  }
+
+  if (stage === 'saving') {
+    return <SavingScreen />
+  }
+
+  return <DoneScreen success={result?.success} message={result?.message} onContinue={handleContinue} />
+}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useAdminStore } from '@/lib/admin/store'
 import { updatePersonRecord } from '@/lib/data-store'
@@ -13,19 +14,22 @@ import {
 } from '@/lib/person-approval'
 
 export default function EmployeeEditorModal({ person, onSave, onCancel }) {
+  const router = useRouter()
   const store = useAdminStore()
   const offices = store.offices
   const [officeId, setOfficeId] = useState('')
   const [active, setActive] = useState(true)
   const [approvalStatus, setApprovalStatus] = useState(PERSON_APPROVAL_PENDING)
-  const [editMode, setEditMode] = useState('details')
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+  const [panelMode, setPanelMode] = useState('details')
 
   useEffect(() => {
     if (!person) return
     setOfficeId(person.officeId || '')
     setActive(person.active !== false)
     setApprovalStatus(getEffectivePersonApprovalStatus(person))
-    setEditMode(getEffectivePersonApprovalStatus(person) === PERSON_APPROVAL_PENDING ? 'approval' : 'details')
+    setResetConfirmOpen(false)
+    setPanelMode('details')
   }, [person])
 
   if (!person) return null
@@ -86,6 +90,28 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     store.setPending(`employee-deactivate-${person.id}`, false)
   }
 
+  async function handleBiometricReset() {
+    store.setPending(`biometric-reset-${person.id}`, true)
+    setResetConfirmOpen(false)
+    try {
+      const res = await fetch(`/api/persons/${person.id}/biometric-reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (data.ok) {
+        store.refreshEmployees()
+        store.addToast(`Face data reset — ${person.name} must re-enroll in admin or registration`, 'success')
+        onSave(person, { sampleCount: 0, approvalStatus: PERSON_APPROVAL_PENDING })
+      } else {
+        store.addToast(data.message || 'Reset failed', 'error')
+      }
+    } catch {
+      store.addToast('Reset failed — try again', 'error')
+    }
+    store.setPending(`biometric-reset-${person.id}`, false)
+  }
+
   async function handleSave() {
     if (!officeId) return
     store.setPending(`employee-update-${person.id}`, true)
@@ -102,6 +128,19 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
       store.addToast(err?.message || 'Update failed', 'error')
     }
     store.setPending(`employee-update-${person.id}`, false)
+  }
+
+  function handleOpenReenroll() {
+    setResetConfirmOpen(false)
+    const personData = {
+      id: person.id,
+      name: person.name || '',
+      employeeId: person.employeeId || '',
+      officeId: person.officeId || '',
+      officeName: person.officeName || '',
+    }
+    const encoded = encodeURIComponent(JSON.stringify(personData))
+    router.push(`/admin/employee/${person.id}/reenroll?person=${encoded}`)
   }
 
   const formatSubmittedDate = () => {
@@ -135,6 +174,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         className="w-full max-w-lg rounded-3xl border border-black/5 bg-white p-6 shadow-2xl"
         initial={{ opacity: 0, scale: 0.95 }}
       >
+        <>
         <div className="flex items-start gap-4">
           {person.photoUrl ? (
             <img
@@ -178,6 +218,13 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 {store.isPending(`employee-reject-${person.id}`) ? 'Rejecting...' : 'Reject'}
               </button>
             </div>
+            <button
+              className="mt-4 w-full rounded-xl border border-black/10 bg-white px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50"
+              onClick={handleOpenReenroll}
+              type="button"
+            >
+              Capture live face in admin
+            </button>
           </div>
         )}
 
@@ -218,12 +265,54 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 </select>
               </Field>
 
-              {person.sampleCount > 0 && (
-                <div className="rounded-xl border border-black/5 bg-stone-50 px-3 py-2 text-sm text-muted">
-                  {person.sampleCount} biometric sample(s) enrolled.
-                </div>
-              )}
+              <div className="rounded-xl border border-black/5 bg-stone-50 px-3 py-2 text-sm text-muted">
+                {(person.sampleCount ?? 0) > 0
+                  ? `${person.sampleCount} biometric sample(s) enrolled.`
+                  : 'No biometric samples — employee must enroll face.'}
+              </div>
 
+              <button
+                className="rounded-xl bg-navy px-4 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark"
+                onClick={handleOpenReenroll}
+                type="button"
+              >
+                {person.sampleCount > 0 ? 'Re-enroll live capture' : 'Enroll live capture'}
+              </button>
+
+              {resetConfirmOpen ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                  <p className="text-sm font-medium text-red-900">Reset face data for {person.name}?</p>
+                  <p className="mt-1 text-xs text-red-700">
+                    All stored face samples will be cleared. Use live re-enrollment here afterward, or
+                    send them to /registration and re-approve them before the kiosk will recognise them again.
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      className="flex-1 rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                      disabled={store.isPending(`biometric-reset-${person.id}`)}
+                      onClick={handleBiometricReset}
+                      type="button"
+                    >
+                      {store.isPending(`biometric-reset-${person.id}`) ? 'Resetting...' : 'Confirm reset'}
+                    </button>
+                    <button
+                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:bg-stone-50"
+                      onClick={() => setResetConfirmOpen(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-muted transition hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                  onClick={() => setResetConfirmOpen(true)}
+                  type="button"
+                >
+                  Reset face data
+                </button>
+              )}
               <div className="flex justify-end gap-3 pt-2">
                 <button className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50" onClick={onCancel} type="button">
                   Close
@@ -254,6 +343,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             </button>
           </div>
         )}
+        </>
       </motion.div>
     </div>
   )
