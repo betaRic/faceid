@@ -59,6 +59,15 @@ async function writeFailedScanLog(db, entry, decisionCode, reason, extra = {}) {
       queryDescriptorLength: rawDesc.length,
       queryDescriptorMagnitude: descMag,
       queryDescriptorSample: rawDesc.slice(0, 10).map(v => Math.round(Number(v) * 10000) / 10000),
+      captureMobile: Boolean(entry.captureContext?.mobile),
+      capturePlatform: entry.captureContext?.platform || '',
+      captureResolution: entry.captureContext?.captureResolution || '',
+      captureVerificationFrames: Number.isFinite(entry.captureContext?.verificationFrames) ? Number(entry.captureContext.verificationFrames) : null,
+      captureDescriptorSpread: Number.isFinite(entry.captureContext?.descriptorSpread)
+        ? Math.round(Number(entry.captureContext.descriptorSpread) * 10000) / 10000
+        : null,
+      captureDeviceMemoryGb: Number.isFinite(entry.captureContext?.deviceMemoryGb) ? Number(entry.captureContext.deviceMemoryGb) : null,
+      captureHardwareConcurrency: Number.isFinite(entry.captureContext?.hardwareConcurrency) ? Number(entry.captureContext.hardwareConcurrency) : null,
       // Stored descriptor sample (from best candidate if available)
       storedDescriptorSample: Array.isArray(extra.storedDescriptorSample)
         ? extra.storedDescriptorSample.slice(0, 10).map(v => Math.round(Number(v) * 10000) / 10000)

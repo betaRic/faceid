@@ -50,6 +50,13 @@ export const CAPTURE_PHASES = [
     icon: '↔',
     poseType: 'side_b',
   },
+  {
+    id: 'chin_down',
+    label: 'Tilt chin down slightly',
+    subtitle: 'As if looking at your phone',
+    icon: '↓',
+    poseType: 'chin_down',
+  },
 ]
 
 const FRAMES_PER_PHASE = 3
@@ -62,6 +69,7 @@ const POSE_HOLD_STABLE_MS = 300
 const YAW_CENTER_MAX = 0.08
 const YAW_SIDE_MIN = 0.12
 const YAW_SIDE_GOOD = 0.18
+const PITCH_CHIN_DOWN_MIN = 0.5
 const CAPTURE_METRIC_SAMPLE_STEP = 4
 
 export function estimateHeadYaw(mesh) {
@@ -89,6 +97,23 @@ export function classifyPose(yaw) {
   return 'side_good'
 }
 
+export function estimateHeadPitch(mesh) {
+  if (!Array.isArray(mesh) || mesh.length < 264) return null
+  const getY = (i) => {
+    const pt = mesh[i]
+    if (!pt) return null
+    return Array.isArray(pt) ? pt[1] : (typeof pt.y === 'number' ? pt.y : null)
+  }
+  const leftEyeY = getY(33)
+  const rightEyeY = getY(263)
+  const noseY = getY(1)
+  const chinY = getY(152)
+  if (leftEyeY == null || rightEyeY == null || noseY == null || chinY == null) return null
+  const eyeY = (leftEyeY + rightEyeY) / 2
+  const span = Math.max(10, chinY - eyeY)
+  return (noseY - eyeY) / span
+}
+
 function isPoseCentered(yaw) {
   return yaw !== null && Math.abs(yaw) < YAW_CENTER_MAX
 }
@@ -102,17 +127,18 @@ function isPoseOpposite(yaw, referenceYaw) {
   return Math.sign(yaw) !== Math.sign(referenceYaw) && Math.abs(yaw) >= YAW_SIDE_MIN
 }
 
-function isPoseMatchingPhase(phaseType, yaw, sideAYaw) {
+function isPoseMatchingPhase(phaseType, yaw, sideAYaw, pitch) {
   switch (phaseType) {
     case 'center': return isPoseCentered(yaw)
     case 'side_a': return isPoseSufficient(yaw)
     case 'side_b': return isPoseOpposite(yaw, sideAYaw)
+    case 'chin_down': return pitch !== null && pitch >= PITCH_CHIN_DOWN_MIN
     default: return true
   }
 }
 
-export function getPoseGuidanceMessage(phaseType, yaw, sideAYw) {
-  if (yaw === null) return 'Position your face in the oval'
+export function getPoseGuidanceMessage(phaseType, yaw, sideAYw, pitch) {
+  if (yaw === null && phaseType !== 'chin_down') return 'Position your face in the oval'
   switch (phaseType) {
     case 'center':
       return isPoseCentered(yaw) ? '✓ Hold still — capturing' : 'Center your face — look directly at the camera'
@@ -128,6 +154,9 @@ export function getPoseGuidanceMessage(phaseType, yaw, sideAYw) {
       return sideAYw !== null
         ? `Now turn your head to the ${sideAYw > 0 ? 'right' : 'left'}`
         : 'Turn your head the other way'
+    case 'chin_down':
+      if (pitch !== null && pitch >= PITCH_CHIN_DOWN_MIN) return '✓ Good — keep your chin slightly down'
+      return 'Tilt your chin down slightly (phone-view posture)'
     default:
       return ''
   }
@@ -251,22 +280,24 @@ export function useEnrollmentCapture(camera) {
       const cropped = buildOvalCaptureCanvas(canvas)
       if (!cropped) { await wait(POSE_POLL_INTERVAL_MS); continue }
       let detectedYaw = null
+      let detectedPitch = null
       try {
         const result = await detectPoseOnly(cropped)
         if (result?.landmarks?.positions) {
           detectedYaw = estimateHeadYaw(result.landmarks.positions)
+          detectedPitch = estimateHeadPitch(result.landmarks.positions)
         }
       } catch {}
 
       setCurrentYaw(detectedYaw)
-      const poseMatch = isPoseMatchingPhase(phaseType, detectedYaw, sideAYw)
+      const poseMatch = isPoseMatchingPhase(phaseType, detectedYaw, sideAYw, detectedPitch)
       setPoseOk(poseMatch)
-      updateStatus(getPoseGuidanceMessage(phaseType, detectedYaw, sideAYw))
+      updateStatus(getPoseGuidanceMessage(phaseType, detectedYaw, sideAYw, detectedPitch))
 
       if (poseMatch) {
         if (poseAchievedAt === null) poseAchievedAt = Date.now()
         else if (Date.now() - poseAchievedAt >= POSE_HOLD_STABLE_MS) {
-          return { yaw: detectedYaw }
+          return { yaw: detectedYaw, pitch: detectedPitch }
         }
       } else {
         poseAchievedAt = null
@@ -312,9 +343,12 @@ export function useEnrollmentCapture(camera) {
           const frameYaw = faceResult.landmarks?.positions
             ? estimateHeadYaw(faceResult.landmarks.positions)
             : null
+          const framePitch = faceResult.landmarks?.positions
+            ? estimateHeadPitch(faceResult.landmarks.positions)
+            : null
 
           // ✅ Verify pose is still correct DURING capture (not just before)
-          const poseStillOk = isPoseMatchingPhase(phaseType, frameYaw, sideAYw)
+          const poseStillOk = isPoseMatchingPhase(phaseType, frameYaw, sideAYw, framePitch)
 
           if (poseStillOk) {
             captures.push(buildCandidate(cropped, faceResult, phaseIndex, frameSlot, frameYaw))
@@ -362,7 +396,7 @@ export function useEnrollmentCapture(camera) {
         setPoseOk(false)
         setCurrentYaw(null)
 
-        onStatusUpdate?.(`Phase ${phaseIndex + 1}/3 — ${phase.label}`)
+        onStatusUpdate?.(`Phase ${phaseIndex + 1}/${CAPTURE_PHASES.length} — ${phase.label}`)
 
         const poseResult = await waitForPose(
           phase.poseType,
@@ -477,7 +511,7 @@ export function useEnrollmentCapture(camera) {
         }
 
         stopDetect()
-        setStatusMsg('Face detected — starting 3-angle guided capture...')
+        setStatusMsg(`Face detected — starting ${CAPTURE_PHASES.length}-phase guided capture...`)
         await wait(400)
 
         const result = await captureAllPhases((msg) => setStatusMsg(msg))
