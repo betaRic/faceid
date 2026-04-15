@@ -153,12 +153,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
               {activePanel === 'employees' && <EmployeesPanel />}
               {activePanel === 'summary' && <SummaryPanel />}
               {activePanel === 'settings' && <ThresholdSettings />}
-              {activePanel === 'roles' && (
-                <>
-                  <AdminsPanel />
-                  <div className="mt-5"><HrUsersPanel /></div>
-                </>
-              )}
+              {activePanel === 'roles' && <AdminsPanel />}
             </>
           )}
         </div>

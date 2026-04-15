@@ -2,19 +2,17 @@
 
 import { memo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { useAdmins, useOffices } from '@/lib/admin/hooks'
+import { useAdmins, useHrUsers } from '@/lib/admin/hooks'
 import { useAdminStore } from '@/lib/admin/store'
-import { Field, Badge, StatusBadge } from '@/components/shared/ui'
+import { StatusBadge } from '@/components/shared/ui'
+import { AddRoleModal } from './AddRoleModal'
 
 function AdminsPanelInner() {
   const { roleScope } = useAdminStore()
   const { admins, adminsLoaded, handleCreateAdmin, handleUpdateAdmin, handleDeleteAdmin, isPending } = useAdmins()
-  const { offices } = useOffices()
-  const [adminEmail, setAdminEmail] = useState('')
-  const [adminDisplayName, setAdminDisplayName] = useState('')
-  const [adminScope, setAdminScope] = useState('office')
-  const [adminOfficeId, setAdminOfficeId] = useState('')
-  const [adminRole, setAdminRole] = useState('admin')
+  const { hrUsers, hrUsersLoaded, createHrUser, updateHrUser, deleteHrUser } = useHrUsers()
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [filterRole, setFilterRole] = useState('all')
 
   if (roleScope !== 'regional') {
     return (
@@ -31,14 +29,51 @@ function AdminsPanelInner() {
     )
   }
 
-  const onCreate = () => {
-    if (!adminEmail) return
-    handleCreateAdmin({ email: adminEmail, displayName: adminDisplayName, scope: adminScope, officeId: adminOfficeId, role: adminRole })
-    setAdminEmail('')
-    setAdminDisplayName('')
-    setAdminScope('office')
-    setAdminOfficeId('')
-    setAdminRole('admin')
+  const allUsers = [
+    ...admins.map(a => ({ ...a, userType: 'admin' })),
+    ...hrUsers.map(h => ({ ...h, userType: 'hr', role: 'hr', scope: 'office' })),
+  ]
+
+  const filteredUsers = filterRole === 'all'
+    ? allUsers
+    : filterRole === 'hr'
+      ? allUsers.filter(u => u.userType === 'hr')
+      : allUsers.filter(u => u.userType === 'admin' && u.role === filterRole)
+
+  const handleAddRole = async (data) => {
+    if (data.type === 'admin') {
+      await handleCreateAdmin({
+        email: data.email,
+        displayName: data.displayName,
+        scope: data.scope,
+        officeId: data.officeId,
+        role: 'admin',
+      })
+    } else if (data.type === 'hr') {
+      await createHrUser({
+        displayName: data.displayName,
+        officeId: data.officeId,
+        pin: data.pin,
+        scope: 'office',
+      })
+    }
+    setShowAddModal(false)
+  }
+
+  const handleUpdate = async (user, updates, userType) => {
+    if (userType === 'hr') {
+      await updateHrUser(user, updates)
+    } else {
+      await handleUpdateAdmin(user, updates)
+    }
+  }
+
+  const handleDelete = async (user, userType) => {
+    if (userType === 'hr') {
+      await deleteHrUser(user)
+    } else {
+      await handleDeleteAdmin(user)
+    }
   }
 
   return (
@@ -48,37 +83,45 @@ function AdminsPanelInner() {
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
-      <div>
-        <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Admins</div>
-        <h2 className="mt-1 font-display text-3xl font-bold text-ink">Manage Admins</h2>
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Roles</div>
+          <h2 className="mt-1 font-display text-3xl font-bold text-ink">Manage Roles</h2>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="rounded-xl bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark"
+        >
+          + Add Role
+        </button>
       </div>
 
-      <div className="grid gap-3 rounded-xl border border-black/5 bg-stone-50 p-4 lg:grid-cols-2 xl:grid-cols-4">
-        <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminEmail(e.target.value)} placeholder="Email" type="email" value={adminEmail} />
-        <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminDisplayName(e.target.value)} placeholder="Display name" value={adminDisplayName} />
-        <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminRole(e.target.value)} value={adminRole}>
-          <option value="admin">Admin</option>
-          <option value="hr">HR</option>
-          <option value="viewer">Viewer</option>
-        </select>
-        <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setAdminScope(e.target.value)} value={adminScope}>
-          <option value="office">Office</option>
-          <option value="regional">Regional</option>
-        </select>
-        <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" disabled={adminScope !== 'office'} onChange={(e) => setAdminOfficeId(e.target.value)} value={adminOfficeId}>
-          <option value="">Select office</option>
-          {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-        <div className="lg:col-span-2 xl:col-span-4">
-          <button
-            className={`rounded-xl bg-navy px-6 py-2 text-sm font-semibold text-white transition hover:bg-navy-dark ${isPending('admin-create') ? 'opacity-50' : ''}`}
-            disabled={isPending('admin-create') || !adminEmail}
-            onClick={onCreate}
-            type="button"
-          >
-            {isPending('admin-create') ? 'Creating...' : 'Add Admin'}
-          </button>
-        </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setFilterRole('all')}
+          className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+            filterRole === 'all' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
+          }`}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setFilterRole('admin')}
+          className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+            filterRole === 'admin' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
+          }`}
+        >
+          Admins
+        </button>
+        <button
+          onClick={() => setFilterRole('hr')}
+          className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+            filterRole === 'hr' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
+          }`}
+        >
+          HR
+        </button>
+        
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
@@ -94,64 +137,61 @@ function AdminsPanelInner() {
             </tr>
           </thead>
           <tbody className="divide-y divide-black/5 bg-white">
-            {!adminsLoaded ? (
+            {(!adminsLoaded || !hrUsersLoaded) ? (
               <tr><td className="px-5 py-8 text-center text-muted" colSpan={6}>Loading...</td></tr>
-            ) : admins.length === 0 ? (
-              <tr><td className="px-5 py-8 text-center text-muted" colSpan={6}>No user records yet.</td></tr>
+            ) : filteredUsers.length === 0 ? (
+              <tr><td className="px-5 py-8 text-center text-muted" colSpan={6}>No records found.</td></tr>
             ) : (
-              admins.map((admin) => (
-                <tr key={admin.id} className="bg-white">
+              filteredUsers.map((user) => (
+                <tr key={user.id} className="bg-white">
                   <td className="px-5 py-3">
-                    <div className="font-medium text-ink">{admin.displayName || admin.email}</div>
-                    <div className="text-xs text-muted">{admin.email}</div>
+                    <div className="font-medium text-ink">{user.displayName || user.email}</div>
+                    <div className="text-xs text-muted">{user.email || 'No email'}</div>
                   </td>
                   <td className="px-5 py-3">
-                    <select
-                      className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy capitalize"
-                      onChange={(e) => handleUpdateAdmin(admin, { role: e.target.value })}
-                      value={admin.role || 'admin'}
-                    >
-                      <option value="admin">Admin</option>
-                      <option value="hr">HR</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
+                    {user.userType === 'hr' ? (
+                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">HR</span>
+                    ) : (
+                      <select
+                        className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy capitalize"
+                        onChange={(e) => handleUpdate(user, { role: e.target.value }, user.userType)}
+                        value={user.role || 'admin'}
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="hr">HR</option>
+                      </select>
+                    )}
                   </td>
                   <td className="px-5 py-3">
-                    <select
-                      className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
-                      onChange={(e) => handleUpdateAdmin(admin, { scope: e.target.value, officeId: e.target.value === 'office' ? (admin.officeId || offices[0]?.id || '') : '' })}
-                      value={admin.scope}
-                    >
-                      <option value="office">Office</option>
-                      <option value="regional">Regional</option>
-                    </select>
+                    {user.userType === 'hr' ? (
+                      <span className="text-xs text-muted">Office</span>
+                    ) : (
+                      <select
+                        className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
+                        onChange={(e) => handleUpdate(user, { scope: e.target.value, officeId: e.target.value === 'office' ? (user.officeId || '') : '' }, user.userType)}
+                        value={user.scope}
+                      >
+                        <option value="office">Office</option>
+                        <option value="regional">Regional</option>
+                      </select>
+                    )}
                   </td>
                   <td className="px-5 py-3">
-                    <select
-                      className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
-                      disabled={admin.scope !== 'office'}
-                      onChange={(e) => handleUpdateAdmin(admin, { officeId: e.target.value })}
-                      value={admin.scope === 'office' ? admin.officeId : ''}
-                    >
-                      <option value="">Select</option>
-                      {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                    </select>
+                    <span className="text-xs text-muted">{user.officeId ? 'Assigned' : '-'}</span>
                   </td>
-                  <td className="px-5 py-3"><StatusBadge active={admin.active} /></td>
+                  <td className="px-5 py-3"><StatusBadge active={user.active !== false} /></td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
                       <button
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${admin.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} ${isPending(`admin-update-${admin.id}`) ? 'opacity-50' : ''}`}
-                        disabled={isPending(`admin-update-${admin.id}`)}
-                        onClick={() => handleUpdateAdmin(admin, { active: !admin.active })}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${user.active !== false ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                        onClick={() => handleUpdate(user, { active: !user.active }, user.userType)}
                         type="button"
                       >
-                        {admin.active ? 'Disable' : 'Enable'}
+                        {user.active !== false ? 'Disable' : 'Enable'}
                       </button>
                       <button
-                        className={`rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-ink hover:bg-stone-100 ${isPending(`admin-delete-${admin.id}`) ? 'opacity-50' : ''}`}
-                        disabled={isPending(`admin-delete-${admin.id}`)}
-                        onClick={() => handleDeleteAdmin(admin)}
+                        className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-ink hover:bg-stone-100"
+                        onClick={() => handleDelete(user, user.userType)}
                         type="button"
                       >
                         Delete
@@ -164,6 +204,13 @@ function AdminsPanelInner() {
           </tbody>
         </table>
       </div>
+
+      <AddRoleModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSubmit={handleAddRole}
+        isPending={isPending('admin-create')}
+      />
     </motion.section>
   )
 }
