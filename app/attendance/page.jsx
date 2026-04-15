@@ -23,6 +23,30 @@ function getLastScanMatch() {
   }
 }
 
+function BlockedStateView({ match }) {
+  return (
+    <AppShell fitViewport contentClassName="px-4 py-4 sm:px-6">
+      <div className="page-frame h-full min-h-0">
+        <motion.section
+          animate={{ opacity: 1, y: 0 }}
+          className="flex h-full flex-col items-center justify-center gap-5 rounded-[2rem] border border-amber-200 bg-amber-50/80 p-8 text-center shadow-glow backdrop-blur"
+          initial={{ opacity: 0, y: 18 }}
+          transition={{ duration: 0.35 }}
+        >
+          <div className="text-xs font-semibold uppercase tracking-widest text-amber-700">Already Recorded</div>
+          <h2 className="font-display text-3xl font-bold text-ink">{match.name}</h2>
+          <p className="max-w-md text-sm leading-7 text-muted">
+            {match.blockReason || 'Full day attendance already recorded for today.'}
+          </p>
+          <div className="mt-2 rounded-xl bg-white px-5 py-3 text-sm text-muted">
+            You can still view your attendance history below.
+          </div>
+        </motion.section>
+      </div>
+    </AppShell>
+  )
+}
+
 function UnauthorizedView() {
   return (
     <AppShell fitViewport contentClassName="px-4 py-4 sm:px-6">
@@ -64,6 +88,20 @@ export default function EmployeeSummaryPage() {
   if (!checked) return null
 
   if (scanMatch) {
+    if (scanMatch.blocked) {
+      return (
+        <>
+          <BlockedStateView match={scanMatch} />
+          <div className="mt-4">
+            <AttendanceTableView
+              currentMatch={scanMatch}
+              onBack={handleClearMatch}
+            />
+          </div>
+        </>
+      )
+    }
+
     return (
       <AppShell fitViewport contentClassName="px-0 py-0 sm:px-0">
         <div className="relative h-full min-h-0">

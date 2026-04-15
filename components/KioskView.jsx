@@ -13,6 +13,7 @@ import AttendanceTableView from './kiosk/AttendanceTableView'
 import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
 import { formatAttendanceDateKey } from '@/lib/attendance-time'
+import { saveAttendanceMatch } from '@/lib/attendance-match'
 
 export default function KioskView({
   camera,
@@ -110,17 +111,22 @@ export default function KioskView({
       if (currentMatch?.employeeId) {
         try {
           sessionStorage.setItem('currentEmployeeId', currentMatch.employeeId)
-          localStorage.setItem('lastScanMatch', JSON.stringify({
-            name: currentMatch.name,
-            employeeId: currentMatch.employeeId,
-            officeName: currentMatch.officeName || '',
-            timestamp: Date.now(),
-          }))
+          saveAttendanceMatch(currentMatch)
         } catch {}
       }
     }
-    if ((kioskState === 'blocked' || kioskState === 'unknown') && previous !== 'blocked' && previous !== 'unknown') {
+    if (kioskState === 'blocked' && previous !== 'blocked') {
       playAudioCue('notify')
+      // Only save if employee was identified (has employeeId) - not for unknown faces
+      if (currentMatch?.employeeId) {
+        try {
+          saveAttendanceMatch(currentMatch)
+        } catch {}
+      }
+    }
+    if (kioskState === 'unknown' && previous !== 'unknown') {
+      playAudioCue('notify')
+      // Don't save - face was not recognized, we don't know who they are
     }
     previousStateRef.current = kioskState
   }, [kioskState, playAudioCue])
