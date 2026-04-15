@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { enhanceImage } from '@/lib/biometrics/image-enhance'
 
 export function useCamera() {
   const videoRef = useRef(null)
@@ -144,10 +143,6 @@ export function useCamera() {
     
     const ctx = canvas.getContext('2d')
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-    
-    if (options.enhanced) {
-      return enhanceImage(canvas)
-    }
     
     return canvas
   }, [])

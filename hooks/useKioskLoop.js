@@ -33,6 +33,21 @@ import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { selectPrimaryFace, getSafeDecisionMessage } from '@/lib/kiosk-utils'
 import { buildOvalCaptureCanvas, selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
 
+function getClientCaptureContext() {
+  if (typeof navigator === 'undefined') return {}
+  let uaDataMobile = null
+  try {
+    uaDataMobile = navigator.userAgentData?.mobile ?? null
+  } catch {}
+  return {
+    userAgent: navigator.userAgent || '',
+    platform: navigator.platform || '',
+    mobile: uaDataMobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''),
+    deviceMemoryGb: Number.isFinite(navigator.deviceMemory) ? Number(navigator.deviceMemory) : null,
+    hardwareConcurrency: Number.isFinite(navigator.hardwareConcurrency) ? Number(navigator.hardwareConcurrency) : null,
+  }
+}
+
 /**
  * Returns true if the face meets minimum quality for verification.
  * We are stricter here than the oval gate (which allows small/off-center faces
@@ -184,7 +199,7 @@ export function useKioskLoop({
           return
         }
 
-        const { allCaptures, canvas: bestCanvas, landmarks } = burstResult
+        const { allCaptures, canvas: bestCanvas, landmarks, fusedDescriptor, descriptorSpread } = burstResult
         const primaryVerification = selectPrimaryFace(burstResult.detections, bestCanvas.width, bestCanvas.height)
 
         if (!primaryVerification?.detection?.descriptor) {
@@ -206,7 +221,9 @@ export function useKioskLoop({
           }
         }
 
-        const descriptor = Array.from(primaryVerification.detection.descriptor)
+        const descriptor = Array.isArray(fusedDescriptor) && fusedDescriptor.length > 0
+          ? fusedDescriptor
+          : Array.from(primaryVerification.detection.descriptor)
         if (descriptor.length !== DESCRIPTOR_LENGTH) {
           setKioskState('unknown')
           pausedRef.current = true
@@ -251,6 +268,12 @@ export function useKioskLoop({
             landmarks: landmarks || [],
             antispoof: antispoof,
             liveness: liveness,
+            captureContext: {
+              ...getClientCaptureContext(),
+              captureResolution: `${bestCanvas.width}x${bestCanvas.height}`,
+              verificationFrames: allCaptures.length,
+              descriptorSpread: Number.isFinite(descriptorSpread) ? descriptorSpread : null,
+            },
             timestamp: timing.timestamp,
             dateKey: timing.dateKey,
             dateLabel: timing.dateLabel,

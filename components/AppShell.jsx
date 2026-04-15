@@ -114,7 +114,7 @@ export default function AppShell({
       </main>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-navy-50/40 bg-white">
+      <footer className={`border-t border-navy-50/40 bg-white ${fitViewport ? 'hidden sm:block' : ''}`}>
         <div className="container-fluid flex flex-col gap-1 py-4 text-xs text-slate-light sm:flex-row sm:items-center sm:justify-between">
           <span className="font-medium text-navy/70">FaceAttend — DILG Region XII</span>
           <span className="opacity-60">GPS-validated · Biometric · Server-enforced</span>
@@ -123,4 +123,3 @@ export default function AppShell({
     </div>
   )
 }
-

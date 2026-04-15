@@ -92,20 +92,20 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
           </button>
         </div>
       }
-      contentClassName="px-4 py-5 sm:px-6 lg:px-8"
+      contentClassName="px-4 py-5 pb-20 sm:px-6 lg:px-8 lg:pb-8"
     >
-      <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="grid h-full min-h-0 gap-4 xl:gap-5 xl:grid-cols-[240px_minmax(0,1fr)]">
         {/* Sidebar nav */}
-        <aside className="xl:sticky xl:top-20 xl:h-fit">
-          <div className="flex flex-col gap-3 rounded-2xl border border-black/5 bg-white/90 p-4 shadow-glow backdrop-blur">
-            <nav className="flex flex-col gap-1">
+        <aside className="hidden xl:sticky xl:top-20 xl:block xl:h-fit">
+          <div className="flex flex-col gap-3 rounded-2xl border border-black/5 bg-white/90 p-3 shadow-glow backdrop-blur xl:p-4">
+            <nav className="flex gap-2 overflow-x-auto pb-1 xl:flex-col xl:gap-1 xl:overflow-visible">
               {navItems.map(item => {
                 const disabled = item.id === 'roles' && roleScope !== 'regional'
                 const badge = item.id === 'employees' && pendingCount > 0 ? pendingCount : null
                 return (
                   <button
                     key={item.id}
-                    className={`flex items-center justify-between rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
+                    className={`flex shrink-0 items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition xl:px-4 xl:py-3 xl:text-sm ${
                       activePanel === item.id
                         ? 'bg-navy text-white'
                         : disabled
@@ -130,7 +130,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
                 )
               })}
             </nav>
-            <div className="mt-auto rounded-xl border border-black/5 bg-stone-50 px-3 py-3">
+            <div className="hidden rounded-xl border border-black/5 bg-stone-50 px-3 py-3 xl:block">
               <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">
                 {roleScope === 'regional' ? 'Regional' : 'Office'}
               </div>
@@ -158,6 +158,31 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
           )}
         </div>
       </div>
+
+      <nav className="fixed inset-x-3 bottom-3 z-40 rounded-2xl border border-black/5 bg-white/95 p-2 shadow-xl backdrop-blur xl:hidden">
+        <div className="grid grid-cols-3 gap-1">
+          {navItems.slice(0, 6).map(item => {
+            const disabled = item.id === 'roles' && roleScope !== 'regional'
+            return (
+              <button
+                key={`mobile-${item.id}`}
+                className={`rounded-xl px-2 py-2 text-[11px] font-semibold transition ${
+                  activePanel === item.id
+                    ? 'bg-navy text-white'
+                    : disabled
+                      ? 'cursor-not-allowed text-muted opacity-40'
+                      : 'text-ink hover:bg-stone-100'
+                }`}
+                disabled={disabled}
+                onClick={() => startTransition(() => setActivePanel(item.id))}
+                type="button"
+              >
+                {item.label}
+              </button>
+            )
+          })}
+        </div>
+      </nav>
 
       <ToastContainer />
 
