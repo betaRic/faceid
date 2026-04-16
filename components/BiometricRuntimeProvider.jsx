@@ -20,6 +20,10 @@ function isKioskRoute(pathname) {
   return pathname === '/kiosk'
 }
 
+function isAdminReenrollRoute(pathname) {
+  return pathname.startsWith('/admin/employee/')
+}
+
 function getDefaultLocationState() {
   return {
     bypassed: false,
@@ -59,6 +63,8 @@ export function BiometricRuntimeProvider({ children }) {
   const { camOn, start: startCamera, stop: stopCamera } = camera
   const biometricRoute = isBiometricRoute(pathname)
   const kioskRoute = isKioskRoute(pathname)
+  const adminReenrollRoute = isAdminReenrollRoute(pathname)
+  const requiresImmediateCamera = kioskRoute || adminReenrollRoute
   const [modelsReady, setModelsReady] = useState(areModelsReady())
   const [modelStatus, setModelStatus] = useState(getModelLoadStatus())
   const [bootStage, setBootStage] = useState(areModelsReady() ? 'idle' : 'models')
@@ -168,8 +174,10 @@ export function BiometricRuntimeProvider({ children }) {
           }, LOCATION_REFRESH_INTERVAL_MS)
         }
 
-        setBootStage('camera')
-        await startCamera()
+        if (requiresImmediateCamera) {
+          setBootStage('camera')
+          await startCamera()
+        }
 
         if (!active) return
         setBootStage('ready')
@@ -187,7 +195,7 @@ export function BiometricRuntimeProvider({ children }) {
       active = false
       if (refreshInterval) window.clearInterval(refreshInterval)
     }
-  }, [biometricRoute, kioskRoute, locationBypassed, retryKey, startCamera, stopCamera])
+  }, [biometricRoute, kioskRoute, locationBypassed, requiresImmediateCamera, retryKey, startCamera, stopCamera])
 
   const value = useMemo(() => ({
     biometricRoute,
@@ -222,12 +230,12 @@ export function BiometricRuntimeProvider({ children }) {
     workspaceReady: biometricRoute
       ? (
         modelsReady
-        && camOn
         && bootStage === 'ready'
+        && (!requiresImmediateCamera || camOn)
         && (!kioskRoute || locationState.ready || locationBypassed)
       )
       : true,
-  }), [biometricRoute, bootStage, camOn, camera, kioskRoute, locationBypassed, locationState, modelStatus, modelsReady, runtimeError, stopCamera])
+  }), [adminReenrollRoute, biometricRoute, bootStage, camOn, camera, kioskRoute, locationBypassed, locationState, modelStatus, modelsReady, requiresImmediateCamera, runtimeError, stopCamera])
 
   return (
     <BiometricRuntimeContext.Provider value={value}>

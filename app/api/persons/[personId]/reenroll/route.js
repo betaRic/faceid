@@ -10,7 +10,7 @@ import {
   resolveAdminSession,
 } from '@/lib/admin-auth'
 import {
-  parseEmployeeViewSessionRequest,
+  resolveEmployeeViewSessionRequest,
 } from '@/lib/employee-view-auth'
 import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biometric-index'
 import { writeAuditLog } from '@/lib/audit-log'
@@ -48,14 +48,15 @@ export async function POST(request, { params }) {
   const adminSession = parseAdminSessionCookieValue(
     request.cookies.get(getAdminSessionCookieName())?.value,
   )
-  const employeeSession = parseEmployeeViewSessionRequest(request)
-
-  if (!adminSession && !employeeSession) {
-    return NextResponse.json({ ok: false, message: 'A valid admin or recent kiosk session is required.' }, { status: 401 })
-  }
 
   try {
     const db = getAdminDb()
+    const employeeSession = await resolveEmployeeViewSessionRequest(request, db)
+
+    if (!adminSession && !employeeSession) {
+      return NextResponse.json({ ok: false, message: 'A valid admin or recent kiosk session is required.' }, { status: 401 })
+    }
+
     let resolvedSession = null
     if (adminSession) {
       resolvedSession = await resolveAdminSession(db, adminSession)

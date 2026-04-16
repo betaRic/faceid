@@ -14,7 +14,6 @@ import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
 import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
 import KioskReenrollFlow from './kiosk/KioskReenrollFlow'
-import { formatAttendanceDateKey } from '@/lib/attendance-time'
 import { clearAttendanceMatch, saveAttendanceMatch } from '@/lib/attendance-match'
 
 const RESULT_PRIVACY_RETURN_MS = 20_000
@@ -35,7 +34,6 @@ export default function KioskView({
   const reenrollCountdownIntervalRef = useRef(null)
   const privacyReturnTimerRef = useRef(null)
   const privacyReturnIntervalRef = useRef(null)
-  const [todaysCount, setTodaysCount] = useState(null)
   const [postScanView, setPostScanView] = useState('success')
   const [reenrollCountdown, setReenrollCountdown] = useState(null)
   const [privacyReturnCountdown, setPrivacyReturnCountdown] = useState(null)
@@ -92,16 +90,6 @@ export default function KioskView({
 
   const { clock, dateStr } = useKioskClock()
 
-  const fetchTodaysCount = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/attendance/count?date=${formatAttendanceDateKey(new Date())}`)
-      const data = await res.json()
-      if (data.ok) setTodaysCount(data.count)
-    } catch {}
-  }, [])
-
-  useEffect(() => { fetchTodaysCount() }, [fetchTodaysCount])
-
   useEffect(() => {
     clearAttendanceMatch()
   }, [])
@@ -123,7 +111,6 @@ export default function KioskView({
 
     if (kioskState === 'confirmed') {
       playAudioCue('success')
-      setTodaysCount(prev => (prev ?? 0) + 1)
       if (currentMatch?.employeeId) {
         try {
           saveAttendanceMatch(currentMatch)
@@ -359,7 +346,6 @@ export default function KioskView({
               dateStr={dateStr}
               locationState={locationState}
               faceDistanceInfo={faceDistanceInfo}
-              todaysCount={todaysCount}
             />
           )}
           <KioskAlert alertState={alertState} />

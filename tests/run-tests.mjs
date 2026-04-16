@@ -50,9 +50,11 @@ const attendanceTimeModule = await importLocalModule('../lib/attendance-time.js'
 const personDirectoryModule = await importLocalModule('../lib/person-directory.js')
 const personApprovalModule = await importLocalModule('../lib/person-approval.js')
 const enrollmentBurstModule = await importLocalModule('../lib/biometrics/enrollment-burst.js')
+const faceSizeGuidanceModule = await importLocalModule('../lib/biometrics/face-size-guidance.js')
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
 const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
+const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/enrollment-policy.js')
 
 const { calculateDistanceMeters, isOfficeWfhDay } = officesModule
 const { deriveDailyAttendanceRecord } = dailyAttendanceModule
@@ -80,6 +82,7 @@ const {
   summarizeEnrollmentCaptureQuality,
   validateEnrollmentDescriptorBatch,
 } = enrollmentBurstModule
+const { getFaceSizeGuidance } = faceSizeGuidanceModule
 const {
   getOvalCaptureRegion,
   isFaceInsideCaptureOval,
@@ -91,6 +94,7 @@ const {
   filterAttendanceDaysByRange,
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
+const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -365,7 +369,13 @@ await run('capture quality summary flags dim low-contrast frames', () => {
   })
 
   assert.equal(summary.tone, 'warn')
-  assert.match(summary.text, /face is too small/i)
+  assert.match(summary.text, /too small in frame/i)
+})
+
+await run('shared face-size guidance now prefers a closer capture band', () => {
+  assert.equal(getFaceSizeGuidance(0.12).status, 'move-closer')
+  assert.equal(getFaceSizeGuidance(0.24).status, 'ready')
+  assert.equal(getFaceSizeGuidance(0.52).status, 'slightly-close')
 })
 
 await run('oval capture region center-crops wide frames to portrait view', () => {
@@ -492,6 +502,38 @@ await run('biometric benchmark report exposes operational gate and honest realit
   assert.equal(report.byDevice.mobile.total, 120)
   assert.equal(report.byDevice.desktop.total, 80)
   assert.equal(report.operationalGate.status, 'pass')
+})
+
+await run('public enrollment cannot silently change identity fields on an existing pending record', () => {
+  const existing = {
+    name: 'JUAN DELA CRUZ',
+    officeId: 'office-a',
+    approvalStatus: 'pending',
+  }
+
+  assert.match(
+    validatePublicEnrollmentIdentity(existing, {
+      name: 'JUAN DELA CRUZ',
+      officeId: 'office-b',
+    }),
+    /different office/i,
+  )
+
+  assert.match(
+    validatePublicEnrollmentIdentity(existing, {
+      name: 'PEDRO DELA CRUZ',
+      officeId: 'office-a',
+    }),
+    /name changes/i,
+  )
+
+  assert.equal(
+    validatePublicEnrollmentIdentity(existing, {
+      name: 'JUAN DELA CRUZ',
+      officeId: 'office-a',
+    }),
+    null,
+  )
 })
 
 await run('firestore index manifest loads from repo root', async () => {

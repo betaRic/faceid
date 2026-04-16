@@ -14,7 +14,6 @@ export default function KioskScanningOverlay({
   clock,
   dateStr,
   locationState,
-  todaysCount,
   faceDistanceInfo,
 }) {
   const locationBadgeLabel = locationState?.ready
@@ -132,14 +131,6 @@ export default function KioskScanningOverlay({
       {faceDistanceInfo && !isVerifying && !isConfirmed && !isBlocked && !isUnknown && (
         <div className="absolute inset-x-0 bottom-28 z-[4] flex justify-center px-4 pointer-events-none sm:bottom-32">
           <FaceSizeGuidance className="w-full max-w-sm" compact guidance={faceDistanceInfo} theme="dark" />
-        </div>
-      )}
-
-      {/* Today's attendance count — hidden during blocked/unknown to avoid clutter under alert */}
-      {todaysCount != null && !isBlocked && !isUnknown && (
-        <div className="absolute bottom-3 left-3 z-[4] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 shadow-lg backdrop-blur sm:left-5 sm:bottom-5 sm:px-5 sm:py-3">
-          <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-100/92 sm:text-xs">Today&apos;s attendance</div>
-          <div className="mt-0.5 font-display text-xl text-white sm:text-2xl">{todaysCount}</div>
         </div>
       )}
 

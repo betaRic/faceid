@@ -2,8 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import BrandMark from './BrandMark'
 
 const PUBLIC_ATTENDANCE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_ATTENDANCE === 'true'
@@ -25,6 +24,23 @@ export default function AppShell({
 }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const previousOverflow = document.body.style.overflow
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = previousOverflow || ''
+    }
+    return () => {
+      document.body.style.overflow = previousOverflow || ''
+    }
+  }, [mobileOpen])
 
   const handleNavigate = href => {
     if (typeof onBeforeNavigate === 'function' && href !== pathname) {
@@ -77,35 +93,37 @@ export default function AppShell({
         </div>
 
         {/* Mobile menu */}
-        <AnimatePresence>
-          {mobileOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden border-t border-navy-50/40 bg-white/95 backdrop-blur-xl md:hidden"
-            >
-              <nav className="container-fluid flex flex-col gap-1 py-3">
-                {navItems.map(item => {
-                  const active = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href))
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => { handleNavigate(item.href); setMobileOpen(false) }}
-                      className={`rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
-                        active ? 'bg-navy-50/80 text-navy font-semibold' : 'text-slate hover:bg-sky-light hover:text-navy'
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  )
-                })}
-              </nav>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {mobileOpen ? (
+          <>
+            <button
+              aria-label="Close navigation menu"
+              className="fixed inset-0 z-40 bg-slate-950/18 md:hidden"
+              onClick={() => setMobileOpen(false)}
+              type="button"
+            />
+            <div className="fixed inset-x-3 top-[4.9rem] z-50 md:hidden">
+              <div className="overflow-hidden rounded-[1.5rem] border border-navy-50/40 bg-white shadow-2xl">
+                <nav className="grid gap-1 p-3">
+                  {navItems.map(item => {
+                    const active = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href))
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => { handleNavigate(item.href); setMobileOpen(false) }}
+                        className={`rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
+                          active ? 'bg-navy-50/80 text-navy font-semibold' : 'text-slate hover:bg-sky-light hover:text-navy'
+                        }`}
+                      >
+                        {item.label}
+                      </Link>
+                    )
+                  })}
+                </nav>
+              </div>
+            </div>
+          </>
+        ) : null}
       </header>
 
       {/* ── Main Content — full width ── */}

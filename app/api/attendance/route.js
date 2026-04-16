@@ -8,10 +8,10 @@ import { buildAttendanceEntryTiming, toLegacyAttendanceDate } from '@/lib/attend
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { createOriginGuard } from '@/lib/csrf'
 import {
-  createEmployeeViewSessionCookieValue,
   getEmployeeViewSessionCookieName,
   getEmployeeViewSessionMaxAge,
   isEmployeeViewSessionConfigured,
+  issueEmployeeViewSession,
 } from '@/lib/employee-view-auth'
 import { isPersonApproved } from '@/lib/person-approval'
 import { getBiometricReenrollmentAssessment } from '@/lib/biometrics/descriptor-utils'
@@ -29,7 +29,7 @@ import {
   buildAttendanceEntryPreview,
 } from '@/lib/attendance'
 
-function buildEmployeeViewSessionPayload(person, personId = '') {
+async function buildEmployeeViewSessionPayload(db, person, personId = '') {
   const reenrollmentAssessment = getBiometricReenrollmentAssessment(person)
   const payload = {
     needsReenrollment: reenrollmentAssessment.needed,
@@ -44,15 +44,15 @@ function buildEmployeeViewSessionPayload(person, personId = '') {
   }
 
   try {
-    const employeeViewSession = createEmployeeViewSessionCookieValue({
+    const employeeViewSession = await issueEmployeeViewSession(db, {
       employeeId: person.employeeId,
       personId: person?.id || personId || '',
       officeId: person.officeId || '',
     })
-    const maxAge = getEmployeeViewSessionMaxAge()
-    payload.employeeViewSession = employeeViewSession
-    payload.employeeViewSessionExpiresAt = Date.now() + (maxAge * 1000)
+    payload.employeeViewSession = employeeViewSession.value
+    payload.employeeViewSessionExpiresAt = employeeViewSession.expiresAtMs
   } catch (cookieError) {
+    payload.canSelfReenroll = false
     console.warn('[Attendance] Failed to create employee view session:', cookieError?.message)
   }
 
@@ -277,7 +277,7 @@ export async function POST(request) {
       const latestDailyEntry = dailyLogs.length > 0
         ? buildAttendanceEntryPreview(dailyLogs[dailyLogs.length - 1])
         : null
-      const employeeViewPayload = buildEmployeeViewSessionPayload(person, personMatch.personId)
+      const employeeViewPayload = await buildEmployeeViewSessionPayload(db, person, personMatch.personId)
       await writeFailedScanLog(db, entry, 'blocked_day_complete', 'Full day attendance already recorded', {
         employeeId: person.employeeId,
         officeId: person.officeId,
@@ -298,7 +298,7 @@ export async function POST(request) {
     const writeResult = await writeAttendanceAtomically(db, entry, cooldownMs)
     if (!writeResult.ok) {
       const cooldownMinutes = getCooldownForActionMinutes(office, nextAction)
-      const employeeViewPayload = buildEmployeeViewSessionPayload(person, personMatch.personId)
+      const employeeViewPayload = await buildEmployeeViewSessionPayload(db, person, personMatch.personId)
       await writeFailedScanLog(db, entry, 'blocked_recent_duplicate', `Duplicate ${nextAction} attempt within cooldown window`, {
         employeeId: person.employeeId,
         officeId: person.officeId,
@@ -335,7 +335,7 @@ export async function POST(request) {
     const responsePayload = {
       ok: true,
       entry: writeResult.entryPreview,
-      ...buildEmployeeViewSessionPayload(person, personMatch.personId),
+      ...(await buildEmployeeViewSessionPayload(db, person, personMatch.personId)),
     }
     if (process.env.NODE_ENV !== 'production') {
       const d = personMatch.debug

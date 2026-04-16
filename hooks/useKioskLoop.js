@@ -3,7 +3,7 @@
  *
  * Key fix: before triggering verification burst, we now check that the face
  * meets minimum quality requirements:
- * - faceAreaRatio >= KIOSK_MIN_FACE_AREA_RATIO (face big enough)
+ * - shared face-size ready band is satisfied
  * - face center within KIOSK_MAX_CENTER_OFFSET_RATIO of oval center
  *
  * This prevents the "scan too fast" problem where a partially-visible or
@@ -25,7 +25,6 @@ import {
   KIOSK_ATTEMPT_COOLDOWN_MS,
   KIOSK_FACE_LOSS_GRACE_MS,
   UNKNOWN_DEBOUNCE_MS,
-  KIOSK_MIN_FACE_AREA_RATIO,
   KIOSK_MAX_CENTER_OFFSET_RATIO,
 } from '@/lib/config'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
@@ -69,8 +68,8 @@ function roundMetric(value, digits = 4) {
 
 /**
  * Returns true if the face meets minimum quality for verification.
- * We are stricter here than the oval gate (which allows small/off-center faces
- * for the distance indicator). Verification should only fire on a good face.
+ * The shared face-size ready band is the real distance gate. A separate kiosk-only
+ * minimum caused hidden mismatch and made the guidance harder to reason about.
  */
 function facePassesQualityGate(box, canvasWidth, canvasHeight) {
   if (!box) return false
@@ -78,8 +77,6 @@ function facePassesQualityGate(box, canvasWidth, canvasHeight) {
   const faceAreaRatio = getFaceAreaRatioFromBox(box, canvasWidth, canvasHeight)
   if (!Number.isFinite(faceAreaRatio)) return false
 
-  // Must be big enough — distant or partial faces give bad embeddings
-  if (faceAreaRatio < KIOSK_MIN_FACE_AREA_RATIO) return false
   if (!isFaceSizeCaptureReady(faceAreaRatio)) return false
 
   // Face center must not be too far off-center

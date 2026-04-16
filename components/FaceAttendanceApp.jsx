@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import KioskView from './KioskView'
 import RegisterView from './RegisterView'
 import AppShell from './AppShell'
+import BiometricWorkspaceGate from './BiometricWorkspaceGate'
 import { firebaseEnabled, localFallbackAllowed, productionFirebaseRequired } from '@/lib/firebase/client'
 import { formatAttendanceDateKey, formatAttendanceDateLabel } from '@/lib/attendance-time'
 import { useBiometricRuntime } from './BiometricRuntimeProvider'
 import { subscribeToPublicOffices } from '@/lib/office-store'
 import {
-  deletePersonRecord,
   logAttendanceEntry,
   subscribeToAttendance,
   subscribeToPersons,
@@ -31,7 +31,6 @@ export default function FaceAttendanceApp({
   loadPersons = true,
   loadAttendance = true,
   showRegistrationAction = true,
-  showRosterTools = loadPersons,
   loadPersonsForCheck = false,
 }) {
   const runtime = useBiometricRuntime()
@@ -135,12 +134,6 @@ export default function FaceAttendanceApp({
     return result
   }, [persons])
 
-  const handleDeletePerson = useCallback(async id => {
-    const result = await deletePersonRecord(persons, id)
-    if (result.mode === 'local') setPersons(result.persons)
-    return result
-  }, [persons])
-
   const handleLogAttendance = useCallback(async entry => {
     const result = await logAttendanceEntry(entry)
     if (result.mode === 'local') setAttendance(result.attendance)
@@ -198,12 +191,12 @@ export default function FaceAttendanceApp({
             bootStage={bootStage}
             canBypassLocation={canBypassLocation}
             errorMessage={runtimeError}
+            loadingLabel={personsLoading ? 'Loading employee data...' : ''}
             locationState={locationState}
             modelStatus={modelStatus}
             onContinueWithoutLocation={continueWithoutLocation}
             page={page}
             onRetry={retry}
-            personsLoading={personsLoading}
           />
         </div>
       </AppShell>
@@ -231,106 +224,17 @@ export default function FaceAttendanceApp({
         />
       ) : (
         <RegisterView
-          allowDelete={showRosterTools}
           camera={camera}
-          dataStatus={dataStatus}
           errorMessage={errorMessage}
           modelsReady={modelsReady}
           workspaceReady={workspaceReady}
           onBack={() => {
             setPage('kiosk')
           }}
-          onDeletePerson={handleDeletePerson}
           onEnrollPerson={handleEnrollPerson}
           offices={offices}
-          persons={persons}
-          showRosterTools={showRosterTools}
         />
       )}
-    </div>
-  )
-}
-
-function BiometricWorkspaceGate({
-  page,
-  bootStage,
-  modelStatus,
-  errorMessage,
-  locationState,
-  onRetry,
-  canBypassLocation,
-  onContinueWithoutLocation,
-  personsLoading,
-}) {
-  const title = page === 'register' ? 'Preparing enrollment workspace' : 'Preparing attendance kiosk'
-  const detail = errorMessage
-    ? errorMessage
-    : bootStage === 'location'
-      ? 'Checking device location before the camera is shown. On-site attendance needs GPS; WFH can continue without it if location is unavailable.'
-    : bootStage === 'camera'
-      ? 'Starting the camera only after biometric models are fully ready.'
-      : 'Loading biometric models before the camera is shown to the user.'
-  const statusLabel = errorMessage
-    ? 'Workspace blocked'
-    : bootStage === 'location'
-      ? 'Checking location'
-    : bootStage === 'camera'
-      ? 'Starting camera'
-      : 'Loading biometric runtime'
-  const runtimeStatus = errorMessage
-    ? (bootStage === 'location' ? (locationState?.status || 'Location unavailable') : modelStatus)
-    : bootStage === 'location'
-      ? (locationState?.status || 'Checking location')
-      : modelStatus
-
-  return (
-    <div className="mx-auto flex h-full min-h-0 max-w-4xl flex-1 items-center justify-center">
-      <div className="w-full rounded-[2rem] border border-black/5 bg-[linear-gradient(180deg,rgba(12,108,88,0.08),rgba(255,255,255,0.98))] p-6 shadow-glow backdrop-blur sm:p-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-navy-dark">{statusLabel}</div>
-          <h1 className="mt-4 font-display text-4xl text-ink sm:text-5xl">{title}</h1>
-          <p className="mt-4 text-sm leading-8 text-muted sm:text-base">
-            {detail}
-          </p>
-
-          <div className="mt-8 rounded-[1.5rem] border border-black/5 bg-white/90 p-5 shadow-sm">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-navy/10 text-navy-dark">
-              <span className={`h-6 w-6 rounded-full border-2 border-current border-t-transparent ${errorMessage ? '' : 'animate-spin'}`} />
-            </div>
-            <div className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted">Runtime status</div>
-            <div className="mt-2 text-lg font-semibold text-ink">{runtimeStatus}</div>
-            {personsLoading && (
-              <div className="mt-3 text-sm text-amber-600">Loading employee data...</div>
-            )}
-            {bootStage === 'location' && locationState?.error ? (
-              <div className="mt-3 rounded-[1rem] bg-amber-50 px-4 py-3 text-sm leading-7 text-amber-900">
-                {locationState.error}
-              </div>
-            ) : null}
-          </div>
-
-          {errorMessage ? (
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              <button
-                className="inline-flex items-center justify-center rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark"
-                onClick={onRetry}
-                type="button"
-              >
-                Retry workspace startup
-              </button>
-              {canBypassLocation ? (
-                <button
-                  className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
-                  onClick={onContinueWithoutLocation}
-                  type="button"
-                >
-                  Continue for WFH only
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
     </div>
   )
 }
