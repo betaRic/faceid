@@ -21,7 +21,6 @@ import {
   DESCRIPTOR_LENGTH,
   KIOSK_IDLE_SCAN_MS,
   KIOSK_ACTIVE_SCAN_MS,
-  CONFIRMED_HOLD_MS,
   KIOSK_IDLE_DETECTION_MAX_DIMENSION,
   KIOSK_ATTEMPT_COOLDOWN_MS,
   KIOSK_FACE_LOSS_GRACE_MS,
@@ -32,9 +31,22 @@ import {
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { selectPrimaryFace, getSafeDecisionMessage } from '@/lib/kiosk-utils'
 import { buildOvalCaptureCanvas, selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
+import {
+  getFaceAreaRatioFromBox,
+  getFaceSizeGuidance,
+  isFaceSizeCaptureReady,
+} from '@/lib/biometrics/face-size-guidance'
 
 function getClientCaptureContext() {
   if (typeof navigator === 'undefined') return {}
+  let kioskId = ''
+  try {
+    kioskId = window.localStorage.getItem('faceattend:kiosk-device-id') || ''
+    if (!kioskId) {
+      kioskId = window.crypto?.randomUUID?.() || `kiosk-${Date.now()}`
+      window.localStorage.setItem('faceattend:kiosk-device-id', kioskId)
+    }
+  } catch {}
   let uaDataMobile = null
   try {
     uaDataMobile = navigator.userAgentData?.mobile ?? null
@@ -45,7 +57,14 @@ function getClientCaptureContext() {
     mobile: uaDataMobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''),
     deviceMemoryGb: Number.isFinite(navigator.deviceMemory) ? Number(navigator.deviceMemory) : null,
     hardwareConcurrency: Number.isFinite(navigator.hardwareConcurrency) ? Number(navigator.hardwareConcurrency) : null,
+    kioskId,
   }
+}
+
+function roundMetric(value, digits = 4) {
+  if (!Number.isFinite(value)) return null
+  const factor = 10 ** digits
+  return Math.round(Number(value) * factor) / factor
 }
 
 /**
@@ -56,12 +75,12 @@ function getClientCaptureContext() {
 function facePassesQualityGate(box, canvasWidth, canvasHeight) {
   if (!box) return false
 
-  const frameArea = canvasWidth * canvasHeight
-  const faceArea = box.width * box.height
-  const faceAreaRatio = faceArea / frameArea
+  const faceAreaRatio = getFaceAreaRatioFromBox(box, canvasWidth, canvasHeight)
+  if (!Number.isFinite(faceAreaRatio)) return false
 
   // Must be big enough — distant or partial faces give bad embeddings
   if (faceAreaRatio < KIOSK_MIN_FACE_AREA_RATIO) return false
+  if (!isFaceSizeCaptureReady(faceAreaRatio)) return false
 
   // Face center must not be too far off-center
   const centerX = box.x + box.width / 2
@@ -78,7 +97,6 @@ export function useKioskLoop({
   modelsReady,
   locationState,
   onLogAttendance,
-  kioskState,
   setKioskState,
   setCurrentMatch,
   setCapturedFrameUrl,
@@ -91,17 +109,21 @@ export function useKioskLoop({
   attemptCooldownUntilRef,
   faceLossTimerRef,
   pausedRef,
-  scheduleResume,
   showAlertAndResume,
+  recordScan,
+  recordVerification,
+  recordNetwork,
 }) {
   const scanRef = useRef(null)
   const busyRef = useRef(false)
   const faceDetectedRef = useRef(false)
+  const distanceSamplesRef = useRef([])
 
   const runScan = useCallback(async (captureVerificationBurst) => {
     if (busyRef.current || pausedRef.current || !camera.camOn || !modelsReady) return
 
     busyRef.current = true
+    const scanStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     try {
       const rawCanvas = camera.captureImageData({
         maxWidth: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
@@ -114,7 +136,6 @@ export function useKioskLoop({
       
       const detections = await detectFaceBoxes(canvas)
 
-      // Distance feedback (visual only)
       const largestFace = detections.length > 0
         ? detections.reduce((best, curr) => {
             const currBox = curr?.detection?.box || curr?.box
@@ -124,21 +145,33 @@ export function useKioskLoop({
             return currBox.width * currBox.height > bestBox.width * bestBox.height ? curr : best
           }, null)
         : null
+      const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
+      const distanceSource = ovalReady?.box ? { box: ovalReady.box } : largestFace
 
-      if (largestFace) {
-        const box = largestFace?.detection?.box || largestFace?.box
+      if (distanceSource) {
+        const box = distanceSource?.detection?.box || distanceSource?.box
         if (box) {
-          const ratio = (box.width * box.height) / (canvas.width * canvas.height)
+          const ratio = getFaceAreaRatioFromBox(box, canvas.width, canvas.height)
+          if (Number.isFinite(ratio)) {
+            distanceSamplesRef.current.push(ratio)
+            if (distanceSamplesRef.current.length > 4) {
+              distanceSamplesRef.current.shift()
+            }
+          }
+          const smoothedRatio = distanceSamplesRef.current.length > 0
+            ? distanceSamplesRef.current.reduce((sum, value) => sum + value, 0) / distanceSamplesRef.current.length
+            : ratio
+          const guidance = getFaceSizeGuidance(smoothedRatio)
           setFaceDistanceInfo({
-            faceAreaRatio: ratio,
-            status: ratio > 0.80 ? 'too-close' : ratio >= 0.06 ? 'perfect' : ratio >= 0.03 ? 'good' : 'too-far',
+            faceAreaRatio: smoothedRatio,
+            rawFaceAreaRatio: ratio,
+            ...guidance,
           })
         }
       } else if (!faceDetectedRef.current) {
+        distanceSamplesRef.current = []
         setFaceDistanceInfo(null)
       }
-
-      const ovalReady = selectOvalReadyFace(detections, canvas.width, canvas.height)
 
       if (!ovalReady) {
         faceDetectedRef.current = false
@@ -188,9 +221,11 @@ export function useKioskLoop({
         setKioskState('verifying')
         camera.clearOverlay()
 
+        const verificationStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
         const burstResult = await captureVerificationBurst()
 
         if (!burstResult) {
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setCapturedFrameUrl(null)
           setKioskState('unknown')
           pausedRef.current = true
@@ -199,10 +234,18 @@ export function useKioskLoop({
           return
         }
 
-        const { allCaptures, canvas: bestCanvas, landmarks, fusedDescriptor, descriptorSpread } = burstResult
+        const {
+          allCaptures,
+          canvas: bestCanvas,
+          landmarks,
+          fusedDescriptor,
+          descriptorSpread,
+          burstDiagnostics,
+        } = burstResult
         const primaryVerification = selectPrimaryFace(burstResult.detections, bestCanvas.width, bestCanvas.height)
 
         if (!primaryVerification?.detection?.descriptor) {
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('unknown')
           pausedRef.current = true
           showAlertAndResume('No reliable face match was found.')
@@ -213,6 +256,7 @@ export function useKioskLoop({
         if (allCaptures.length > 1) {
           const multiFaceFrames = allCaptures.filter(c => c.detections && c.detections.length > 1)
           if (multiFaceFrames.length > 0) {
+            recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
             setKioskState('blocked')
             pausedRef.current = true
             showAlertAndResume('Multiple faces detected. One employee at a time.', 2400)
@@ -225,6 +269,7 @@ export function useKioskLoop({
           ? fusedDescriptor
           : Array.from(primaryVerification.detection.descriptor)
         if (descriptor.length !== DESCRIPTOR_LENGTH) {
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('unknown')
           pausedRef.current = true
           showAlertAndResume(`Face capture error — unexpected descriptor length ${descriptor.length}.`, 3000)
@@ -236,6 +281,7 @@ export function useKioskLoop({
         const liveness = primaryVerification.detection.liveness
         
         if (antispoof !== undefined && antispoof <= 0.3) {
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
           pausedRef.current = true
           showAlertAndResume('Photo or screen detected. Please present your live face.', 3500)
@@ -244,6 +290,7 @@ export function useKioskLoop({
         }
 
         if (liveness !== undefined && liveness <= 0.3) {
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
           pausedRef.current = true
           showAlertAndResume('Fake face detected. Please scan your live face.', 3500)
@@ -254,6 +301,8 @@ export function useKioskLoop({
         setCapturedFrameUrl(bestCanvas.toDataURL('image/jpeg', 0.82))
         const coordinates = locationState?.coords || null
         const timing = buildAttendanceEntryTiming(now)
+        const captureContext = getClientCaptureContext()
+        const networkStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
 
         try {
           const result = await onLogAttendance({
@@ -269,11 +318,34 @@ export function useKioskLoop({
             antispoof: antispoof,
             liveness: liveness,
             captureContext: {
-              ...getClientCaptureContext(),
+              ...captureContext,
               captureResolution: `${bestCanvas.width}x${bestCanvas.height}`,
               verificationFrames: allCaptures.length,
               descriptorSpread: Number.isFinite(descriptorSpread) ? descriptorSpread : null,
+              burstQualityScore: roundMetric(burstDiagnostics?.bestQualityScore),
+              strictFrames: burstDiagnostics?.strictFrames ?? null,
+              fallbackFrames: burstDiagnostics?.fallbackFrames ?? null,
             },
+            scanDiagnostics: {
+              deviceClass: captureContext.mobile ? 'mobile' : 'desktop',
+              bestFaceAreaRatio: roundMetric(burstDiagnostics?.bestFaceAreaRatio),
+              bestCenteredness: roundMetric(burstDiagnostics?.bestCenteredness),
+              bestYaw: roundMetric(burstDiagnostics?.bestYaw),
+              bestPitch: roundMetric(burstDiagnostics?.bestPitch),
+              bestRoll: roundMetric(burstDiagnostics?.bestRoll),
+              targetFrames: burstDiagnostics?.targetFrames ?? null,
+              capturedFrames: burstDiagnostics?.capturedFrames ?? null,
+              strictFrames: burstDiagnostics?.strictFrames ?? null,
+              fallbackFrames: burstDiagnostics?.fallbackFrames ?? null,
+              aggregatedFrames: burstDiagnostics?.aggregatedFrames ?? null,
+              multiFaceFrames: burstDiagnostics?.multiFaceFrames ?? null,
+              descriptorSpread: roundMetric(descriptorSpread),
+            },
+            kioskContext: {
+              kioskId: captureContext.kioskId || '',
+              source: 'web-kiosk',
+            },
+            verificationMode: 'challenge_v2_preferred',
             timestamp: timing.timestamp,
             dateKey: timing.dateKey,
             dateLabel: timing.dateLabel,
@@ -283,6 +355,8 @@ export function useKioskLoop({
             longitude: coordinates?.longitude ?? null,
             descriptor,
           })
+          recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, true)
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, true)
 
           if (result.entry) {
             setFlashKey(value => value + 1)
@@ -299,6 +373,11 @@ export function useKioskLoop({
               attendanceMode: result.entry.attendanceMode || '',
               detail: `${actionLabel} successfully`,
               needsReenrollment: result.needsReenrollment || false,
+              reenrollmentReason: result.reenrollmentReason || null,
+              reenrollmentMessage: result.reenrollmentMessage || '',
+              canSelfReenroll: result.canSelfReenroll || false,
+              employeeViewSession: result.employeeViewSession || '',
+              employeeViewSessionExpiresAt: result.employeeViewSessionExpiresAt || null,
               personId: result.personId || null,
             })
             setKioskState('confirmed')
@@ -309,6 +388,8 @@ export function useKioskLoop({
             showAlertAndResume('No reliable face match was found. Ensure you are enrolled.', 3000)
           }
         } catch (error) {
+          recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, false)
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           const decisionCode = error?.decisionCode || 'blocked_server_error'
           const safeDecision = getSafeDecisionMessage(decisionCode)
           if (process.env.NODE_ENV !== 'production') {
@@ -326,6 +407,30 @@ export function useKioskLoop({
           } else if (decisionCode === 'blocked_ambiguous_match') {
             setKioskState('blocked')
             showAlertAndResume(safeDecision.detail, 4000)
+          } else if (decisionCode === 'blocked_recent_duplicate' || decisionCode === 'blocked_day_complete') {
+            setKioskState('blocked')
+            setCurrentMatch({
+              name: error.entry?.name || safeDecision.name,
+              confidence: error.entry?.confidence ?? 0,
+              officeName: error.entry?.officeName || null,
+              officeId: error.entry?.officeId || null,
+              employeeId: error.entry?.employeeId || null,
+              time: error.entry?.time || timing.time,
+              timestamp: Number(error.entry?.timestamp ?? timing.timestamp),
+              action: error.entry?.action || '',
+              attendanceMode: error.entry?.attendanceMode || '',
+              detail: safeDecision.detail,
+              blocked: true,
+              resultState: 'already-recorded',
+              needsReenrollment: Boolean(error?.needsReenrollment),
+              reenrollmentReason: error?.reenrollmentReason || null,
+              reenrollmentMessage: error?.reenrollmentMessage || '',
+              canSelfReenroll: Boolean(error?.canSelfReenroll),
+              employeeViewSession: error?.employeeViewSession || '',
+              employeeViewSessionExpiresAt: error?.employeeViewSessionExpiresAt || null,
+              personId: error?.personId || null,
+            })
+            setAlertState(null)
           } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {
             setKioskState('unknown')
             showAlertAndResume(safeDecision.detail, 3500)
@@ -358,10 +463,25 @@ export function useKioskLoop({
         setCurrentMatch({
           name: error.entry?.name || safeDecision.name,
           confidence: error.entry?.confidence ?? 0,
-          officeName: error.entry?.officeName,
+          officeName: error.entry?.officeName || null,
+          officeId: error.entry?.officeId || null,
+          employeeId: error.entry?.employeeId || null,
+          time: error.entry?.time || '',
+          timestamp: Number(error.entry?.timestamp || Date.now()),
+          action: error.entry?.action || '',
+          attendanceMode: error.entry?.attendanceMode || '',
           detail: safeDecision.detail,
+          blocked: true,
+          resultState: 'already-recorded',
+          needsReenrollment: Boolean(error?.needsReenrollment),
+          reenrollmentReason: error?.reenrollmentReason || null,
+          reenrollmentMessage: error?.reenrollmentMessage || '',
+          canSelfReenroll: Boolean(error?.canSelfReenroll),
+          employeeViewSession: error?.employeeViewSession || '',
+          employeeViewSessionExpiresAt: error?.employeeViewSessionExpiresAt || null,
+          personId: error?.personId || null,
         })
-        showAlertAndResume(safeDecision.detail, 4000)
+        setAlertState(null)
       } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {
         setKioskState('unknown')
         showAlertAndResume(safeDecision.detail, 3500)
@@ -372,9 +492,10 @@ export function useKioskLoop({
       }
       pausedRef.current = true
     } finally {
+      recordScan?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - scanStartedAt)
       busyRef.current = false
     }
-  }, [camera, modelsReady, locationState, kioskState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, scheduleResume, showAlertAndResume])
+  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork])
 
   const startLoop = useCallback((runScanFn) => {
     if (scanRef.current) return

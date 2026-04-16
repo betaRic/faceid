@@ -25,7 +25,7 @@ const fadeIn = {
 const stats = [
   { value: 'DILG R12', label: 'Deployment Scope', icon: '🏛️' },
   { value: 'GPS', label: 'Location Verified', icon: '📍' },
-  { value: '3-Angle', label: 'Face Capture', icon: '🎯' },
+  { value: '4-Pose', label: 'Face Capture', icon: '🎯' },
   { value: 'Live', label: 'Real-time Logs', icon: '⚡' },
 ]
 
@@ -35,8 +35,8 @@ const modules = [
     tag: 'Live',
     tagStyle: 'bg-emerald-100 text-emerald-700',
     href: '/kiosk',
-    description: 'Walk-up face scanning for enrolled employees. The camera detects your face automatically, verifies identity server-side, validates your GPS location, and records AM/PM attendance.',
-    features: ['Auto face detection', 'Server-side biometric matching', 'GPS + Wi-Fi location check', 'AM / PM session tracking'],
+    description: 'Walk-up face scanning for enrolled employees. The browser captures the face burst, the server makes the attendance decision, GPS validates location, and the system records AM/PM attendance.',
+    features: ['Auto face detection', 'Challenge-protected attendance requests', 'GPS context validation', 'AM / PM session tracking'],
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -51,8 +51,8 @@ const modules = [
     tag: 'Open',
     tagStyle: 'bg-amber-100 text-amber-700',
     href: '/registration',
-    description: 'Enroll a new employee with a 3-angle guided face capture. A server-side duplicate check runs before submission. Records are locked until an admin approves them.',
-    features: ['3-angle guided capture', 'Server-side duplicate check', 'Oval alignment guide', 'Pending admin approval'],
+    description: 'Enroll a new employee with a guided four-pose face capture. A server-side duplicate check runs before submission. Records are locked until an admin approves them.',
+    features: ['4-pose guided capture', 'Server-side duplicate check', 'Oval alignment guide', 'Pending admin approval'],
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
@@ -84,7 +84,7 @@ const howItWorks = [
   {
     step: '01',
     title: 'Employee Enrolls',
-    body: 'A new employee visits the registration page, completes a 3-angle guided face capture, and submits their name, ID, and assigned office. A server-side duplicate check runs automatically.',
+    body: 'A new employee visits the registration page, completes a guided four-pose face capture, and submits their name, ID, and assigned office. A server-side duplicate check runs automatically.',
   },
   {
     step: '02',
@@ -94,7 +94,7 @@ const howItWorks = [
   {
     step: '03',
     title: 'Kiosk Scans',
-    body: 'At the office, the employee walks up to the kiosk. The camera detects and verifies their face server-side, then GPS confirms they are within the approved geofence.',
+    body: 'At the office, the employee walks up to the kiosk. The browser captures the verification burst, the server evaluates the match and attendance policy, and GPS confirms they are within the approved geofence.',
   },
   {
     step: '04',
@@ -104,10 +104,10 @@ const howItWorks = [
 ]
 
 const trustPoints = [
-  { label: 'Server-side identity decisions', desc: 'Face matching, liveness checks, and GPS validation happen on the server — not the browser. The client never makes approval decisions.' },
+  { label: 'Server-side attendance decisions', desc: 'Attendance approval, policy checks, and audit logging happen on the server. The current browser still generates biometric descriptors, but the v2 challenge flow adds replay protection while full trusted server-side embedding remains a separate milestone.' },
   { label: 'Approval-gated biometrics', desc: 'Public enrollments cannot access attendance until an admin explicitly approves the record. Admins can also reset face data and require re-enrollment.' },
-  { label: 'Rate limiting & audit logs', desc: 'Every login, approval, attendance scan, and admin action is rate-limited and written to an audit log for accountability.' },
-  { label: 'Geofence + liveness enforcement', desc: 'On-site attendance requires GPS within the configured office radius. Anti-spoofing rejects printed photos and screen replays.' },
+  { label: 'Rate limiting & scan telemetry', desc: 'Logins, approvals, and attendance scans are rate-limited. Structured scan telemetry records why a scan passed or failed by device, pose, and match quality.' },
+  { label: 'Geofence + liveness enforcement', desc: 'On-site attendance requires GPS within the configured office radius. Anti-spoofing rejects printed photos and screen replays, while Wi-Fi is treated as advisory context instead of a fake security boundary.' },
 ]
 
 /* ─── Component ──────────────────────────────────────────── */
@@ -374,4 +374,3 @@ export default function PlatformNavigator() {
     </AppShell>
   )
 }
-

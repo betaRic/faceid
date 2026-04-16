@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import AppShell from '@/components/AppShell'
 import { formatAttendanceDateKey } from '@/lib/attendance-time'
+import { buildEmployeeViewHeaders, clearAttendanceMatch, loadEmployeeViewAccess } from '@/lib/attendance-match'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -12,6 +13,7 @@ function SummaryContent() {
   const searchParams = useSearchParams()
   const urlEmployeeId = searchParams.get('employeeId') || ''
   const [employeeId, setEmployeeId] = useState(urlEmployeeId)
+  const [employeeViewAccess, setEmployeeViewAccess] = useState(null)
   
   const [monthlyData, setMonthlyData] = useState(null)
   const [dailyData, setDailyData] = useState([])
@@ -19,11 +21,15 @@ function SummaryContent() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    const storedAccess = loadEmployeeViewAccess()
+    setEmployeeViewAccess(storedAccess)
+
     if (urlEmployeeId) {
       setEmployeeId(urlEmployeeId)
     } else {
-      const stored = sessionStorage.getItem('currentEmployeeId')
-      if (stored) setEmployeeId(stored)
+      if (storedAccess?.employeeId) {
+        setEmployeeId(storedAccess.employeeId)
+      }
     }
   }, [urlEmployeeId])
 
@@ -37,11 +43,18 @@ function SummaryContent() {
 
     async function fetchData() {
       try {
-        const monthlyRes = await fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`)
+        const authHeaders = buildEmployeeViewHeaders(employeeViewAccess)
+        const monthlyRes = await fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`, {
+          headers: authHeaders,
+          cache: 'no-store',
+        })
         const monthlyJson = await monthlyRes.json()
         
         const date = formatAttendanceDateKey(Date.now())
-        const dailyRes = await fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`)
+        const dailyRes = await fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`, {
+          headers: authHeaders,
+          cache: 'no-store',
+        })
         const dailyJson = await dailyRes.json()
         
         if (monthlyJson.ok) {
@@ -54,7 +67,7 @@ function SummaryContent() {
         if (!monthlyJson.ok && !dailyJson.ok) {
           const accessDenied = monthlyRes.status === 401 || monthlyRes.status === 403 || dailyRes.status === 401 || dailyRes.status === 403
           if (accessDenied) {
-            sessionStorage.removeItem('currentEmployeeId')
+            clearAttendanceMatch()
             setError('Attendance view expired. Scan again at the kiosk.')
           } else {
             setError(monthlyJson.message || dailyJson.message || 'Failed to load attendance')
@@ -68,7 +81,7 @@ function SummaryContent() {
     }
 
     fetchData()
-  }, [employeeId])
+  }, [employeeId, employeeViewAccess])
 
   const formatTime = (timestamp) => {
     if (!timestamp) return '--:--'

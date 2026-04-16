@@ -4,24 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import AppShell from '@/components/AppShell'
 import AttendanceTableView from '@/components/kiosk/AttendanceTableView'
-
-const SCAN_MATCH_TTL_MS = 30 * 60 * 1000
-
-function getLastScanMatch() {
-  try {
-    const raw = localStorage.getItem('lastScanMatch')
-    if (!raw) return null
-    const match = JSON.parse(raw)
-    if (!match?.employeeId || !match?.timestamp) return null
-    if (Date.now() - match.timestamp > SCAN_MATCH_TTL_MS) {
-      localStorage.removeItem('lastScanMatch')
-      return null
-    }
-    return match
-  } catch {
-    return null
-  }
-}
+import { clearAttendanceMatch, loadAttendanceMatch } from '@/lib/attendance-match'
 
 function BlockedStateView({ match }) {
   return (
@@ -76,12 +59,12 @@ export default function EmployeeSummaryPage() {
   const [checked, setChecked] = useState(false)
 
   useEffect(() => {
-    setScanMatch(getLastScanMatch())
+    setScanMatch(loadAttendanceMatch())
     setChecked(true)
   }, [])
 
   const handleClearMatch = useCallback(() => {
-    localStorage.removeItem('lastScanMatch')
+    clearAttendanceMatch()
     setScanMatch(null)
   }, [])
 

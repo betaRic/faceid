@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { useEnrollmentCapture, CAPTURE_PHASES, estimateHeadYaw, getPoseGuidanceMessage } from '@/hooks/useEnrollmentCapture'
+import { useEnrollmentCapture, CAPTURE_PHASES } from '@/hooks/useEnrollmentCapture'
+import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
 
 const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
 
@@ -16,12 +17,12 @@ function PromptScreen({ name, onAccept, onSkip }) {
         </svg>
       </div>
       <div>
-        <h2 className="font-display text-xl font-bold text-ink">Update Face Data</h2>
+        <h2 className="font-display text-xl font-bold text-ink">Refresh Face Data</h2>
         <p className="mt-2 text-sm text-muted">
-          {name}, your stored face data is outdated. A quick re-scan will improve future recognition.
+          {name}, attendance is already recorded. Your stored face data is weak legacy data, so a quick re-scan is needed to improve future recognition.
         </p>
       </div>
-      <p className="text-xs text-muted">This takes about 15 seconds — same 3-angle capture.</p>
+      <p className="text-xs text-muted">This takes about 15 seconds and uses the same guided multi-pose capture.</p>
       <div className="flex w-full max-w-xs flex-col gap-3">
         <button
           onClick={onAccept}
@@ -40,7 +41,7 @@ function PromptScreen({ name, onAccept, onSkip }) {
   )
 }
 
-function CaptureScreen({ camera, capturePhase, phaseProgress, poseOk, currentYaw, statusMsg }) {
+function CaptureScreen({ camera, capturePhase, poseOk, statusMsg }) {
   const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
 
   return (
@@ -48,7 +49,7 @@ function CaptureScreen({ camera, capturePhase, phaseProgress, poseOk, currentYaw
       <div className="text-center">
         <h2 className="font-display text-lg font-bold text-white">Re-enrolling Face</h2>
         <p className="mt-1 text-sm text-white/70">
-          {phase ? `Phase ${capturePhase + 1}/3 — ${phase.label}` : 'Preparing...'}
+          {phase ? `Phase ${capturePhase + 1}/${CAPTURE_PHASES.length} — ${phase.label}` : 'Preparing...'}
         </p>
       </div>
 
@@ -149,9 +150,7 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
 
   const {
     capturePhase,
-    phaseProgress,
     poseOk,
-    currentYaw,
     statusMsg,
     startDetect,
     stopDetect,
@@ -172,12 +171,25 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
       try {
         const res = await fetch(`/api/persons/${currentMatch.personId}/reenroll`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ descriptors: captureResult.descriptors }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...buildEmployeeViewHeaders(currentMatch),
+          },
+          body: JSON.stringify({
+            descriptors: captureResult.descriptors,
+            captureMetadata: captureResult.captureMetadata || null,
+            photoDataUrl: captureResult.previewUrl || null,
+          }),
         })
         const data = await res.json()
         if (data.ok) {
-          setResult({ success: true, message: `Saved ${data.sampleCount} face samples. Future scans will be faster.` })
+          setResult({
+            success: true,
+            message: data.message || `Saved ${data.sampleCount} face samples. Future scans will be faster.`,
+            needsReenrollment: Boolean(data.needsReenrollment),
+            reenrollmentReason: data.reenrollmentReason || null,
+            reenrollmentMessage: data.reenrollmentMessage || '',
+          })
         } else {
           setResult({ success: false, message: data.message || 'Failed to save face data.' })
         }
@@ -186,7 +198,7 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
       }
       setStage('done')
     }, true)
-  }, [camera, currentMatch, startDetect, stopDetect])
+  }, [currentMatch, startDetect, stopDetect])
 
   const handleSkip = useCallback(() => {
     stopDetect()
@@ -197,8 +209,12 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
   const handleContinue = useCallback(() => {
     stopDetect()
     resetCapture()
-    onComplete()
-  }, [stopDetect, resetCapture, onComplete])
+    if (result?.success) {
+      onComplete(result)
+    } else {
+      onSkip()
+    }
+  }, [stopDetect, resetCapture, onComplete, onSkip, result])
 
   if (stage === 'prompt') {
     return <PromptScreen name={currentMatch?.name || 'Employee'} onAccept={handleAccept} onSkip={handleSkip} />
@@ -209,9 +225,7 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
       <CaptureScreen
         camera={camera}
         capturePhase={capturePhase}
-        phaseProgress={phaseProgress}
         poseOk={poseOk}
-        currentYaw={currentYaw}
         statusMsg={statusMsg}
       />
     )

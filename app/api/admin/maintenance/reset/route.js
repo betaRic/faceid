@@ -20,11 +20,14 @@ const PROTECTED_COLLECTIONS = new Set([
 // Collections that ARE deleted during reset
 const RESET_COLLECTIONS = [
   'persons',
+  'person_biometrics',
   'biometric_index',
   'attendance',
   'attendance_daily',
   'attendance_locks',
+  'attendance_challenges',
   'audit_logs',
+  'scan_events',
   'person_enrollment_locks',
 ]
 

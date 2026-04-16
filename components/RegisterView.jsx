@@ -8,10 +8,11 @@ import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
 import { checkEnrollmentDuplicate } from '../lib/data-store'
 import { useAudioCue } from '../hooks/useAudioCue'
 import { useEnrollmentCapture, CAPTURE_PHASES } from '../hooks/useEnrollmentCapture'
+import FaceSizeGuidance from './biometrics/FaceSizeGuidance'
 import AppShell from './AppShell'
 
 const STEPS = [
-  { id: 'capture', number: '1', title: 'Capture face', description: '3-angle guided capture.' },
+  { id: 'capture', number: '1', title: 'Capture face', description: '4-angle guided capture.' },
   { id: 'review', number: '2', title: 'Review photo', description: 'Retake if unclear.' },
   { id: 'details', number: '3', title: 'Employee details', description: 'ID, name, office.' },
   { id: 'complete', number: '4', title: 'Complete', description: 'Add samples or enroll another.' },
@@ -71,44 +72,54 @@ function PoseArcIndicator({ yaw, poseOk, phaseType, sideAYw }) {
   )
 }
 
-function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statusMsg, sideAYaw }) {
-  if (capturePhase < 0) return null
-  const phase = CAPTURE_PHASES[capturePhase]
+function PhaseIndicator({ capturePhase, phaseProgress, poseOk, currentYaw, statusMsg, sideAYaw, faceSizeGuidance }) {
+  const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
 
   return (
     <div className="absolute inset-x-0 bottom-4 z-[5] flex justify-center px-4">
-      <div className="flex items-center gap-4 rounded-full border border-white/20 bg-black/60 px-5 py-2 backdrop-blur">
-        <div className="flex items-center gap-1.5">
-          {CAPTURE_PHASES.map((p, i) => (
-            <div key={p.id} className="flex items-center">
-              <div
-                className={`h-2 w-2 rounded-full transition-all ${
-                  i < capturePhase
-                    ? 'bg-emerald-400'
-                    : i === capturePhase
-                      ? poseOk
-                        ? 'bg-emerald-400'
-                        : 'bg-amber-400'
-                      : 'bg-white/30'
-                }`}
+      <div className="flex w-full max-w-3xl flex-col items-center gap-2">
+        <FaceSizeGuidance className="w-full max-w-xl" compact guidance={faceSizeGuidance} theme="dark" />
+        <div className="flex max-w-full items-center gap-4 rounded-[1.1rem] border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
+          {phase ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                {CAPTURE_PHASES.map((p, i) => (
+                  <div key={p.id} className="flex items-center">
+                    <div
+                      className={`h-2 w-2 rounded-full transition-all ${
+                        i < capturePhase
+                          ? 'bg-emerald-400'
+                          : i === capturePhase
+                            ? poseOk
+                              ? 'bg-emerald-400'
+                              : 'bg-amber-400'
+                            : 'bg-white/30'
+                      }`}
+                    />
+                    {i < CAPTURE_PHASES.length - 1 && (
+                      <div className={`w-2 h-px ${i < capturePhase ? 'bg-emerald-400' : 'bg-white/30'}`} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="h-4 w-px bg-white/20" />
+              <PoseArcIndicator
+                yaw={currentYaw}
+                poseOk={poseOk}
+                phaseType={phase.poseType}
+                sideAYw={sideAYaw}
               />
-              {i < CAPTURE_PHASES.length - 1 && (
-                <div className={`w-2 h-px ${i < capturePhase ? 'bg-emerald-400' : 'bg-white/30'}`} />
-              )}
-            </div>
-          ))}
+              <div className="h-4 w-px bg-white/20" />
+            </>
+          ) : (
+            <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/70">
+              Live guidance
+            </span>
+          )}
+          <span className={`max-w-[16rem] truncate text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'} sm:max-w-none`}>
+            {statusMsg}
+          </span>
         </div>
-        <div className="h-4 w-px bg-white/20" />
-        <PoseArcIndicator
-          yaw={currentYaw}
-          poseOk={poseOk}
-          phaseType={phase.poseType}
-          sideAYw={sideAYaw}
-        />
-        <div className="h-4 w-px bg-white/20" />
-        <span className={`text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
-          {statusMsg}
-        </span>
       </div>
     </div>
   )
@@ -167,6 +178,7 @@ export default function RegisterView({
   const [officeId, setOfficeId] = useState(offices[0]?.id || '')
   const [previewUrl, setPreviewUrl] = useState(null)
   const [pendingDescriptors, setPendingDescriptors] = useState([])
+  const [captureMetadata, setCaptureMetadata] = useState(null)
   const [step, setStep] = useState('capture')
   const [captureFeedback, setCaptureFeedback] = useState(null)
   const [burstSummary, setBurstSummary] = useState(null)
@@ -187,6 +199,7 @@ export default function RegisterView({
     currentYaw,
     poseOk,
     sideAYaw,
+    faceSizeGuidance,
     startDetect,
     stopDetect,
     resetCapture,
@@ -218,6 +231,7 @@ export default function RegisterView({
       const duplicateCheck = await checkEnrollmentDuplicate(result.descriptors)
       if (duplicateCheck.duplicate) {
         setPendingDescriptors([])
+        setCaptureMetadata(null)
         setPreviewUrl(null)
         setCaptureFeedback(null)
         setBurstSummary(null)
@@ -230,6 +244,7 @@ export default function RegisterView({
       }
 
       setPendingDescriptors(result.descriptors)
+      setCaptureMetadata(result.captureMetadata || null)
       setPreviewUrl(result.previewUrl)
       setCaptureFeedback(result.qualitySummary)
       setBurstSummary(result.burstSummary)
@@ -238,6 +253,7 @@ export default function RegisterView({
     } catch (err) {
       showToast(err?.message || 'Failed to verify duplicate enrollment', 5000)
       setPendingDescriptors([])
+      setCaptureMetadata(null)
       setPreviewUrl(null)
       setCaptureFeedback(null)
       setBurstSummary(null)
@@ -260,6 +276,7 @@ export default function RegisterView({
   const handleRetake = useCallback(() => {
     setPreviewUrl(null)
     setPendingDescriptors([])
+    setCaptureMetadata(null)
     setCaptureFeedback(null)
     setBurstSummary(null)
     resetCapture()
@@ -289,6 +306,7 @@ export default function RegisterView({
           employeeId: employeeId.trim(),
           officeId,
           officeName: selectedOffice?.name || 'Unassigned',
+          captureMetadata,
           ...(storageBucket ? { photoDataUrl: previewUrl } : {}),
         },
         pendingDescriptors,
@@ -314,7 +332,7 @@ export default function RegisterView({
     })
     setStep('complete')
     playAudioCue('success')
-  }, [employeeId, existingSamples, name, officeId, onEnrollPerson, pendingDescriptors, pendingSampleCount, previewUrl, selectedOffice, playAudioCue])
+  }, [captureMetadata, employeeId, existingSamples, name, officeId, onEnrollPerson, pendingDescriptors, pendingSampleCount, previewUrl, selectedOffice, playAudioCue])
 
   const handleNewPerson = useCallback(() => {
     setName('')
@@ -376,7 +394,9 @@ export default function RegisterView({
                       : capturePhase >= 0
                         ? 'ring-2 ring-blue-400/60 shadow-[0_0_40px_rgba(59,130,246,0.20)]'
                         : faceFound
-                          ? 'ring-2 ring-emerald-400/70'
+                          ? faceSizeGuidance?.isCaptureReady
+                            ? 'ring-2 ring-emerald-400/70'
+                            : 'ring-2 ring-amber-400/70 shadow-[0_0_30px_rgba(251,191,36,0.24)]'
                           : 'ring-1 ring-white/18'
                   }`}
                   style={OVAL_FRAME_STYLE}
@@ -415,6 +435,7 @@ export default function RegisterView({
               currentYaw={currentYaw}
               statusMsg={statusMsg}
               sideAYaw={sideAYaw}
+              faceSizeGuidance={faceSizeGuidance}
             />
 
             {errorMessage && (
@@ -434,7 +455,7 @@ export default function RegisterView({
             transition={{ duration: 0.35 }}
             className="shrink-0 rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow"
           >
-            <div className="grid gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
               {STEPS.map((item, idx) => (
                 <WizardStep
                   key={item.id}
@@ -484,13 +505,13 @@ export default function RegisterView({
                     Continue to details
                   </button>
                   <button className="btn btn-ghost w-full" onClick={handleRetake} type="button">
-                    Retake (3-angle)
+                    Retake capture
                   </button>
 
                   {burstSummary && !burstSummary.genuinelyDiverse && (
                     <InfoCard
                       title="Single angle detected"
-                      text="The system captured similar poses for all 3 phases. For better accuracy, retake and follow the head-turn instructions."
+                      text="The system captured similar poses across the guided phases. For better accuracy, retake and follow the front, side, and chin-down prompts."
                       tone="warn"
                     />
                   )}
@@ -498,7 +519,7 @@ export default function RegisterView({
                   {burstSummary && burstSummary.genuinelyDiverse && (
                     <InfoCard
                       title={`${burstSummary.keptCount} diverse samples captured`}
-                      text={`${burstSummary.detectedCount} frames processed across 3 angles. Diverse poses improve recognition accuracy significantly.`}
+                      text={`${burstSummary.detectedCount} frames processed across ${burstSummary.phasesCompleted} guided poses. Diverse poses improve cross-device recognition accuracy.`}
                       tone="default"
                     />
                   )}
@@ -582,12 +603,17 @@ export default function RegisterView({
                   <div className="mt-3 space-y-2 text-sm text-muted">
                     <p><strong className="text-ink">Employee ID:</strong> {lastSavedSummary?.employeeId}</p>
                     <p><strong className="text-ink">Office:</strong> {lastSavedSummary?.officeName}</p>
-                    <p><strong className="text-ink">Samples saved:</strong> {lastSavedSummary?.savedSampleCount} (3-angle)</p>
+                    <p><strong className="text-ink">Samples saved:</strong> {lastSavedSummary?.savedSampleCount} (guided multi-angle)</p>
                     <p><strong className="text-ink">Total on record:</strong> {lastSavedSummary?.sampleCount}</p>
                     {lastSavedSummary?.remaining > 0 && (
                       <p><strong className="text-ink">Recommended additional:</strong> {lastSavedSummary?.remaining}</p>
                     )}
                   </div>
+                  {lastSavedSummary?.approvalStatus === PERSON_APPROVAL_PENDING ? (
+                    <div className="mt-4 rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
+                      Registration is open to the public, but kiosk access is not. This employee record and its biometric samples stay inactive until an admin approves the submission.
+                    </div>
+                  ) : null}
                 </div>
                 <div className="grid content-start gap-3">
                   <button className="btn btn-primary w-full" onClick={handleRetake} type="button">

@@ -109,12 +109,14 @@ export async function POST(request) {
     return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
   }
 
+  let publicSubmission = true
   try {
     const db = getAdminDb()
     const session = adminAuth.parseAdminSessionCookieValue(
       request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
     )
     const resolvedSession = session ? await adminAuth.resolveAdminSession(db, session) : null
+    publicSubmission = !resolvedSession
     const office = await getOfficeRecord(db, body.officeId)
 
     if (!office) {
@@ -141,6 +143,20 @@ export async function POST(request) {
       )
     }
 
+    if (!resolvedSession) {
+      const employeeLimit = await enforceRateLimit(db, {
+        key: `persons-employee:${body.officeId}:${String(body.employeeId || '').toLowerCase()}`,
+        limit: 6,
+        windowMs: 60 * 60 * 1000,
+      })
+      if (!employeeLimit.ok) {
+        return NextResponse.json(
+          { ok: false, message: 'Too many enrollment attempts for this employee ID. Wait before trying again.' },
+          { status: 429 },
+        )
+      }
+    }
+
     const { transactionResult, sampleCount, indexSyncWarning } = await enrollPerson(db, body, office, resolvedSession)
 
     await uploadEnrollmentPhotoIfPending(
@@ -153,7 +169,7 @@ export async function POST(request) {
     await writeEnrollmentAuditLog(db, transactionResult, body, office, resolvedSession)
 
     const message = transactionResult.nextPerson.approvalStatus === 'pending'
-      ? 'Enrollment submitted for admin approval.'
+      ? 'Enrollment submitted for admin approval. The employee record and biometric samples are not active on the kiosk until approved.'
       : 'Enrollment saved.'
 
     return NextResponse.json({
@@ -170,7 +186,12 @@ export async function POST(request) {
 
     if (duplicateFace) {
       return NextResponse.json(
-        { ok: false, message: `Face is too similar to ${duplicateFace.person.name} (${duplicateFace.person.employeeId || 'no employee ID'}). Duplicate enrollment blocked.` },
+        {
+          ok: false,
+          message: publicSubmission
+            ? 'A face similar to an existing employee was found. Duplicate enrollment blocked.'
+            : `Face is too similar to ${duplicateFace.person.name} (${duplicateFace.person.employeeId || 'no employee ID'}). Duplicate enrollment blocked.`,
+        },
         { status: 409 },
       )
     }

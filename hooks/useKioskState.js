@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { KIOSK_ATTEMPT_COOLDOWN_MS } from '@/lib/config'
+import { clearAttendanceMatch } from '@/lib/attendance-match'
 
 export function useKioskState(camera) {
   const [kioskState, setKioskState] = useState('idle')
@@ -50,6 +51,7 @@ export function useKioskState(camera) {
       resumeTimerRef.current = null
       pausedRef.current = false
       confirmRef.current = 0
+      clearAttendanceMatch()
       setCapturedFrameUrl(null)
       setCurrentMatch(null)
       setAlertState(null)

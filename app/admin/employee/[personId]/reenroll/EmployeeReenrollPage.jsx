@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { useAdminStore } from '@/lib/admin/store'
 
 const EmployeeReenrollPanel = dynamic(
   () => import('@/components/admin/EmployeeReenrollPanel'),
@@ -23,10 +23,15 @@ function LoadingState() {
 
 export default function EmployeeReenrollPage({ person }) {
   const router = useRouter()
+  const addToast = useAdminStore((state) => state.addToast)
 
   const handleComplete = async ({ sampleCount, message }) => {
-    // Navigate back to admin employees with success message
-    router.push('/admin?reenroll=success')
+    addToast(
+      message || `Live re-enrollment saved for ${person.name} with ${sampleCount} sample(s).`,
+      'success',
+      4500,
+    )
+    router.push('/admin')
   }
 
   const handleBack = () => {
@@ -34,26 +39,25 @@ export default function EmployeeReenrollPage({ person }) {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="flex min-h-[100dvh] flex-col bg-stone-50">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
-        <div className="container mx-auto flex items-center gap-4 px-4 py-3">
-          <Link href="/admin" className="flex items-center gap-2 text-sm font-medium text-navy hover:text-navy-dark">
-            ← Back to Dashboard
-          </Link>
-          <div className="h-4 w-px bg-black/10" />
-          <div className="text-sm text-muted">
-            Live Re-enrollment
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Link href="/admin" className="flex items-center gap-2 text-sm font-medium text-navy hover:text-navy-dark">
+              ← Back to Dashboard
+            </Link>
+            <div className="hidden h-4 w-px bg-black/10 sm:block" />
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-sm font-medium text-ink">{person.name}</span>
-            <span className="text-xs text-muted">({person.employeeId})</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-ink">Live Re-enrollment</div>
+            <div className="truncate text-xs text-muted">{person.name} · {person.employeeId} · {person.officeName}</div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
+      <main className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 px-4 py-4 sm:px-6 sm:py-6">
         <EmployeeReenrollPanel
           person={person}
           onBack={handleBack}

@@ -1,4 +1,5 @@
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
+import FaceSizeGuidance from '@/components/biometrics/FaceSizeGuidance'
 
 const OVAL_STYLE = { borderRadius: '44% / 34%' }
 
@@ -14,7 +15,6 @@ export default function KioskScanningOverlay({
   dateStr,
   locationState,
   todaysCount,
-  errorMessage,
   faceDistanceInfo,
 }) {
   const locationBadgeLabel = locationState?.ready
@@ -31,32 +31,6 @@ export default function KioskScanningOverlay({
   const isIdle = kioskState === 'idle'
   const isVerifying = kioskState === 'verifying'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
-
-  const distanceStatus = faceDistanceInfo?.status || null
-  const faceAreaRatio = faceDistanceInfo?.faceAreaRatio || 0
-
-  // Labels and colors — "perfect" covers a wide range to reduce anxiety
-  const distanceLabel = distanceStatus === 'too-close' ? 'Move back'
-    : distanceStatus === 'perfect' ? 'OK - hold steady'
-    : distanceStatus === 'good' ? 'Move a little closer'
-    : faceAreaRatio > 0 ? 'OK - hold steady'
-    : 'Position face in frame'
-
-  const distanceColor = distanceStatus === 'too-close' ? 'bg-amber-500/80'
-    : (distanceStatus === 'perfect' || distanceStatus === 'good') ? 'bg-emerald-500/80'
-    : 'bg-white/30'
-
-  // Distance bar — positions mapped to oval-canvas ratios (post-crop values)
-  const getBarPosition = () => {
-    if (faceAreaRatio <= 0) return 0
-    if (faceAreaRatio < 0.03) return 0        // too far
-    if (faceAreaRatio < 0.06) return 15       // just entering range
-    if (faceAreaRatio >= 0.06 && faceAreaRatio <= 0.80) return 50  // ideal range
-    if (faceAreaRatio > 0.80 && faceAreaRatio <= 0.90) return 80  // close
-    if (faceAreaRatio > 0.90) return 100      // too close
-    return 0
-  }
-  const barPosition = getBarPosition()
 
   const ringState = isVerifying
     ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
@@ -156,31 +130,8 @@ export default function KioskScanningOverlay({
 
       {/* Distance indicator bar — hidden during verification, confirmed, blocked, or unknown */}
       {faceDistanceInfo && !isVerifying && !isConfirmed && !isBlocked && !isUnknown && (
-        <div className="absolute inset-x-0 bottom-28 z-[4] flex flex-col items-center gap-2 pointer-events-none sm:bottom-32">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-medium text-white/50">FAR</span>
-            <div className="relative h-2 w-32 overflow-hidden rounded-full bg-white/20">
-              <div className="absolute inset-0 flex">
-                <div className="h-full w-1/6 bg-amber-500/40" />
-                <div className="h-full w-4/6 bg-emerald-500/40" />
-                <div className="h-full w-1/6 bg-amber-500/40" />
-              </div>
-              <div
-                className={`absolute top-0 h-full w-1.5 rounded-full transition-all duration-200 ${
-                  distanceStatus === 'perfect' || distanceStatus === 'good'
-                    ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50'
-                    : distanceStatus === 'too-close'
-                      ? 'bg-amber-400 shadow-lg shadow-amber-400/50'
-                      : 'bg-white/70'
-                }`}
-                style={{ left: `${barPosition}%`, transform: 'translateX(-50%)' }}
-              />
-            </div>
-            <span className="text-[10px] font-medium text-white/50">CLOSE</span>
-          </div>
-          <div className={`rounded-full px-3 py-1 text-xs font-semibold backdrop-blur shadow-lg ${distanceColor}`}>
-            {distanceLabel}
-          </div>
+        <div className="absolute inset-x-0 bottom-28 z-[4] flex justify-center px-4 pointer-events-none sm:bottom-32">
+          <FaceSizeGuidance className="w-full max-w-sm" compact guidance={faceDistanceInfo} theme="dark" />
         </div>
       )}
 

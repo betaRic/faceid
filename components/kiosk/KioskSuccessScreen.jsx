@@ -1,6 +1,7 @@
 'use client'
 
 import { getGreeting, formatTime } from '@/lib/kiosk-utils'
+import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 
@@ -15,7 +16,7 @@ const FileTextIcon = ({ className }) => (
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-function MonthlySummary({ employeeId }) {
+function MonthlySummary({ employeeId, currentMatch }) {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -27,7 +28,10 @@ function MonthlySummary({ employeeId }) {
 
     async function fetchSummary() {
       try {
-        const res = await fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`)
+        const res = await fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`, {
+          headers: buildEmployeeViewHeaders(currentMatch),
+          cache: 'no-store',
+        })
         const data = await res.json()
         if (data.ok) {
           setSummary(data)
@@ -40,11 +44,11 @@ function MonthlySummary({ employeeId }) {
     }
 
     fetchSummary()
-  }, [employeeId])
+  }, [currentMatch, employeeId])
 
   if (loading) {
     return (
-      <div className="mt-6 grid animate-pulse gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 sm:grid-cols-4">
+      <div className="mt-6 grid animate-pulse gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 sm:grid-cols-2 xl:grid-cols-4">
         {[...Array(4)].map((_, i) => (
           <div key={i} className="h-16 rounded-lg bg-black/5" />
         ))}
@@ -66,7 +70,7 @@ function MonthlySummary({ employeeId }) {
       <div className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.16em] text-muted">
         {monthName} {summary.year} Summary
       </div>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="text-center">
           <div className="font-display text-2xl text-ink">{summary.totalDays}</div>
           <div className="text-xs text-muted">Days</div>
@@ -88,16 +92,37 @@ function MonthlySummary({ employeeId }) {
   )
 }
 
-export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onViewTable }) {
+export default function KioskSuccessScreen({
+  currentMatch,
+  onBack,
+  onViewTable,
+  onReenroll,
+  requiresReenrollment = false,
+  canSelfReenroll = false,
+  autoReenrollCountdown = null,
+  privacyReturnCountdown = null,
+}) {
   const attendanceMode = currentMatch?.attendanceMode || ''
   const isWfh = attendanceMode.toLowerCase() === 'wfh'
+  const isReviewOnly = currentMatch?.resultState === 'already-recorded'
+  const statusTone = isReviewOnly
+    ? {
+        shell: 'bg-amber-100 text-amber-700',
+        banner: 'text-amber-700/90',
+        card: 'border-amber-200 bg-amber-50',
+        button: 'bg-amber-500 hover:bg-amber-600',
+        title: 'Attendance already recorded',
+        timeLabel: 'Latest recorded time',
+      }
+    : {
+        shell: 'bg-emerald-100 text-emerald-700',
+        banner: 'text-emerald-700/90',
+        card: 'border-black/5 bg-stone-50',
+        button: 'bg-navy hover:bg-navy/90',
+        title: null,
+        timeLabel: 'Time',
+      }
 
-  useEffect(() => {
-    if (currentMatch?.employeeId) {
-      sessionStorage.setItem('currentEmployeeId', currentMatch.employeeId)
-    }
-  }, [currentMatch?.employeeId])
-  
   return (
     <div className="absolute inset-0 z-[6] flex items-center justify-center overflow-auto px-4 py-6 sm:px-6">
       <motion.div
@@ -105,16 +130,23 @@ export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onV
         animate={{ scale: 1, opacity: 1 }}
         className="w-full max-w-xl rounded-[2rem] border border-black/5 bg-white/85 px-6 py-8 text-center shadow-2xl backdrop-blur sm:px-10 sm:py-10"
       >
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-          <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 6L9 17l-5-5" />
-          </svg>
+        <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${statusTone.shell}`}>
+          {isReviewOnly ? (
+            <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 8v4l3 3" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          ) : (
+            <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          )}
         </div>
-        <div className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700/90">
+        <div className={`mt-5 text-xs font-semibold uppercase tracking-[0.2em] ${statusTone.banner}`}>
           {currentMatch.detail || 'Attendance recorded'}
         </div>
         <h2 className="mt-3 font-display text-3xl text-ink sm:text-4xl">
-          {getGreeting(currentMatch.timestamp || Date.now())}
+          {statusTone.title || getGreeting(currentMatch.timestamp || Date.now())}
         </h2>
         <div className="mt-2 text-2xl font-semibold text-ink sm:text-3xl">
           {currentMatch.name}
@@ -142,9 +174,9 @@ export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onV
           </div>
         )}
 
-        <div className="mt-7 grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 text-left sm:grid-cols-2">
+        <div className={`mt-7 grid gap-3 rounded-[1.5rem] border p-5 text-left sm:grid-cols-2 ${statusTone.card}`}>
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Time</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">{statusTone.timeLabel}</div>
             <div className="mt-2 font-display text-2xl text-ink">{currentMatch.time || formatTime(currentMatch.timestamp || Date.now())}</div>
           </div>
           <div>
@@ -153,13 +185,51 @@ export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onV
           </div>
         </div>
 
-        <MonthlySummary employeeId={currentMatch?.employeeId} />
+        <MonthlySummary employeeId={currentMatch?.employeeId} currentMatch={currentMatch} />
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        {requiresReenrollment ? (
+          <div className={`mt-6 rounded-[1.5rem] border px-4 py-4 text-left ${
+            canSelfReenroll
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-black/5 bg-stone-50'
+          }`}>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+              {canSelfReenroll ? 'Biometric refresh required' : 'Biometric refresh recommended'}
+            </div>
+            <p className="mt-2 text-sm leading-6 text-ink">
+              {currentMatch?.reenrollmentMessage || (
+                canSelfReenroll
+                  ? 'This attendance scan succeeded, but the stored face samples are weak legacy data. Refreshing them now will reduce future mobile mismatches.'
+                  : 'This attendance scan succeeded, but the stored face samples should be refreshed. Self-service refresh is unavailable until the kiosk session secret is configured.'
+              )}
+            </p>
+            {canSelfReenroll && autoReenrollCountdown ? (
+              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+                Refresh prompt opens automatically in {autoReenrollCountdown}s.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {privacyReturnCountdown ? (
+          <div className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+            Returns to kiosk in {privacyReturnCountdown}s to protect employee privacy.
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-col gap-3">
+          {canSelfReenroll && onReenroll ? (
+            <button
+              onClick={onReenroll}
+              className="w-full rounded-2xl bg-amber-500 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-amber-600"
+            >
+              Refresh Face Data Now
+            </button>
+          ) : null}
           {onViewTable && (
             <button
               onClick={onViewTable}
-              className="flex-1 flex items-center justify-center gap-2 rounded-2xl border border-navy/20 bg-navy/5 px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/10"
+              className="w-full flex items-center justify-center gap-2 rounded-2xl border border-navy/20 bg-navy/5 px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/10"
             >
               <FileTextIcon className="h-4 w-4" />
               View Attendance Table
@@ -167,7 +237,7 @@ export default function KioskSuccessScreen({ currentMatch, flashKey, onBack, onV
           )}
           <button
             onClick={onBack}
-            className="flex-1 rounded-2xl bg-navy px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-navy/90"
+            className={`w-full rounded-2xl px-6 py-3.5 text-sm font-semibold text-white transition ${statusTone.button}`}
           >
             Back to Kiosk
           </button>

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBiometricRuntime } from '@/components/BiometricRuntimeProvider'
+import FaceSizeGuidance from '@/components/biometrics/FaceSizeGuidance'
 import { CAPTURE_PHASES, useEnrollmentCapture } from '@/hooks/useEnrollmentCapture'
-import { areModelsReady, loadModels } from '@/lib/biometrics/human'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 
 const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
@@ -24,9 +24,6 @@ function InfoCard({ title, text, tone = 'default' }) {
 export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
   const runtime = useBiometricRuntime()
   const { camera, workspaceReady, modelsReady, modelStatus, runtimeError, retry } = runtime
-  
-  const startCamera = camera.start
-  const stopCamera = camera.stop
   const camOn = camera.camOn
   const camError = camera.camError
   const setVideoRef = camera.setVideoRef
@@ -38,13 +35,11 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
   const {
     capturePhase,
-    phaseProgress,
     faceFound,
     faceNeedsAlignment,
     statusMsg,
-    currentYaw,
     poseOk,
-    sideAYaw,
+    faceSizeGuidance,
     startDetect,
     stopDetect,
     resetCapture,
@@ -63,7 +58,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
   }, [workspaceReady, modelsReady, camOn, runtimeError])
 
   useEffect(() => {
-    if (!workspaceReady) return () => {}
+    if (!workspaceReady || workspaceState !== 'capture') return () => {}
 
     const timer = setTimeout(() => {
       startDetect(result => {
@@ -77,7 +72,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
       clearTimeout(timer)
       stopDetect()
     }
-  }, [workspaceReady, startDetect, stopDetect])
+  }, [workspaceReady, workspaceState, startDetect, stopDetect])
 
   const handleRetake = useCallback(() => {
     stopDetect()
@@ -85,7 +80,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
     setCaptureResult(null)
     setSaveError('')
     setWorkspaceState('capture')
-  }, [resetCapture])
+  }, [resetCapture, stopDetect])
 
   const handleSave = useCallback(async () => {
     if (!captureResult?.descriptors?.length) return
@@ -98,6 +93,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           descriptors: captureResult.descriptors,
+          captureMetadata: captureResult.captureMetadata || null,
           ...(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? { photoDataUrl: captureResult.previewUrl || null } : {}),
         }),
       })
@@ -121,12 +117,13 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
   const captureStateLabel = useMemo(() => {
     if (capturePhase >= 0) return CAPTURE_PHASES[capturePhase]?.label || 'Capturing'
+    if (faceSizeGuidance?.status && faceSizeGuidance.status !== 'not-detected') return faceSizeGuidance.label
     if (faceFound) return 'Face ready'
     if (faceNeedsAlignment) return 'Move into the oval'
     return 'Scanning for face'
-  }, [capturePhase, faceFound, faceNeedsAlignment])
+  }, [capturePhase, faceFound, faceNeedsAlignment, faceSizeGuidance])
 
-  if (workspaceState === 'booting') {
+  if (workspaceState === 'loading') {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center rounded-[1.4rem] border border-black/5 bg-stone-50 p-6">
         <div className="text-center">
@@ -182,8 +179,8 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
     const qualitySummary = captureResult?.qualitySummary
 
     return (
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_300px]">
-        <div className="flex min-h-[20rem] items-center justify-center overflow-hidden rounded-[1.4rem] border border-black/5 bg-stone-950">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex min-h-[18rem] items-center justify-center overflow-hidden rounded-[1.4rem] border border-black/5 bg-stone-950">
           {captureResult?.previewUrl ? (
             <img
               alt={`Captured face for ${person.name}`}
@@ -197,7 +194,14 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
         <div className="grid content-start gap-3">
           <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Live re-enrollment</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin live re-enrollment</div>
+              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                burstSummary?.genuinelyDiverse ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {burstSummary?.genuinelyDiverse ? 'Quality good' : 'Retake advised'}
+              </span>
+            </div>
             <h3 className="mt-2 text-xl font-bold text-ink">{person.name}</h3>
             <p className="mt-1 text-sm text-muted">{person.employeeId} · {person.officeName}</p>
           </div>
@@ -207,7 +211,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
               title={burstSummary.genuinelyDiverse ? 'Capture quality good' : 'Retake recommended'}
               text={
                 burstSummary.genuinelyDiverse
-                  ? `${burstSummary.keptCount} diverse samples captured across the 3-angle flow.`
+                  ? `${burstSummary.keptCount} diverse samples captured across the guided multi-pose flow.`
                   : 'The capture completed, but the angles were too similar. Retake for cleaner biometric separation.'
               }
               tone={burstSummary.genuinelyDiverse ? 'default' : 'warn'}
@@ -226,7 +230,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
           <div className="grid gap-3 pt-1">
             <button
-              className="rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50"
+              className="rounded-2xl bg-navy px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50"
               disabled={workspaceState === 'saving'}
               onClick={handleSave}
               type="button"
@@ -234,7 +238,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
               {workspaceState === 'saving' ? 'Saving face data...' : 'Save live re-enrollment'}
             </button>
             <button
-              className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:opacity-50"
+              className="rounded-2xl border border-black/10 bg-white px-5 py-3.5 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:opacity-50"
               disabled={workspaceState === 'saving'}
               onClick={handleRetake}
               type="button"
@@ -242,7 +246,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
               Retake capture
             </button>
             <button
-              className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-muted transition hover:bg-stone-50 disabled:opacity-50"
+              className="rounded-2xl border border-black/10 bg-white px-5 py-3.5 text-sm font-semibold text-muted transition hover:bg-stone-50 disabled:opacity-50"
               disabled={workspaceState === 'saving'}
               onClick={onBack}
               type="button"
@@ -256,8 +260,8 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
   }
 
   return (
-    <div className="grid min-h-[40rem] gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="relative min-h-0 w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="relative min-h-[22rem] w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:min-h-[28rem]">
         <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
         <div className="absolute inset-0 z-[2] flex items-center justify-center px-4 py-6">
@@ -275,7 +279,9 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
                   : capturePhase >= 0
                     ? 'ring-2 ring-blue-400/60 shadow-[0_0_40px_rgba(59,130,246,0.20)]'
                     : faceFound
-                      ? 'ring-2 ring-emerald-400/70 shadow-[0_0_30px_rgba(16,185,129,0.24)]'
+                      ? faceSizeGuidance?.isCaptureReady
+                        ? 'ring-2 ring-emerald-400/70 shadow-[0_0_30px_rgba(16,185,129,0.24)]'
+                        : 'ring-2 ring-amber-400/70 shadow-[0_0_30px_rgba(251,191,36,0.24)]'
                       : 'ring-1 ring-white/18'
               }`}
               style={OVAL_FRAME_STYLE}
@@ -303,45 +309,58 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
         )}
 
         <div className="absolute inset-x-0 bottom-4 z-[5] flex justify-center px-4">
-          <div className="flex items-center gap-4 rounded-full border border-white/20 bg-black/60 px-5 py-2 backdrop-blur">
-            <div className="flex items-center gap-1.5">
-              {CAPTURE_PHASES.map((phase, index) => (
-                <div key={phase.id} className="flex items-center">
-                  <div
-                    className={`h-2 w-2 rounded-full transition-all ${
-                      index < capturePhase
-                        ? 'bg-emerald-400'
-                        : index === capturePhase
-                          ? poseOk
-                            ? 'bg-emerald-400'
-                            : 'bg-amber-400'
-                          : 'bg-white/30'
-                    }`}
-                  />
-                  {index < CAPTURE_PHASES.length - 1 && (
-                    <div className={`h-px w-2 ${index < capturePhase ? 'bg-emerald-400' : 'bg-white/30'}`} />
-                  )}
-                </div>
-              ))}
+          <div className="flex w-full max-w-3xl flex-col items-center gap-2">
+            <FaceSizeGuidance className="w-full max-w-xl" compact guidance={faceSizeGuidance} theme="dark" />
+            <div className="flex max-w-full items-center gap-4 rounded-[1.1rem] border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
+              <div className="flex items-center gap-1.5">
+                {CAPTURE_PHASES.map((phase, index) => (
+                  <div key={phase.id} className="flex items-center">
+                    <div
+                      className={`h-2 w-2 rounded-full transition-all ${
+                        index < capturePhase
+                          ? 'bg-emerald-400'
+                          : index === capturePhase
+                            ? poseOk
+                              ? 'bg-emerald-400'
+                              : 'bg-amber-400'
+                            : 'bg-white/30'
+                      }`}
+                    />
+                    {index < CAPTURE_PHASES.length - 1 && (
+                      <div className={`h-px w-2 ${index < capturePhase ? 'bg-emerald-400' : 'bg-white/30'}`} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="h-4 w-px bg-white/20" />
+              <span className={`max-w-[16rem] truncate text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'} sm:max-w-none`}>
+                {statusMsg}
+              </span>
             </div>
-            <div className="h-4 w-px bg-white/20" />
-            <span className={`text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
-              {statusMsg}
-            </span>
           </div>
         </div>
       </div>
 
       <div className="grid content-start gap-3">
         <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin live re-enrollment</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin live re-enrollment</div>
+            <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-navy">
+              {captureStateLabel}
+            </span>
+          </div>
           <h3 className="mt-2 text-xl font-bold text-ink">{person.name}</h3>
           <p className="mt-1 text-sm text-muted">{person.employeeId} · {person.officeName}</p>
         </div>
 
+        <InfoCard
+          title="Capture target"
+          text="Use the same guided capture as registration and kiosk: front, side, opposite side, then chin down. The face should sit in the shared green distance band before capture starts."
+        />
+
         <div className="grid gap-3 pt-1">
           <button
-            className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            className="rounded-2xl border border-black/10 bg-white px-5 py-3.5 text-sm font-semibold text-ink transition hover:bg-stone-50"
             onClick={onBack}
             type="button"
           >

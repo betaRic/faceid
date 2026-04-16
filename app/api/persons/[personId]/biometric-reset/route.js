@@ -12,6 +12,7 @@ import {
 import { deletePersonBiometricIndex } from '@/lib/biometric-index'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import { PERSON_APPROVAL_PENDING } from '@/lib/person-approval'
 
 /**
@@ -68,6 +69,17 @@ export async function POST(request, { params }) {
     })
 
     await deletePersonBiometricIndex(db, personId)
+    try {
+      await syncPersonBiometricsRecord(db, personId, {
+        ...person,
+        descriptors: [],
+        sampleCount: 0,
+        approvalStatus: PERSON_APPROVAL_PENDING,
+        needsReenrollment: true,
+      })
+    } catch (err) {
+      console.warn(`[BiometricReset] person_biometrics sync failed for ${personId}:`, err?.message)
+    }
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

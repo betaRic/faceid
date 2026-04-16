@@ -52,6 +52,7 @@ const personApprovalModule = await importLocalModule('../lib/person-approval.js'
 const enrollmentBurstModule = await importLocalModule('../lib/biometrics/enrollment-burst.js')
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
+const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
 
 const { calculateDistanceMeters, isOfficeWfhDay } = officesModule
 const { deriveDailyAttendanceRecord } = dailyAttendanceModule
@@ -89,6 +90,7 @@ const {
   buildDtrRangeSpec,
   filterAttendanceDaysByRange,
 } = dtrModule
+const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -456,6 +458,40 @@ await run('buildDtrDocument shades inactive half-month rows and preserves active
   assert.equal(day16.isActive, true)
   assert.equal(day16.amIn, '08:01 AM')
   assert.equal(dtr.period.periodLabel, 'APRIL 16-30, 2026')
+})
+
+await run('biometric benchmark report exposes operational gate and honest reality flags', () => {
+  const now = new Date('2026-04-16T10:00:00+08:00').getTime()
+  const baseEvent = {
+    status: 'accepted',
+    challengeUsed: true,
+    decisionCode: 'accepted_onsite',
+    matchDebug: { bestDistance: 0.52, threshold: 0.78 },
+    scanDiagnostics: { deviceClass: 'mobile', bestFaceAreaRatio: 0.2 },
+    captureContext: { userAgent: 'Mozilla/5.0 Chrome/124.0', burstQualityScore: 4.1, mobile: true },
+  }
+
+  const events = [
+    ...Array.from({ length: 120 }, (_, index) => ({
+      ...baseEvent,
+      timestamp: now - (index * 1000),
+    })),
+    ...Array.from({ length: 80 }, (_, index) => ({
+      ...baseEvent,
+      timestamp: now - (index * 1000),
+      scanDiagnostics: { deviceClass: 'desktop', bestFaceAreaRatio: 0.19 },
+      captureContext: { userAgent: 'Mozilla/5.0 Safari/605.1.15', burstQualityScore: 4.0, mobile: false },
+    })),
+  ]
+
+  const report = buildBiometricBenchmarkReport(events, { days: 14, now })
+
+  assert.equal(report.reality.serverAuthoritativeBiometrics, false)
+  assert.equal(report.reality.challengeProtectedTransport, true)
+  assert.equal(report.sampleSize, 200)
+  assert.equal(report.byDevice.mobile.total, 120)
+  assert.equal(report.byDevice.desktop.total, 80)
+  assert.equal(report.operationalGate.status, 'pass')
 })
 
 await run('firestore index manifest loads from repo root', async () => {

@@ -3,11 +3,11 @@
 /**
  * hooks/useEnrollmentCapture.js
  *
- * Key fix: capturePhaseFrames now re-checks yaw PER FRAME during capture,
+ * Key fix: capturePhaseFrames now re-checks pose PER FRAME during capture,
  * not just before the burst. Previously, waitForPose confirmed pose then
  * capturePhaseFrames started immediately — but if the user moved back to
- * center during the 140ms burst, all frames came from center and were
- * near-identical (no real diversity despite "3-angle" capture).
+ * center during the burst, all frames came from center and were
+ * near-identical despite "guided" capture.
  *
  * Now: each captured frame must pass the pose check for its phase.
  * If a frame fails the pose check during capture, it is skipped.
@@ -16,6 +16,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { detectFaceBoxes, detectSingleDescriptor, detectPoseOnly } from '@/lib/biometrics/human'
+import {
+  getFaceAreaRatioFromBox,
+  getFaceSizeGuidance,
+  isFaceSizeCaptureReady,
+} from '@/lib/biometrics/face-size-guidance'
 import {
   buildOvalCaptureCanvas,
   selectOvalReadyFace,
@@ -69,7 +74,7 @@ const POSE_HOLD_STABLE_MS = 300
 const YAW_CENTER_MAX = 0.08
 const YAW_SIDE_MIN = 0.12
 const YAW_SIDE_GOOD = 0.18
-const PITCH_CHIN_DOWN_MIN = 0.5
+const PITCH_CHIN_DOWN_MIN = 0.18
 const CAPTURE_METRIC_SAMPLE_STEP = 4
 
 export function estimateHeadYaw(mesh) {
@@ -112,6 +117,46 @@ export function estimateHeadPitch(mesh) {
   const eyeY = (leftEyeY + rightEyeY) / 2
   const span = Math.max(10, chinY - eyeY)
   return (noseY - eyeY) / span
+}
+
+function resolveFacePose(result) {
+  const yaw = Number.isFinite(result?.rotation?.yaw)
+    ? Number(result.rotation.yaw)
+    : result?.landmarks?.positions
+      ? estimateHeadYaw(result.landmarks.positions)
+      : null
+  const pitch = Number.isFinite(result?.rotation?.pitch)
+    ? Number(result.rotation.pitch)
+    : result?.landmarks?.positions
+      ? estimateHeadPitch(result.landmarks.positions)
+      : null
+  const roll = Number.isFinite(result?.rotation?.roll) ? Number(result.rotation.roll) : null
+  return { yaw, pitch, roll }
+}
+
+function getClientCaptureMetadata() {
+  if (typeof navigator === 'undefined') {
+    return {
+      userAgent: '',
+      platform: '',
+      mobile: false,
+      deviceMemoryGb: null,
+      hardwareConcurrency: null,
+    }
+  }
+
+  let uaDataMobile = null
+  try {
+    uaDataMobile = navigator.userAgentData?.mobile ?? null
+  } catch {}
+
+  return {
+    userAgent: String(navigator.userAgent || '').slice(0, 512),
+    platform: String(navigator.platform || '').slice(0, 120),
+    mobile: uaDataMobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''),
+    deviceMemoryGb: Number.isFinite(navigator.deviceMemory) ? Number(navigator.deviceMemory) : null,
+    hardwareConcurrency: Number.isFinite(navigator.hardwareConcurrency) ? Number(navigator.hardwareConcurrency) : null,
+  }
 }
 
 function isPoseCentered(yaw) {
@@ -232,7 +277,7 @@ function measureCaptureMetrics(canvas, faceResult) {
   }
 }
 
-function buildCandidate(canvas, faceResult, phaseIndex, frameIndex, yaw) {
+function buildCandidate(canvas, faceResult, phaseIndex, frameIndex, pose) {
   const metrics = measureCaptureMetrics(canvas, faceResult)
   return {
     attempt: phaseIndex * FRAMES_PER_PHASE + frameIndex,
@@ -242,7 +287,9 @@ function buildCandidate(canvas, faceResult, phaseIndex, frameIndex, yaw) {
     previewUrl: canvas.toDataURL('image/jpeg', 0.85),
     metrics,
     score: scoreEnrollmentCapture(metrics),
-    yaw,
+    yaw: pose?.yaw ?? null,
+    pitch: pose?.pitch ?? null,
+    roll: pose?.roll ?? null,
   }
 }
 
@@ -255,6 +302,7 @@ export function useEnrollmentCapture(camera) {
   const [currentYaw, setCurrentYaw] = useState(null)
   const [poseOk, setPoseOk] = useState(false)
   const [sideAYaw, setSideAYaw] = useState(null)
+  const [faceSizeGuidance, setFaceSizeGuidance] = useState(() => getFaceSizeGuidance(null))
 
   const autoRef = useRef(null)
   const busyRef = useRef(false)
@@ -279,25 +327,23 @@ export function useEnrollmentCapture(camera) {
 
       const cropped = buildOvalCaptureCanvas(canvas)
       if (!cropped) { await wait(POSE_POLL_INTERVAL_MS); continue }
-      let detectedYaw = null
-      let detectedPitch = null
+      let pose = { yaw: null, pitch: null, roll: null }
       try {
         const result = await detectPoseOnly(cropped)
-        if (result?.landmarks?.positions) {
-          detectedYaw = estimateHeadYaw(result.landmarks.positions)
-          detectedPitch = estimateHeadPitch(result.landmarks.positions)
-        }
+        pose = resolveFacePose(result)
+        const faceAreaRatio = getFaceAreaRatioFromBox(result?.detection?.box || result?.box, cropped.width, cropped.height)
+        setFaceSizeGuidance(getFaceSizeGuidance(faceAreaRatio))
       } catch {}
 
-      setCurrentYaw(detectedYaw)
-      const poseMatch = isPoseMatchingPhase(phaseType, detectedYaw, sideAYw, detectedPitch)
+      setCurrentYaw(pose.yaw)
+      const poseMatch = isPoseMatchingPhase(phaseType, pose.yaw, sideAYw, pose.pitch)
       setPoseOk(poseMatch)
-      updateStatus(getPoseGuidanceMessage(phaseType, detectedYaw, sideAYw, detectedPitch))
+      updateStatus(getPoseGuidanceMessage(phaseType, pose.yaw, sideAYw, pose.pitch))
 
       if (poseMatch) {
         if (poseAchievedAt === null) poseAchievedAt = Date.now()
         else if (Date.now() - poseAchievedAt >= POSE_HOLD_STABLE_MS) {
-          return { yaw: detectedYaw, pitch: detectedPitch }
+          return pose
         }
       } else {
         poseAchievedAt = null
@@ -314,7 +360,7 @@ export function useEnrollmentCapture(camera) {
    * FIX: Per-frame pose verification during capture.
    *
    * Each frame slot is retried up to FRAME_MAX_RETRIES times.
-   * A frame is only accepted if the yaw still matches the phase requirement.
+   * A frame is only accepted if the pose still matches the phase requirement.
    * This ensures diversity is ACTUALLY captured, not just detected once before burst.
    */
   const capturePhaseFrames = useCallback(async (phaseIndex, phaseType, sideAYw) => {
@@ -329,7 +375,6 @@ export function useEnrollmentCapture(camera) {
         const canvas = camera.captureImageData({
           maxWidth: PREVIEW_MAX_DIMENSION,
           maxHeight: PREVIEW_MAX_DIMENSION,
-          enhanced: true,
         })
         const cropped = buildOvalCaptureCanvas(canvas)
         if (!cropped) { await wait(PHASE_FRAME_INTERVAL_MS); continue }
@@ -340,18 +385,15 @@ export function useEnrollmentCapture(camera) {
         } catch {}
 
         if (faceResult && faceResult.descriptor?.length > 0) {
-          const frameYaw = faceResult.landmarks?.positions
-            ? estimateHeadYaw(faceResult.landmarks.positions)
-            : null
-          const framePitch = faceResult.landmarks?.positions
-            ? estimateHeadPitch(faceResult.landmarks.positions)
-            : null
+          const faceAreaRatio = getFaceAreaRatioFromBox(faceResult?.detection?.box, cropped.width, cropped.height)
+          setFaceSizeGuidance(getFaceSizeGuidance(faceAreaRatio))
+          const pose = resolveFacePose(faceResult)
 
-          // ✅ Verify pose is still correct DURING capture (not just before)
-          const poseStillOk = isPoseMatchingPhase(phaseType, frameYaw, sideAYw, framePitch)
+          // Verify pose is still correct DURING capture, not just before the burst.
+          const poseStillOk = isPoseMatchingPhase(phaseType, pose.yaw, sideAYw, pose.pitch)
 
           if (poseStillOk) {
-            captures.push(buildCandidate(cropped, faceResult, phaseIndex, frameSlot, frameYaw))
+            captures.push(buildCandidate(cropped, faceResult, phaseIndex, frameSlot, pose))
             captured = true
             frameSlot++
             setPhaseProgress(frameSlot)
@@ -442,17 +484,32 @@ export function useEnrollmentCapture(camera) {
 
       const primary = selected[0]
       const quality = summarizeEnrollmentCaptureQuality(primary.metrics)
+      const phaseIds = Array.from(new Set(selected.map(c => c.phaseId)))
+      const captureMetadata = {
+        modelVersion: 'human-faceres-browser-v1',
+        captureProfile: 'guided_4_phase',
+        keptCount: selected.length,
+        detectedCount: allCaptures.length,
+        phasesCompleted: CAPTURE_PHASES.length,
+        phasesCaptured: phaseIds,
+        genuinelyDiverse,
+        qualityScore: Math.round((Number(primary.score || 0)) * 100) / 100,
+        primaryMetrics: primary.metrics,
+        device: getClientCaptureMetadata(),
+      }
 
       return {
         descriptors: selected.map(c => c.descriptor),
         previewUrl: primary.previewUrl,
         qualitySummary: quality,
+        captureMetadata,
         burstSummary: {
           keptCount: selected.length,
           detectedCount: allCaptures.length,
           phasesCompleted: CAPTURE_PHASES.length,
           genuinelyDiverse,
-          phasesCaptured: [...selectedPhases].length,
+          phasesCaptured: phaseIds.length,
+          phaseIds,
           sideAYw,
         },
       }
@@ -476,6 +533,7 @@ export function useEnrollmentCapture(camera) {
     setCurrentYaw(null)
     setPoseOk(false)
     setStatusMsg(modelsReady ? 'Center your face in the oval.' : 'Loading models...')
+    setFaceSizeGuidance(getFaceSizeGuidance(null))
 
     if (!modelsReady) return
 
@@ -501,12 +559,33 @@ export function useEnrollmentCapture(camera) {
         }
         const detections = await detectFaceBoxes(cropped)
         const ready = selectOvalReadyFace(detections, cropped.width, cropped.height)
+        const largestFace = detections.length > 0
+          ? detections.reduce((best, curr) => {
+              const currBox = curr?.detection?.box || curr?.box
+              const bestBox = best?.detection?.box || best?.box
+              if (!currBox) return best
+              if (!bestBox) return curr
+              return (currBox.width * currBox.height) > (bestBox.width * bestBox.height) ? curr : best
+            }, null)
+          : null
+        const faceAreaRatio = ready?.faceAreaRatio ?? getFaceAreaRatioFromBox(
+          largestFace?.detection?.box || largestFace?.box || null,
+          cropped.width,
+          cropped.height,
+        )
+        const guidance = getFaceSizeGuidance(faceAreaRatio)
+        setFaceSizeGuidance(guidance)
 
         setFaceFound(Boolean(ready))
         setFaceNeedsAlignment(Boolean(!ready && detections.length))
 
         if (!ready) {
           setStatusMsg(detections.length ? 'Move into the oval guide.' : 'Scanning for face...')
+          return
+        }
+
+        if (!isFaceSizeCaptureReady(faceAreaRatio)) {
+          setStatusMsg(guidance.detail)
           return
         }
 
@@ -554,6 +633,7 @@ export function useEnrollmentCapture(camera) {
     setPoseOk(false)
     setSideAYaw(null)
     setStatusMsg('Align face with the camera.')
+    setFaceSizeGuidance(getFaceSizeGuidance(null))
     window.setTimeout(() => { abortedRef.current = false }, 100)
   }, [])
 
@@ -567,6 +647,7 @@ export function useEnrollmentCapture(camera) {
     currentYaw,
     poseOk,
     sideAYaw,
+    faceSizeGuidance,
     startDetect,
     stopDetect,
     resetCapture,

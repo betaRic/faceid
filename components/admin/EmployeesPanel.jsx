@@ -18,7 +18,7 @@ function MetricCard({ label, value, subtle }) {
 function ActionButton({ children, onClick, disabled, className = '', busy }) {
   return (
     <button
-      className={`inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${className} ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:opacity-90'}`}
+      className={`inline-flex min-h-[44px] items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition ${className} ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:opacity-90'}`}
       disabled={disabled || busy}
       onClick={onClick}
       type="button"
@@ -110,7 +110,7 @@ function EmployeesPanelInner() {
         <span className="text-muted">
           {employeesLoaded ? `Showing ${employeeTotal} records` : 'Loading...'}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={employeeHistoryLength === 0} onClick={handlePreviousPage}>
             ← Prev
           </ActionButton>
@@ -124,7 +124,53 @@ function EmployeesPanelInner() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
-        <table className="w-full text-left text-sm">
+        <div className="divide-y divide-black/5 bg-white md:hidden">
+          {!employeesLoaded ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="animate-pulse px-4 py-4">
+                <div className="h-4 w-32 rounded bg-stone-200" />
+                <div className="mt-3 h-3 w-24 rounded bg-stone-200" />
+              </div>
+            ))
+          ) : employees.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted">
+              No employees match the current filters.
+            </div>
+          ) : (
+            employees.map(person => (
+              <div key={person.id} className="grid gap-3 px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-base font-semibold text-ink">{person.name}</div>
+                    <div className="mt-1 text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                  </div>
+                  <StatusBadge active={person.active !== false} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <ApprovalBadge status={person.approvalStatus} />
+                  <Badge>{person.officeName}</Badge>
+                  <Badge>{`${person.sampleCount ?? 0} sample(s)`}</Badge>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <ActionButton
+                    className="border-black/10 bg-white text-ink hover:bg-stone-100"
+                    onClick={() => setEditingEmployee(person)}
+                  >
+                    {person.approvalStatus === 'pending' ? 'Review record' : 'Manage record'}
+                  </ActionButton>
+                  <ActionButton
+                    className="border-red-200 bg-white text-red-700 hover:bg-red-50"
+                    onClick={() => setDeletingEmployee(person)}
+                  >
+                    Delete employee
+                  </ActionButton>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <table className="hidden w-full text-left text-sm md:table">
           <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
             <tr>
               <th className="px-5 py-3">Employee</th>

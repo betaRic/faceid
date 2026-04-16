@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Form48Renderer } from '@/components/hr/Form48Dtr'
+import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
 import {
   buildDtrDocument,
   buildDtrRangeSpec,
@@ -81,7 +82,37 @@ function FilterField({ label, children }) {
   )
 }
 
-export default function AttendanceTableView({ currentMatch, onBack }) {
+function StateMessage({ title, message, actionLabel = 'Back to kiosk', onAction }) {
+  return (
+    <div className="flex h-full items-center justify-center p-4 sm:p-6">
+      <div className="w-full max-w-md rounded-[1.5rem] border border-black/5 bg-white p-5 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-stone-100 text-navy">
+          <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 8v4l3 3" />
+            <circle cx="12" cy="12" r="9" />
+          </svg>
+        </div>
+        <h3 className="mt-4 text-lg font-semibold text-ink">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-muted">{message}</p>
+        {onAction ? (
+          <button
+            onClick={onAction}
+            className="mt-5 w-full rounded-2xl bg-navy px-4 py-3 text-sm font-semibold text-white transition hover:bg-navy/90"
+          >
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+export default function AttendanceTableView({
+  currentMatch,
+  onBack,
+  onRefreshBiometrics = null,
+  autoReturnCountdown = null,
+}) {
   const [days, setDays] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -131,6 +162,10 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
       try {
         const res = await fetch(
           `/api/attendance/table?employeeId=${encodeURIComponent(currentMatch.employeeId)}&month=${currentMonth}&year=${currentYear}`,
+          {
+            headers: buildEmployeeViewHeaders(currentMatch),
+            cache: 'no-store',
+          },
         )
         const data = await res.json()
         if (data.ok) {
@@ -150,7 +185,7 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
     }
 
     fetchData()
-  }, [currentMatch?.employeeId, currentMonth, currentYear])
+  }, [currentMatch?.employeeId, currentMatch?.employeeViewSession, currentMonth, currentYear])
 
   useEffect(() => {
     if (!downloadRequest || !hiddenRenderRef.current) return
@@ -224,24 +259,36 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
           className="flex h-full flex-col"
         >
           <div className="shrink-0 border-b border-black/10 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-start justify-between gap-2 sm:items-center sm:gap-3">
               <button
                 onClick={onBack}
-                className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-muted hover:bg-black/5 sm:text-sm"
+                className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-muted hover:bg-black/5 sm:text-sm"
               >
                 <ChevronLeftIcon className="h-4 w-4" />
                 <span className="hidden xs:inline">Back</span>
               </button>
 
-              <div className="min-w-0 flex-1 text-center">
-                <h2 className="truncate text-sm font-semibold text-ink sm:text-lg">{currentMatch.name}</h2>
-                <p className="text-[10px] text-muted sm:text-xs">{currentMatch.employeeId}</p>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-center text-sm font-semibold text-ink sm:text-lg">{currentMatch.name}</h2>
+                <div className="mt-0.5 flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted sm:text-xs">
+                  <span>{currentMatch.employeeId}</span>
+                  {currentMatch?.needsReenrollment ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
+                      Legacy biometrics
+                    </span>
+                  ) : null}
+                </div>
+                {autoReturnCountdown ? (
+                  <div className="mt-1 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                    Returns to kiosk in {autoReturnCountdown}s
+                  </div>
+                ) : null}
               </div>
 
               <button
                 onClick={handleGenerateDtr}
                 disabled={loading || downloading}
-                className="rounded-lg bg-navy px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50 sm:px-3 sm:py-2 sm:text-xs"
+                className="rounded-xl bg-navy px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50 sm:px-3 sm:py-2 sm:text-xs"
               >
                 {downloading ? (
                   <span className="flex items-center gap-1.5">
@@ -264,15 +311,34 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
                 )}
               </button>
             </div>
+
+            {currentMatch?.needsReenrollment ? (
+              <div className="mt-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-left">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">
+                  Face refresh recommended
+                </div>
+                <p className="mt-1.5 text-sm leading-6 text-amber-900">
+                  {currentMatch?.reenrollmentMessage || 'This profile still uses weak legacy face data. Refresh it now to reduce future kiosk mismatches.'}
+                </p>
+                {onRefreshBiometrics ? (
+                  <button
+                    onClick={onRefreshBiometrics}
+                    className="mt-3 w-full rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+                  >
+                    Refresh face data now
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="shrink-0 border-b border-black/5 bg-stone-50 px-3 py-3 sm:px-4">
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
               <FilterField label="Month">
                 <select
                   value={currentMonth}
                   onChange={(event) => setCurrentMonth(Number.parseInt(event.target.value, 10))}
-                  className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
                 >
                   {DTR_MONTH_NAMES.map((monthName, index) => (
                     <option key={monthName} value={index + 1}>{monthName}</option>
@@ -284,7 +350,7 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
                 <select
                   value={currentYear}
                   onChange={(event) => setCurrentYear(Number.parseInt(event.target.value, 10))}
-                  className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
                 >
                   {yearOptions.map((year) => (
                     <option key={year} value={year}>{year}</option>
@@ -296,7 +362,7 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
                 <select
                   value={selectedRange}
                   onChange={(event) => setSelectedRange(event.target.value)}
-                  className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
                 >
                   {DTR_RANGE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -310,7 +376,7 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
                     <select
                       value={customStartDay}
                       onChange={(event) => setCustomStartDay(Number.parseInt(event.target.value, 10))}
-                      className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                      className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
                     >
                       {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => (
                         <option key={day} value={day}>{day}</option>
@@ -322,7 +388,7 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
                     <select
                       value={customEndDay}
                       onChange={(event) => setCustomEndDay(Number.parseInt(event.target.value, 10))}
-                      className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                      className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
                     >
                       {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => (
                         <option key={day} value={day}>{day}</option>
@@ -331,15 +397,15 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
                   </FilterField>
                 </>
               ) : (
-                <div className="flex items-end sm:col-span-2">
-                  <div className="w-full rounded-lg border border-black/5 bg-white px-3 py-2 text-xs text-muted">
+                <div className="col-span-2 flex items-end lg:col-span-2">
+                  <div className="w-full rounded-xl border border-black/5 bg-white px-3 py-2.5 text-xs text-muted">
                     Range: <span className="font-semibold text-ink">{rangeSpec.startDay} - {rangeSpec.endDay}</span>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="mt-3 text-[11px] text-muted sm:text-xs">
+            <div className="mt-2 text-[11px] text-muted sm:text-xs">
               {DTR_MONTH_NAMES[currentMonth - 1]} {currentYear} • {totalDays} record{totalDays === 1 ? '' : 's'}
               {totalUndertime > 0 ? ` • ${formatUndertime(totalUndertime)} undertime` : ''}
             </div>
@@ -351,9 +417,18 @@ export default function AttendanceTableView({ currentMatch, onBack }) {
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
               </div>
             ) : error ? (
-              <div className="p-4 text-center text-sm text-red-600">{error}</div>
+              <StateMessage
+                title="Attendance view unavailable"
+                message={error}
+                onAction={onBack}
+              />
             ) : visibleDays.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted">No attendance records for the selected range.</div>
+              <StateMessage
+                title="No attendance records"
+                message="No attendance records were found for the selected range."
+                actionLabel="Back to kiosk"
+                onAction={onBack}
+              />
             ) : (
               <>
                 <div className="flex flex-col gap-2 p-3 sm:hidden">

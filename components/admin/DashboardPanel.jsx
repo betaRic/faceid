@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { useAdminStore } from '@/lib/admin/store'
 import { useOffices, useAttendance, useEmployees, useAdmins } from '@/lib/admin/hooks'
 import { BiometricIndexHealth } from './BiometricIndexHealth'
+import { BiometricBenchmarkPanel } from './BiometricBenchmarkPanel'
 
 const weekdayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
 
@@ -113,14 +114,37 @@ function DashboardPanelInner() {
         <MetricCard label="Admins" value={roleScope === 'regional' && adminsLoaded ? String(admins.length).padStart(2, '0') : '--'} />
       </div>
 
-      <div className="grid flex-1 gap-5 xl:grid-cols-[1.2fr_360px]">
+      <div className="grid flex-1 gap-5 lg:grid-cols-[1.2fr_360px]">
         <section className="flex flex-col overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-50">
           <div className="border-b border-black/5 px-5 py-4">
             <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Office snapshot</div>
             <h3 className="mt-1 text-lg font-semibold text-ink">All offices</h3>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="min-w-full text-left text-sm">
+            <div className="divide-y divide-black/5 bg-white lg:hidden">
+              {visibleOffices.map(office => (
+                <div key={office.id} className="grid gap-3 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-navy-dark">{office.code || office.shortName}</div>
+                      <div className="mt-1 text-base font-semibold text-ink">{office.name}</div>
+                    </div>
+                    <ActionButton
+                      className="border-black/10 bg-white text-ink hover:bg-stone-50"
+                      onClick={() => { setSelectedOfficeId(office.id); setActivePanel('office') }}
+                    >
+                      Open
+                    </ActionButton>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm text-muted">
+                    <div className="rounded-xl bg-stone-50 px-3 py-2">{office.provinceOrCity || office.location || '--'}</div>
+                    <div className="rounded-xl bg-stone-50 px-3 py-2">{office.officeType || '--'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <table className="hidden min-w-full text-left text-sm lg:table">
               <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
                 <tr>
                   <th className="px-5 py-3">Code</th>
@@ -194,6 +218,8 @@ function DashboardPanelInner() {
           )}
         </div>
       </div>
+
+      <BiometricBenchmarkPanel />
     </motion.section>
   )
 }

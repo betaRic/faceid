@@ -160,13 +160,13 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       </div>
 
       <nav className="fixed inset-x-3 bottom-3 z-40 rounded-2xl border border-black/5 bg-white/95 p-2 shadow-xl backdrop-blur xl:hidden">
-        <div className="grid grid-cols-3 gap-1">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {navItems.slice(0, 6).map(item => {
             const disabled = item.id === 'roles' && roleScope !== 'regional'
             return (
               <button
                 key={`mobile-${item.id}`}
-                className={`rounded-xl px-2 py-2 text-[11px] font-semibold transition ${
+                className={`shrink-0 rounded-xl px-3 py-2.5 text-[11px] font-semibold transition ${
                   activePanel === item.id
                     ? 'bg-navy text-white'
                     : disabled

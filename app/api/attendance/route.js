@@ -14,7 +14,8 @@ import {
   isEmployeeViewSessionConfigured,
 } from '@/lib/employee-view-auth'
 import { isPersonApproved } from '@/lib/person-approval'
-import { needsBiometricReenrollment } from '@/lib/biometrics/descriptor-utils'
+import { getBiometricReenrollmentAssessment } from '@/lib/biometrics/descriptor-utils'
+import { writeScanEvent } from '@/lib/scan-events'
 import { FieldValue } from 'firebase-admin/firestore'
 import {
   normalizeEntry,
@@ -25,7 +26,50 @@ import {
   writeAttendanceAtomically,
   updateDailyAttendanceCache,
   findGlobalMatch,
+  buildAttendanceEntryPreview,
 } from '@/lib/attendance'
+
+function buildEmployeeViewSessionPayload(person, personId = '') {
+  const reenrollmentAssessment = getBiometricReenrollmentAssessment(person)
+  const payload = {
+    needsReenrollment: reenrollmentAssessment.needed,
+    reenrollmentReason: reenrollmentAssessment.reasonCode,
+    reenrollmentMessage: reenrollmentAssessment.message,
+    canSelfReenroll: isEmployeeViewSessionConfigured(),
+    personId: person?.id || personId || null,
+  }
+
+  if (!payload.canSelfReenroll) {
+    return payload
+  }
+
+  try {
+    const employeeViewSession = createEmployeeViewSessionCookieValue({
+      employeeId: person.employeeId,
+      personId: person?.id || personId || '',
+      officeId: person.officeId || '',
+    })
+    const maxAge = getEmployeeViewSessionMaxAge()
+    payload.employeeViewSession = employeeViewSession
+    payload.employeeViewSessionExpiresAt = Date.now() + (maxAge * 1000)
+  } catch (cookieError) {
+    console.warn('[Attendance] Failed to create employee view session:', cookieError?.message)
+  }
+
+  return payload
+}
+
+function attachEmployeeViewSessionCookie(response, payload) {
+  if (!payload?.employeeViewSession) return response
+  response.cookies.set(getEmployeeViewSessionCookieName(), payload.employeeViewSession, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: getEmployeeViewSessionMaxAge(),
+    path: '/',
+  })
+  return response
+}
 
 async function writeFailedScanLog(db, entry, decisionCode, reason, extra = {}) {
   try {
@@ -58,7 +102,6 @@ async function writeFailedScanLog(db, entry, decisionCode, reason, extra = {}) {
       // Query descriptor diagnostics
       queryDescriptorLength: rawDesc.length,
       queryDescriptorMagnitude: descMag,
-      queryDescriptorSample: rawDesc.slice(0, 10).map(v => Math.round(Number(v) * 10000) / 10000),
       captureMobile: Boolean(entry.captureContext?.mobile),
       capturePlatform: entry.captureContext?.platform || '',
       captureResolution: entry.captureContext?.captureResolution || '',
@@ -68,10 +111,6 @@ async function writeFailedScanLog(db, entry, decisionCode, reason, extra = {}) {
         : null,
       captureDeviceMemoryGb: Number.isFinite(entry.captureContext?.deviceMemoryGb) ? Number(entry.captureContext.deviceMemoryGb) : null,
       captureHardwareConcurrency: Number.isFinite(entry.captureContext?.hardwareConcurrency) ? Number(entry.captureContext.hardwareConcurrency) : null,
-      // Stored descriptor sample (from best candidate if available)
-      storedDescriptorSample: Array.isArray(extra.storedDescriptorSample)
-        ? extra.storedDescriptorSample.slice(0, 10).map(v => Math.round(Number(v) * 10000) / 10000)
-        : null,
     }
     await db.collection('audit_logs').add({
       actorRole: 'kiosk',
@@ -88,6 +127,17 @@ async function writeFailedScanLog(db, entry, decisionCode, reason, extra = {}) {
   } catch {
     // Non-fatal — audit log failure must never block the response
   }
+
+  await writeScanEvent(db, {
+    status: 'blocked',
+    decisionCode,
+    reason,
+    entry,
+    debug: extra,
+    requestMeta: {
+      officeId: extra.officeId || '',
+    },
+  })
 }
 
 export async function POST(request) {
@@ -115,6 +165,12 @@ export async function POST(request) {
       windowMs: 60 * 1000,
     })
     if (!ipLimit.ok) {
+      await writeScanEvent(db, {
+        status: 'blocked',
+        decisionCode: 'blocked_rate_limited',
+        reason: 'Too many attendance requests from this client.',
+        entry,
+      })
       return NextResponse.json(
         { ok: false, message: 'Too many attendance requests. Slow down and try again.', decisionCode: 'blocked_rate_limited' },
         { status: 429 },
@@ -166,6 +222,10 @@ export async function POST(request) {
     // STEP 3: Get person's assigned office
     const office = await getOfficeRecord(db, person.officeId)
     if (!office) {
+      await writeFailedScanLog(db, entry, 'blocked_missing_office_config', 'Assigned office configuration missing', {
+        employeeId: person.employeeId,
+        officeId: person.officeId,
+      })
       return NextResponse.json({ ok: false, message: 'Assigned office was not found.', decisionCode: 'blocked_missing_office_config' }, { status: 404 })
     }
 
@@ -214,7 +274,22 @@ export async function POST(request) {
     const nextAction = getNextAttendanceAction(dailyLogs, office)
 
     if (nextAction === 'complete') {
-      return NextResponse.json({ ok: false, message: 'Full day attendance already recorded.', decisionCode: 'blocked_day_complete' }, { status: 409 })
+      const latestDailyEntry = dailyLogs.length > 0
+        ? buildAttendanceEntryPreview(dailyLogs[dailyLogs.length - 1])
+        : null
+      const employeeViewPayload = buildEmployeeViewSessionPayload(person, personMatch.personId)
+      await writeFailedScanLog(db, entry, 'blocked_day_complete', 'Full day attendance already recorded', {
+        employeeId: person.employeeId,
+        officeId: person.officeId,
+      })
+      const response = NextResponse.json({
+        ok: false,
+        message: 'Full day attendance already recorded.',
+        decisionCode: 'blocked_day_complete',
+        entry: latestDailyEntry,
+        ...employeeViewPayload,
+      }, { status: 409 })
+      return attachEmployeeViewSessionCookie(response, employeeViewPayload)
     }
 
     entry.action = nextAction
@@ -223,17 +298,45 @@ export async function POST(request) {
     const writeResult = await writeAttendanceAtomically(db, entry, cooldownMs)
     if (!writeResult.ok) {
       const cooldownMinutes = getCooldownForActionMinutes(office, nextAction)
-      return NextResponse.json(
-        { ok: false, message: `${nextAction === 'checkin' ? 'Check-in' : 'Check-out'} available again after ${cooldownMinutes} minute(s).`, decisionCode: 'blocked_recent_duplicate', entry: writeResult.entry },
+      const employeeViewPayload = buildEmployeeViewSessionPayload(person, personMatch.personId)
+      await writeFailedScanLog(db, entry, 'blocked_recent_duplicate', `Duplicate ${nextAction} attempt within cooldown window`, {
+        employeeId: person.employeeId,
+        officeId: person.officeId,
+      })
+      const response = NextResponse.json(
+        {
+          ok: false,
+          message: `${nextAction === 'checkin' ? 'Check-in' : 'Check-out'} available again after ${cooldownMinutes} minute(s).`,
+          decisionCode: 'blocked_recent_duplicate',
+          entry: writeResult.entry,
+          ...employeeViewPayload,
+        },
         { status: 409 },
       )
+      return attachEmployeeViewSessionCookie(response, employeeViewPayload)
     }
 
     await updateDailyAttendanceCache(db, writeResult.storedEntry, dailyLogs, person, office)
+    await writeScanEvent(db, {
+      status: 'accepted',
+      decisionCode: entry.decisionCode || 'accepted',
+      reason: `Attendance ${entry.action || 'recorded'}.`,
+      entry,
+      person,
+      debug: personMatch.debug || null,
+      requestMeta: {
+        personId: person.id || personMatch.personId || '',
+        officeId: person.officeId || '',
+        attendanceMode: entry.attendanceMode || '',
+        geofenceStatus: entry.geofenceStatus || '',
+      },
+    })
 
-    const responsePayload = { ok: true, entry: writeResult.entryPreview }
-    responsePayload.needsReenrollment = needsBiometricReenrollment(person)
-    responsePayload.personId = person.id || personMatch.personId || null
+    const responsePayload = {
+      ok: true,
+      entry: writeResult.entryPreview,
+      ...buildEmployeeViewSessionPayload(person, personMatch.personId),
+    }
     if (process.env.NODE_ENV !== 'production') {
       const d = personMatch.debug
       responsePayload.debug = d
@@ -242,25 +345,7 @@ export async function POST(request) {
     }
 
     const response = NextResponse.json(responsePayload)
-    if (isEmployeeViewSessionConfigured()) {
-      try {
-        response.cookies.set(getEmployeeViewSessionCookieName(), createEmployeeViewSessionCookieValue({
-          employeeId: person.employeeId,
-          personId: person.id || personMatch.personId || '',
-          officeId: person.officeId || '',
-        }), {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: getEmployeeViewSessionMaxAge(),
-          path: '/',
-        })
-      } catch (cookieError) {
-        console.warn('[Attendance] Failed to create employee view session:', cookieError?.message)
-      }
-    }
-
-    return response
+    return attachEmployeeViewSessionCookie(response, responsePayload)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to log attendance.'
     if (message.includes('FAILED_PRECONDITION') && message.includes('query requires an index')) {

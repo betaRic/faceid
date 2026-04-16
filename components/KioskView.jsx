@@ -12,8 +12,12 @@ import { useKioskClock } from '@/hooks/useKioskClock'
 import AttendanceTableView from './kiosk/AttendanceTableView'
 import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
+import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
+import KioskReenrollFlow from './kiosk/KioskReenrollFlow'
 import { formatAttendanceDateKey } from '@/lib/attendance-time'
-import { saveAttendanceMatch } from '@/lib/attendance-match'
+import { clearAttendanceMatch, saveAttendanceMatch } from '@/lib/attendance-match'
+
+const RESULT_PRIVACY_RETURN_MS = 20_000
 
 export default function KioskView({
   camera,
@@ -24,9 +28,17 @@ export default function KioskView({
   errorMessage,
 }) {
   const playAudioCue = useAudioCue()
-  useKioskMetrics()
+  const { recordScan, recordVerification, recordNetwork } = useKioskMetrics()
   const previousStateRef = useRef('idle')
+  const resultKeyRef = useRef('')
+  const reenrollRedirectTimerRef = useRef(null)
+  const reenrollCountdownIntervalRef = useRef(null)
+  const privacyReturnTimerRef = useRef(null)
+  const privacyReturnIntervalRef = useRef(null)
   const [todaysCount, setTodaysCount] = useState(null)
+  const [postScanView, setPostScanView] = useState('success')
+  const [reenrollCountdown, setReenrollCountdown] = useState(null)
+  const [privacyReturnCountdown, setPrivacyReturnCountdown] = useState(null)
 
   const {
     kioskState,
@@ -48,7 +60,6 @@ export default function KioskView({
     attemptCooldownUntilRef,
     faceLossTimerRef,
     pausedRef,
-    stopLoop: stopKioskLoop,
     scheduleResume,
     showAlertAndResume,
     pauseScanning,
@@ -61,7 +72,6 @@ export default function KioskView({
     modelsReady,
     locationState,
     onLogAttendance,
-    kioskState,
     setKioskState,
     setCurrentMatch,
     setCapturedFrameUrl,
@@ -74,8 +84,10 @@ export default function KioskView({
     attemptCooldownUntilRef,
     faceLossTimerRef,
     pausedRef,
-    scheduleResume,
     showAlertAndResume,
+    recordScan,
+    recordVerification,
+    recordNetwork,
   })
 
   const { clock, dateStr } = useKioskClock()
@@ -89,6 +101,10 @@ export default function KioskView({
   }, [])
 
   useEffect(() => { fetchTodaysCount() }, [fetchTodaysCount])
+
+  useEffect(() => {
+    clearAttendanceMatch()
+  }, [])
 
   const handleRunScan = useCallback(() => {
     return runScan(captureVerificationBurst)
@@ -110,7 +126,6 @@ export default function KioskView({
       setTodaysCount(prev => (prev ?? 0) + 1)
       if (currentMatch?.employeeId) {
         try {
-          sessionStorage.setItem('currentEmployeeId', currentMatch.employeeId)
           saveAttendanceMatch(currentMatch)
         } catch {}
       }
@@ -129,16 +144,167 @@ export default function KioskView({
       // Don't save - face was not recognized, we don't know who they are
     }
     previousStateRef.current = kioskState
-  }, [kioskState, playAudioCue])
+  }, [currentMatch, kioskState, playAudioCue])
 
   const isConfirmed = kioskState === 'confirmed'
   const isUnknown = kioskState === 'unknown'
   const isBlocked = kioskState === 'blocked'
-  const showSuccessScreen = Boolean(isConfirmed && currentMatch)
+  const isReviewableBlockedState = Boolean(
+    isBlocked
+    && currentMatch?.resultState === 'already-recorded'
+    && currentMatch?.employeeId,
+  )
+  const showResultScreen = Boolean(currentMatch && (isConfirmed || isReviewableBlockedState))
+  const canAutoReenroll = Boolean(
+    currentMatch?.needsReenrollment
+    && currentMatch?.personId
+    && currentMatch?.canSelfReenroll,
+  )
+
+  useEffect(() => {
+    if (privacyReturnTimerRef.current) {
+      window.clearTimeout(privacyReturnTimerRef.current)
+      privacyReturnTimerRef.current = null
+    }
+    if (privacyReturnIntervalRef.current) {
+      window.clearInterval(privacyReturnIntervalRef.current)
+      privacyReturnIntervalRef.current = null
+    }
+    setPrivacyReturnCountdown(null)
+
+    if (!showResultScreen || postScanView === 'reenroll') {
+      return
+    }
+
+    const deadline = Date.now() + RESULT_PRIVACY_RETURN_MS
+    const syncCountdown = () => {
+      const remainingMs = Math.max(0, deadline - Date.now())
+      setPrivacyReturnCountdown(Math.max(1, Math.ceil(remainingMs / 1000)))
+    }
+
+    syncCountdown()
+    privacyReturnIntervalRef.current = window.setInterval(syncCountdown, 250)
+    privacyReturnTimerRef.current = window.setTimeout(() => {
+      clearAttendanceMatch()
+      setPostScanView('success')
+      scheduleResume(250)
+    }, RESULT_PRIVACY_RETURN_MS)
+
+    return () => {
+      if (privacyReturnTimerRef.current) {
+        window.clearTimeout(privacyReturnTimerRef.current)
+        privacyReturnTimerRef.current = null
+      }
+      if (privacyReturnIntervalRef.current) {
+        window.clearInterval(privacyReturnIntervalRef.current)
+        privacyReturnIntervalRef.current = null
+      }
+      setPrivacyReturnCountdown(null)
+    }
+  }, [
+    currentMatch?.employeeId,
+    currentMatch?.resultState,
+    currentMatch?.timestamp,
+    postScanView,
+    scheduleResume,
+    showResultScreen,
+  ])
+
+  useEffect(() => {
+    if (reenrollRedirectTimerRef.current) {
+      window.clearTimeout(reenrollRedirectTimerRef.current)
+      reenrollRedirectTimerRef.current = null
+    }
+    if (reenrollCountdownIntervalRef.current) {
+      window.clearInterval(reenrollCountdownIntervalRef.current)
+      reenrollCountdownIntervalRef.current = null
+    }
+    setReenrollCountdown(null)
+
+    if (!showResultScreen) {
+      setPostScanView('success')
+      resultKeyRef.current = ''
+      return
+    }
+
+    const resultKey = `${currentMatch?.employeeId || ''}:${currentMatch?.timestamp || ''}:${currentMatch?.resultState || 'confirmed'}`
+    if (resultKey && resultKey !== resultKeyRef.current) {
+      resultKeyRef.current = resultKey
+      setPostScanView('success')
+    }
+
+    if (postScanView !== 'success' || !canAutoReenroll) {
+      return () => {
+        if (reenrollRedirectTimerRef.current) {
+          window.clearTimeout(reenrollRedirectTimerRef.current)
+          reenrollRedirectTimerRef.current = null
+        }
+        if (reenrollCountdownIntervalRef.current) {
+          window.clearInterval(reenrollCountdownIntervalRef.current)
+          reenrollCountdownIntervalRef.current = null
+        }
+      }
+    }
+
+    const redirectDelayMs = 2400
+    const deadline = Date.now() + redirectDelayMs
+    const syncCountdown = () => {
+      const remainingMs = Math.max(0, deadline - Date.now())
+      setReenrollCountdown(Math.max(1, Math.ceil(remainingMs / 1000)))
+    }
+    syncCountdown()
+    reenrollCountdownIntervalRef.current = window.setInterval(syncCountdown, 200)
+    reenrollRedirectTimerRef.current = window.setTimeout(() => {
+      setReenrollCountdown(null)
+      reenrollRedirectTimerRef.current = window.setTimeout(() => {
+        setPostScanView(current => (current === 'success' ? 'reenroll' : current))
+      }, 0)
+    }, redirectDelayMs)
+
+    return () => {
+      if (reenrollRedirectTimerRef.current) {
+        window.clearTimeout(reenrollRedirectTimerRef.current)
+        reenrollRedirectTimerRef.current = null
+      }
+      if (reenrollCountdownIntervalRef.current) {
+        window.clearInterval(reenrollCountdownIntervalRef.current)
+        reenrollCountdownIntervalRef.current = null
+      }
+      setReenrollCountdown(null)
+    }
+  }, [canAutoReenroll, currentMatch?.employeeId, currentMatch?.resultState, currentMatch?.timestamp, postScanView, showResultScreen])
 
   const handleBackToKiosk = useCallback(() => {
+    clearAttendanceMatch()
+    setPostScanView('success')
     scheduleResume(250)
   }, [scheduleResume])
+
+  const handleViewAttendanceTable = useCallback(() => {
+    setPostScanView('table')
+  }, [])
+
+  const handleStartReenrollment = useCallback(() => {
+    setPostScanView('reenroll')
+  }, [])
+
+  const handleReenrollmentComplete = useCallback((result = null) => {
+    setCurrentMatch(match => (
+      match
+        ? {
+            ...match,
+            needsReenrollment: Boolean(result?.needsReenrollment),
+            reenrollmentReason: result?.reenrollmentReason || null,
+            reenrollmentMessage: result?.reenrollmentMessage || '',
+          }
+        : match
+    ))
+    setPostScanView('table')
+  }, [setCurrentMatch])
+
+  const handleReenrollmentSkip = useCallback(() => {
+    setPostScanView('table')
+  }, [])
 
   return (
     <AppShell
@@ -151,13 +317,35 @@ export default function KioskView({
           animate={{ opacity: 1, y: 0 }}
           initial={{ opacity: 0, y: 18 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] ${showSuccessScreen ? 'bg-white' : 'bg-black'}`}
+          className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] ${showResultScreen ? 'bg-white' : 'bg-black'}`}
         >
-          {showSuccessScreen ? (
-            <AttendanceTableView
-              currentMatch={currentMatch}
-              onBack={handleBackToKiosk}
-            />
+          {showResultScreen ? (
+            postScanView === 'reenroll' ? (
+              <KioskReenrollFlow
+                camera={camera}
+                currentMatch={currentMatch}
+                onComplete={handleReenrollmentComplete}
+                onSkip={handleReenrollmentSkip}
+              />
+            ) : postScanView === 'table' ? (
+              <AttendanceTableView
+                currentMatch={currentMatch}
+                onBack={handleBackToKiosk}
+                onRefreshBiometrics={canAutoReenroll ? handleStartReenrollment : null}
+                autoReturnCountdown={privacyReturnCountdown}
+              />
+            ) : (
+              <KioskSuccessScreen
+                currentMatch={currentMatch}
+                onBack={handleBackToKiosk}
+                onReenroll={canAutoReenroll ? handleStartReenrollment : null}
+                onViewTable={handleViewAttendanceTable}
+                requiresReenrollment={Boolean(currentMatch?.needsReenrollment)}
+                canSelfReenroll={Boolean(currentMatch?.canSelfReenroll)}
+                autoReenrollCountdown={canAutoReenroll ? reenrollCountdown : null}
+                privacyReturnCountdown={privacyReturnCountdown}
+              />
+            )
           ) : (
             <KioskScanningOverlay
               camera={camera}
@@ -170,7 +358,6 @@ export default function KioskView({
               clock={clock}
               dateStr={dateStr}
               locationState={locationState}
-              errorMessage={errorMessage}
               faceDistanceInfo={faceDistanceInfo}
               todaysCount={todaysCount}
             />

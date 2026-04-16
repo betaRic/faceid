@@ -9,6 +9,8 @@ import {
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
+import { syncPersonBiometricsRecord } from '@/lib/person-biometrics'
+import { PERSON_APPROVAL_PENDING } from '@/lib/person-approval'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 
@@ -111,17 +113,37 @@ export async function POST(request) {
       )
     }
 
-    // Step 1: Clear descriptors from all person records
+    // Step 1: Clear descriptors from all person records and return everyone to pending review.
+    // Leaving employees approved after this reset would break the documented next step:
+    // public registration refuses to append samples to already-approved employees.
     const personsSnapshot = await db.collection('persons').get()
     let clearedCount = 0
+    let pendingReviewCount = 0
+    let biometricsMirrorSynced = 0
     for (const doc of personsSnapshot.docs) {
       const data = doc.data()
       if (Array.isArray(data.descriptors) && data.descriptors.length > 0) {
-        await doc.ref.update({
-          descriptors: [],
-          biometricResetAt: FieldValue.serverTimestamp(),
-        })
         clearedCount++
+      }
+      await doc.ref.update({
+        descriptors: [],
+        sampleCount: 0,
+        approvalStatus: PERSON_APPROVAL_PENDING,
+        needsReenrollment: true,
+        biometricResetAt: FieldValue.serverTimestamp(),
+      })
+      pendingReviewCount++
+      try {
+        await syncPersonBiometricsRecord(db, doc.id, {
+          ...data,
+          descriptors: [],
+          sampleCount: 0,
+          approvalStatus: PERSON_APPROVAL_PENDING,
+          needsReenrollment: true,
+        })
+        biometricsMirrorSynced++
+      } catch (mirrorError) {
+        console.warn(`[BiometricReset] person_biometrics sync failed for ${doc.id}:`, mirrorError?.message)
       }
     }
 
@@ -136,14 +158,16 @@ export async function POST(request) {
       targetType: 'system',
       targetId: 'biometric_index',
       officeId: '',
-      summary: `Biometric reset: cleared descriptors for ${clearedCount} persons, deleted ${indexDeleted} index entries`,
-      metadata: { clearedCount, indexDeleted },
+      summary: `Biometric reset: cleared descriptors for ${clearedCount} persons, returned ${pendingReviewCount} persons to pending review, deleted ${indexDeleted} index entries`,
+      metadata: { clearedCount, pendingReviewCount, biometricsMirrorSynced, indexDeleted },
     })
 
     return NextResponse.json({
       ok: true,
-      message: `Biometric reset complete. ${clearedCount} employees need to re-enroll.`,
+      message: `Biometric reset complete. ${pendingReviewCount} employees now require re-enrollment and admin approval.`,
       clearedPersons: clearedCount,
+      pendingReviewCount,
+      biometricsMirrorSynced,
       deletedIndexEntries: indexDeleted,
       nextSteps: [
         'All employees must re-enroll at /registration',

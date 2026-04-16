@@ -14,6 +14,7 @@ import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biom
 import { getOfficeRecord } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/employee-access'
+import { deletePersonBiometricsRecord, syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import { kvDel, kvKeys } from '@/lib/kv-utils'
 import { deleteEnrollmentPhoto } from '@/lib/storage'
 import {
@@ -146,6 +147,11 @@ export async function PUT(request, { params }) {
 
     await db.collection('persons').doc(personId).set(nextPerson, { merge: true })
     await syncPersonBiometricIndex(db, personId, nextPerson)
+    try {
+      await syncPersonBiometricsRecord(db, personId, nextPerson)
+    } catch (err) {
+      console.warn(`[PersonUpdate] person_biometrics sync failed for ${personId}:`, err?.message)
+    }
 
     const action = approvalChanged
       ? nextApprovalStatus === PERSON_APPROVAL_APPROVED
@@ -221,6 +227,7 @@ async function hardDeleteEmployee(db, resolvedSession, personId, personData) {
   }
 
   await deletePersonBiometricIndex(db, personIdStr)
+  await deletePersonBiometricsRecord(db, personIdStr)
   const attendanceDeleted = await commitDeleteBatch(db, attendanceRefs)
   const attendanceDailyDeleted = await commitDeleteBatch(db, attendanceDailyRefs)
   const attendanceLocksDeleted = await commitDeleteBatch(db, Array.from(new Map(attendanceLockRefs.map(ref => [ref.path, ref])).values()))
@@ -313,6 +320,7 @@ export async function DELETE(request, { params }) {
 
     await db.collection('persons').doc(personId).delete()
     await deletePersonBiometricIndex(db, personId)
+    await deletePersonBiometricsRecord(db, personId)
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
       actorScope: resolvedSession.scope,

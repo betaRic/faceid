@@ -94,12 +94,12 @@ export async function POST(request) {
       await resetThresholdsToDefaults(ctx.db)
       await writeAuditLog(ctx.db, {
         actorRole: ctx.role,
-        actorScope: ctx.resolvedSession.scope,
-        actorOfficeId: ctx.resolvedSession.officeId,
+        actorScope: ctx.resolved.scope,
+        actorOfficeId: ctx.resolved.officeId,
         action: 'thresholds.reset',
         targetType: 'system_config',
         targetId: 'thresholds',
-        officeId: ctx.resolvedSession.officeId,
+        officeId: ctx.resolved.officeId,
         summary: 'Thresholds reset to defaults',
       })
       return NextResponse.json({ ok: true, message: 'Thresholds reset to defaults.' })
@@ -132,12 +132,12 @@ export async function POST(request) {
 
       await writeAuditLog(ctx.db, {
         actorRole: ctx.role,
-        actorScope: ctx.resolvedSession.scope,
-        actorOfficeId: ctx.resolvedSession.officeId,
+        actorScope: ctx.resolved.scope,
+        actorOfficeId: ctx.resolved.officeId,
         action: 'thresholds.updated',
         targetType: 'system_config',
         targetId: 'thresholds',
-        officeId: ctx.resolvedSession.officeId,
+        officeId: ctx.resolved.officeId,
         summary: `Threshold settings updated: ${Object.keys(validated).join(', ')}`,
         metadata: {
           changed: Object.fromEntries(
