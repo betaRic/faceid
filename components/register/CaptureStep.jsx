@@ -5,6 +5,7 @@ import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
 import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 import { CAPTURE_PHASES } from '@/hooks/useEnrollmentCapture'
+import { toCompactGuideLabel } from '@/lib/biometrics/compact-guide-copy'
 
 const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
 
@@ -21,12 +22,9 @@ export default function CaptureStep({
 }) {
   const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
 
-  const guideTitle = phase?.label
-    || (faceFound ? (faceSizeGuidance?.label || 'Center your face') : 'Center your face')
-
-  const guideSubtitle = phase
-    ? (statusMsg || phase.subtitle)
-    : (statusMsg || faceSizeGuidance?.detail || 'Place your face inside the oval and hold still.')
+  const guideTitle = phase
+    ? toCompactGuideLabel(statusMsg || phase.label, 'Center face')
+    : toCompactGuideLabel(faceFound ? (faceSizeGuidance?.label || statusMsg) : statusMsg, 'Center face')
 
   const guideTone = errorMessage
     ? 'danger'
@@ -80,10 +78,8 @@ export default function CaptureStep({
 
         <div className="absolute inset-x-0 top-3 z-[5] flex justify-center px-3 sm:top-4 sm:px-4">
           <CaptureGuideHud
-            className="w-full max-w-[22rem] sm:max-w-[26rem]"
-            eyebrow="Live capture"
+            className="w-full max-w-[20rem] sm:max-w-[22rem]"
             steps={guideSteps}
-            subtitle={guideSubtitle}
             title={guideTitle}
             tone={guideTone}
           />

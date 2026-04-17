@@ -1,6 +1,7 @@
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
 import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
+import { toCompactGuideLabel } from '@/lib/biometrics/compact-guide-copy'
 
 const OVAL_STYLE = { borderRadius: '44% / 34%' }
 
@@ -54,18 +55,12 @@ export default function KioskScanningOverlay({
                 : 'Camera off'
 
   const guideTitle = isChallenge
-    ? 'Follow the liveness prompt'
+    ? toCompactGuideLabel(challengeState?.prompt || 'Follow the liveness prompt', 'Follow prompt')
     : isVerifying
-      ? 'Verifying your face'
+      ? 'Verifying'
       : isScanning
-        ? (faceDistanceInfo?.isCaptureReady ? 'Hold steady' : (faceDistanceInfo?.label || 'Adjust your distance'))
-        : faceDistanceInfo?.label || 'Center your face'
-
-  const guideSubtitle = isChallenge
-    ? (challengeState?.prompt || 'Follow the prompt on screen and keep your face centered.')
-    : isVerifying
-      ? 'Please wait while we confirm your attendance.'
-      : faceDistanceInfo?.detail || (camera.camOn ? 'Look straight at the camera inside the oval.' : 'Camera is not ready yet.')
+        ? toCompactGuideLabel(faceDistanceInfo?.isCaptureReady ? 'Hold steady' : faceDistanceInfo?.label, 'Adjust distance')
+        : toCompactGuideLabel(faceDistanceInfo?.label, 'Center face')
 
   const guideTone = isChallenge
     ? 'warn'
@@ -82,9 +77,7 @@ export default function KioskScanningOverlay({
       <div className="absolute inset-x-0 top-3 z-[4] flex justify-center px-3 sm:top-4 sm:px-4">
         {!isBlocked && !isUnknown ? (
           <CaptureGuideHud
-            className="w-full max-w-[22rem] sm:max-w-[26rem]"
-            eyebrow="Live scan"
-            subtitle={guideSubtitle}
+            className="w-full max-w-[20rem] sm:max-w-[22rem]"
             title={guideTitle}
             tone={guideTone}
           />
@@ -131,14 +124,12 @@ export default function KioskScanningOverlay({
       {isConfirmed && <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/15 animate-pulse" />}
       {(isBlocked || isUnknown) && <div className="absolute inset-0 z-[3] bg-red-500/10" />}
 
-      <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/12 bg-slate-950/62 px-3.5 py-2 text-right shadow-lg backdrop-blur-xl sm:right-5 sm:top-5 sm:px-5 sm:py-3">
-        <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
-        <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs">{dateStr}</div>
+      <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-full border border-white/12 bg-slate-950/58 px-3 py-1.5 text-right shadow-lg backdrop-blur-xl sm:right-5 sm:top-5">
+        <div className="font-display text-sm leading-none text-white sm:text-base">{clock}</div>
       </div>
 
-      <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/12 bg-slate-950/62 px-3.5 py-2 text-left shadow-lg backdrop-blur-xl sm:left-5 sm:top-5 sm:px-5 sm:py-3">
-        <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/88 sm:text-xs">Location</div>
-        <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationBadgeLabel}</div>
+      <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-full border border-white/12 bg-slate-950/58 px-3 py-1.5 text-left shadow-lg backdrop-blur-xl sm:left-5 sm:top-5">
+        <div className="text-[10px] font-medium text-slate-100/88">{locationBadgeLabel}</div>
       </div>
 
       {faceDistanceInfo && !isVerifying && !isConfirmed && !isBlocked && !isUnknown && (
