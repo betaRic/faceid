@@ -138,3 +138,78 @@ export async function PUT(request, { params }) {
     )
   }
 }
+
+export async function DELETE(request, { params }) {
+  const checkOrigin = createOriginGuard()
+  const originError = await checkOrigin(request)
+  if (originError) return originError
+
+  const { officeId } = await params
+  if (!officeId) {
+    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
+  }
+
+  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const db = getAdminDb()
+    const resolvedSession = await resolveAdminSession(db, session)
+    if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
+      return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+    }
+
+    const officeRef = db.collection('offices').doc(officeId)
+    const officeSnapshot = await officeRef.get()
+    if (!officeSnapshot.exists) {
+      return NextResponse.json({ ok: false, message: 'Office not found.' }, { status: 404 })
+    }
+
+    const [personCount, adminCount, attendanceCount, dailyCount] = await Promise.all([
+      db.collection('persons').where('officeId', '==', officeId).count().get(),
+      db.collection('admins').where('officeId', '==', officeId).count().get(),
+      db.collection('attendance').where('officeId', '==', officeId).count().get(),
+      db.collection('attendance_daily').where('officeId', '==', officeId).count().get(),
+    ])
+
+    const references = {
+      persons: personCount.data().count,
+      admins: adminCount.data().count,
+      attendance: attendanceCount.data().count,
+      attendanceDaily: dailyCount.data().count,
+    }
+
+    if (Object.values(references).some(count => Number(count) > 0)) {
+      return NextResponse.json({
+        ok: false,
+        message: 'This office is still referenced by employee, admin, or attendance records. Mark it inactive instead of deleting it.',
+        references,
+      }, { status: 409 })
+    }
+
+    const office = officeSnapshot.data() || {}
+    await officeRef.delete()
+    await clearOfficeRecordCache()
+
+    await writeAuditLog(db, {
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
+      action: 'office_delete',
+      targetType: 'office',
+      targetId: officeId,
+      officeId,
+      summary: `Deleted office ${office.name || officeId}`,
+      metadata: { references },
+    })
+
+    return NextResponse.json({ ok: true, officeId })
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Failed to delete office.' },
+      { status: 500 },
+    )
+  }
+}

@@ -57,34 +57,17 @@ function PhaseIndicator({ capturePhase, poseOk, currentYaw, statusMsg, faceSizeG
   const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
 
   return (
-    <div className="w-full max-w-md space-y-2 sm:max-w-lg">
-      <div className="rounded-[1.1rem] border border-white/16 bg-black/72 p-3 backdrop-blur">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/58">Distance</span>
-          <span className={`text-xs font-semibold ${
-            faceSizeGuidance?.isCaptureReady ? 'text-emerald-300' : 'text-amber-300'
-          }`}>
-            {faceSizeGuidance?.label || 'Position face'}
-          </span>
-        </div>
-        <div className="mt-2">
-          <FaceSizeGuidance className="w-full" compact guidance={faceSizeGuidance} theme="dark" />
-        </div>
-        {faceSizeGuidance?.detail ? (
-          <p className="mt-2 text-xs leading-5 text-white/70">{faceSizeGuidance.detail}</p>
-        ) : null}
-      </div>
-
+    <div className="w-full max-w-md sm:max-w-lg">
       <div className="rounded-[1.1rem] border border-white/16 bg-black/78 p-3 backdrop-blur">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/58">Live guidance</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/58">Camera guidance</div>
             <div className="mt-1 text-sm font-semibold text-white sm:text-base">
               {phase ? phase.label : 'Position your face in the oval'}
             </div>
-            {phase?.subtitle ? (
-              <p className="mt-1 text-xs leading-5 text-white/58">{phase.subtitle}</p>
-            ) : null}
+            <p className="mt-1 text-xs leading-5 text-white/65">
+              {faceSizeGuidance?.label || 'Position face'} · {faceSizeGuidance?.detail || 'Keep your face inside the oval.'}
+            </p>
           </div>
           {phase ? (
             <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72">
@@ -122,6 +105,10 @@ function PhaseIndicator({ capturePhase, poseOk, currentYaw, statusMsg, faceSizeG
             />
           </div>
         ) : null}
+
+        <div className="mt-3">
+          <FaceSizeGuidance className="w-full" compact guidance={faceSizeGuidance} theme="dark" />
+        </div>
 
         <p className={`mt-3 text-sm leading-6 ${poseOk ? 'text-emerald-300' : 'text-white/90'}`}>
           {statusMsg}
@@ -217,13 +204,6 @@ export default function CaptureStep({
         ) : null}
 
         <div className="relative z-[5] border-t border-white/10 bg-black/88 px-3 pb-3 pt-3 sm:hidden">
-          <div className="mb-3 rounded-[1.1rem] border border-white/12 bg-white/6 px-3.5 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">Employee</div>
-            <div className="mt-1 text-sm font-semibold text-white">{name || 'Enter employee details first'}</div>
-            <div className="mt-1 text-xs text-white/62">
-              {employeeId || 'Pending employee ID'} · {selectedOffice?.name || 'Select assigned office'}
-            </div>
-          </div>
           <PhaseIndicator
             capturePhase={capturePhase}
             currentYaw={currentYaw}

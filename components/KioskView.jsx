@@ -301,7 +301,7 @@ export default function KioskView({
       fitViewport
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
       onBeforeNavigate={pauseScanning}
-      showNavigation={false}
+      showFooter={false}
     >
       <div className="page-frame h-full min-h-0">
         <motion.section

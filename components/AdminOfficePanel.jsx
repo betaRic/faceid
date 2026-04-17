@@ -11,7 +11,6 @@
  * 4. Save button always visible at the top.
  */
 
-import { useState } from 'react'
 import OfficeLocationPicker from './OfficeLocationPicker'
 
 const DAY_OPTIONS = [
@@ -111,6 +110,8 @@ export default function AdminOfficePanel({
   toggleDay = () => {},
   handleUseMyLocation,
   handleSaveOffice = () => {},
+  handleCancel = () => {},
+  saveLabel = 'Save settings',
   savePending = false,
   locationLoading = false,
   locationNotice = '',
@@ -129,15 +130,24 @@ export default function AdminOfficePanel({
   return (
     <div className="grid gap-4">
       {/* ── Header: office name, type, save ── */}
-      <div className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 sm:grid-cols-[1fr_1fr_auto]">
-        <Field label="Office name">
-          <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
-            onChange={e => updateDraft('name', e.target.value)}
-            value={activeOffice.name || ''}
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 xl:grid-cols-[1.1fr_1.2fr_auto]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Office name">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+              onChange={e => updateDraft('name', e.target.value)}
+              value={activeOffice.name || ''}
+            />
+          </Field>
+          <Field label="Code">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+              onChange={e => updateDraft('code', e.target.value)}
+              value={activeOffice.code || ''}
+            />
+          </Field>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Short name">
             <input
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
@@ -159,17 +169,43 @@ export default function AdminOfficePanel({
           {officeDraftWarning && (
             <p className="text-xs text-amber-600">{officeDraftWarning}</p>
           )}
-          <button
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-navy px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-60"
-            disabled={savePending}
-            onClick={handleSaveOffice}
-            type="button"
-          >
-            {savePending
-              ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving…</>
-              : 'Save settings'}
-          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              className="inline-flex min-h-10 items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-100"
+              onClick={handleCancel}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-navy px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-60"
+              disabled={savePending}
+              onClick={handleSaveOffice}
+              type="button"
+            >
+              {savePending
+                ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving…</>
+                : saveLabel}
+            </button>
+          </div>
         </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Province / city">
+          <input
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            onChange={e => updateDraft('provinceOrCity', e.target.value)}
+            value={activeOffice.provinceOrCity || ''}
+          />
+        </Field>
+        <Field label="Location label">
+          <input
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            onChange={e => updateDraft('location', e.target.value)}
+            value={activeOffice.location || ''}
+          />
+        </Field>
       </div>
 
       {/* ── Main grid: Location | Schedule | Cooldowns ── */}

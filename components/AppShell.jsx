@@ -4,20 +4,20 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import BrandMark from './BrandMark'
+import { usePortalDestination } from './usePortalDestination'
 
 const PUBLIC_ATTENDANCE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_ATTENDANCE === 'true'
-const defaultNavItems = [
+const baseNavItems = [
   { href: '/', label: 'Home' },
-  { href: '/scan', label: 'Scan' },
+  { href: '/scan', label: 'Kiosk' },
   ...(PUBLIC_ATTENDANCE_ENABLED ? [{ href: '/attendance', label: 'Attendance' }] : []),
   { href: '/registration', label: 'Register' },
-  { href: '/login', label: 'Login' },
 ]
 
 export default function AppShell({
   children,
   actions = null,
-  navItems = defaultNavItems,
+  navItems = null,
   contentClassName = '',
   onBeforeNavigate = null,
   fitViewport = false,
@@ -27,17 +27,19 @@ export default function AppShell({
 }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const canShowNavigation = showNavigation && navItems.length > 0
+  const portal = usePortalDestination()
+  const resolvedNavItems = navItems ?? [...baseNavItems, { href: portal.href, label: portal.label }]
+  const canRenderNavigation = showNavigation && resolvedNavItems.length > 0
 
   useEffect(() => {
     setMobileOpen(false)
   }, [pathname])
 
   useEffect(() => {
-    if (!canShowNavigation && mobileOpen) {
+    if (!canRenderNavigation && mobileOpen) {
       setMobileOpen(false)
     }
-  }, [canShowNavigation, mobileOpen])
+  }, [canRenderNavigation, mobileOpen])
 
   useEffect(() => {
     if (typeof onMobileMenuChange === 'function') {
@@ -61,9 +63,9 @@ export default function AppShell({
           </Link>
 
           {/* Desktop nav */}
-          {canShowNavigation ? (
+          {canRenderNavigation ? (
             <nav className="ml-4 hidden items-center gap-1 md:flex">
-              {navItems.map(item => {
+              {resolvedNavItems.map(item => {
                 const active = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href))
                 return (
                   <Link
@@ -82,7 +84,7 @@ export default function AppShell({
           <div className="ml-auto flex items-center gap-2">
             {actions}
             {/* Mobile hamburger */}
-            {canShowNavigation ? (
+          {canRenderNavigation ? (
               <button
                 aria-expanded={mobileOpen}
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-navy-50/60 bg-white text-slate transition-colors hover:bg-sky-light md:hidden"
@@ -101,7 +103,7 @@ export default function AppShell({
         </div>
 
         {/* Mobile menu */}
-        {canShowNavigation && mobileOpen ? (
+        {canRenderNavigation && mobileOpen ? (
           <div className="absolute inset-x-3 top-full z-50 mt-2 md:hidden">
             <div className="overflow-hidden rounded-[1.25rem] border border-navy-50/40 bg-white shadow-lg">
               <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
@@ -116,7 +118,7 @@ export default function AppShell({
                 </button>
               </div>
               <nav className="grid gap-1 p-3">
-                {navItems.map(item => {
+                {resolvedNavItems.map(item => {
                   const active = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href))
                   return (
                     <Link

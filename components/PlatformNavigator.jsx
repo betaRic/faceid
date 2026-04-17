@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import AppShell from './AppShell'
 import BrandMark from './BrandMark'
+import { usePortalDestination } from './usePortalDestination'
 
 /* ─── Animation variants ─────────────────────────────────── */
 const stagger = {
@@ -27,57 +28,6 @@ const stats = [
   { value: 'GPS', label: 'Location Verified', icon: '📍' },
   { value: '4-Pose', label: 'Face Capture', icon: '🎯' },
   { value: 'Live', label: 'Real-time Logs', icon: '⚡' },
-]
-
-const modules = [
-  {
-    title: 'Public Scan',
-    tag: 'Live',
-    tagStyle: 'bg-emerald-100 text-emerald-700',
-    href: '/scan',
-    description: 'Phone-first face scanning for enrolled employees. The browser captures the face burst, the server makes the attendance decision, GPS validates location, and the system records AM/PM attendance.',
-    features: ['Open-and-scan flow', 'Challenge-protected attendance requests', 'GPS context validation', 'AM / PM session tracking'],
-    icon: (
-      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-      </svg>
-    ),
-    accent: 'from-navy to-navy-light',
-    border: 'border-navy/10',
-    bg: 'bg-white',
-  },
-  {
-    title: 'Employee Registration',
-    tag: 'Open',
-    tagStyle: 'bg-amber-100 text-amber-700',
-    href: '/registration',
-    description: 'Enroll a new employee with a guided four-pose face capture. A server-side duplicate check runs before submission. Records are locked until an admin approves them.',
-    features: ['4-pose guided capture', 'Server-side duplicate check', 'Oval alignment guide', 'Pending admin approval'],
-    icon: (
-      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-      </svg>
-    ),
-    accent: 'from-amber to-amber-light',
-    border: 'border-amber/20',
-    bg: 'bg-white',
-  },
-{
-    title: 'Login Portal',
-    tag: 'Restricted',
-    tagStyle: 'bg-slate-100 text-slate',
-    href: '/login',
-    description: 'Separate Admin and HR portals. Admins manage offices, GPS geofences, employee records, and approval queues. HR handles DTR exports and employee face data resets.',
-    features: ['Office & GPS geofence setup', 'Employee approval + face reset', 'Daily DTR summary & export', 'Audit logs & HR portal'],
-    icon: (
-      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-      </svg>
-    ),
-    accent: 'from-slate to-slate-light',
-    border: 'border-slate/10',
-    bg: 'bg-white',
-  },
 ]
 
 const howItWorks = [
@@ -112,6 +62,60 @@ const trustPoints = [
 
 /* ─── Component ──────────────────────────────────────────── */
 export default function PlatformNavigator() {
+  const portal = usePortalDestination()
+  const portalLabel = portal.role === 'admin' ? 'Admin' : portal.role === 'hr' ? 'HR' : 'Login'
+  const portalCtaLabel = portal.role === 'admin' ? 'Admin Portal' : portal.role === 'hr' ? 'HR Portal' : 'Login Portal'
+  const modules = [
+    {
+      title: 'Public Scan',
+      tag: 'Live',
+      tagStyle: 'bg-emerald-100 text-emerald-700',
+      href: '/scan',
+      description: 'Phone-first face scanning for enrolled employees. The browser captures the face burst, the server makes the attendance decision, GPS validates location, and the system records AM/PM attendance.',
+      features: ['Open-and-scan flow', 'Challenge-protected attendance requests', 'GPS context validation', 'AM / PM session tracking'],
+      icon: (
+        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      ),
+      accent: 'from-navy to-navy-light',
+      border: 'border-navy/10',
+      bg: 'bg-white',
+    },
+    {
+      title: 'Employee Registration',
+      tag: 'Open',
+      tagStyle: 'bg-amber-100 text-amber-700',
+      href: '/registration',
+      description: 'Enroll a new employee with a guided four-pose face capture. A server-side duplicate check runs before submission. Records are locked until an admin approves them.',
+      features: ['4-pose guided capture', 'Server-side duplicate check', 'Oval alignment guide', 'Pending admin approval'],
+      icon: (
+        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+        </svg>
+      ),
+      accent: 'from-amber to-amber-light',
+      border: 'border-amber/20',
+      bg: 'bg-white',
+    },
+    {
+      title: 'Portal Access',
+      tag: 'Restricted',
+      tagStyle: 'bg-slate-100 text-slate',
+      href: portal.href,
+      description: 'Separate Admin and HR portals. Admins manage offices, GPS geofences, employee records, and approval queues. HR handles DTR exports and employee face data resets.',
+      features: ['Office & GPS geofence setup', 'Employee approval + face reset', 'Daily DTR summary & export', `Direct ${portalCtaLabel}`],
+      icon: (
+        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+      ),
+      accent: 'from-slate to-slate-light',
+      border: 'border-slate/10',
+      bg: 'bg-white',
+    },
+  ]
+
   return (
     <AppShell>
       {/* ══════════════════════════════════════
@@ -158,7 +162,7 @@ export default function PlatformNavigator() {
 
             <motion.div variants={fadeUp} className="mt-10 flex flex-wrap items-center justify-center gap-3">
               <Link href="/scan" className="btn btn-amber text-base px-7 py-3.5 shadow-glow-orange">
-                Open Scan
+                Open Kiosk
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>
@@ -166,8 +170,8 @@ export default function PlatformNavigator() {
               <Link href="/registration" className="btn btn-white text-base px-7 py-3.5">
                 Register Employee
               </Link>
-<Link href="/login" className="btn text-sm px-6 py-3.5 border border-sky/30 text-sky hover:bg-sky/10 rounded-full transition-all duration-200">
-                Login Portal →
+              <Link href={portal.href} className="btn text-sm px-6 py-3.5 border border-sky/30 text-sky hover:bg-sky/10 rounded-full transition-all duration-200">
+                {portalLabel} →
               </Link>
             </motion.div>
           </motion.div>
@@ -362,11 +366,11 @@ export default function PlatformNavigator() {
           >
             <div>
               <h3 className="text-xl font-bold text-navy">Ready to start?</h3>
-              <p className="mt-1 text-sm text-slate-light">Open the scan page for attendance or log in to the admin portal to manage your office.</p>
+              <p className="mt-1 text-sm text-slate-light">Open the kiosk scan page for attendance or enter the correct portal for office management and DTR work.</p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-3">
-              <Link href="/scan" className="btn btn-primary px-6 py-3">Open Scan</Link>
-              <Link href="/login" className="btn btn-ghost px-6 py-3">Admin Portal</Link>
+              <Link href="/scan" className="btn btn-primary px-6 py-3">Open Kiosk</Link>
+              <Link href={portal.href} className="btn btn-ghost px-6 py-3">{portalCtaLabel}</Link>
             </div>
           </motion.div>
         </div>

@@ -268,7 +268,7 @@ export default function RegisterView({
         </div>
       )}
       contentClassName="min-h-0 flex flex-col px-3 py-3 sm:px-5 lg:px-8"
-      showNavigation={step !== 'capture'}
+      showFooter={step !== 'capture'}
     >
       {toast ? (
         <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-navy-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
