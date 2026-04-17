@@ -55,6 +55,7 @@ const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-captur
 const dtrModule = await importLocalModule('../lib/dtr.js')
 const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
 const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/enrollment-policy.js')
+const duplicateFaceModule = await importLocalModule('../lib/persons/duplicate-face.js')
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
 
 const { calculateDistanceMeters, isOfficeWfhDay } = officesModule
@@ -96,6 +97,7 @@ const {
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
 const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
+const { buildDuplicateFaceSnapshot } = duplicateFaceModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
@@ -554,6 +556,73 @@ await run('public enrollment cannot silently change identity fields on an existi
     }),
     null,
   )
+})
+
+await run('duplicate face snapshot catches same person across multiple guided query samples', () => {
+  const person = {
+    descriptors: [
+      [1, 0, 0, 0],
+      [0.98, 0.18, 0, 0],
+      [0.98, -0.18, 0, 0],
+      [0.95, 0.05, 0.3, 0],
+    ],
+  }
+
+  const queryDescriptors = [
+    [0.97, 0.16, 0.02, 0],
+    [0.96, -0.14, 0.01, 0],
+    [0.94, 0.04, 0.28, 0],
+  ]
+
+  const snapshot = buildDuplicateFaceSnapshot(person, queryDescriptors)
+
+  assert.equal(snapshot?.duplicate, true)
+  assert.ok(snapshot?.matchedQueries >= 2)
+  assert.ok(snapshot?.bestDistance < 0.78)
+})
+
+await run('duplicate face snapshot catches cross-device same-person samples even when only one stored sample supports each query', () => {
+  const person = {
+    descriptors: [
+      [1, 0, 0, 0],
+      [0.98, 0.18, 0, 0],
+      [0.98, -0.18, 0, 0],
+      [0.95, 0.05, 0.3, 0],
+    ],
+  }
+
+  const queryDescriptors = [
+    [0.56, 0.83, 0, 0],
+    [0.58, 0.8, 0.1, 0],
+    [0.52, 0.78, 0.2, 0],
+  ]
+
+  const snapshot = buildDuplicateFaceSnapshot(person, queryDescriptors)
+
+  assert.equal(snapshot?.duplicate, true)
+  assert.ok(snapshot?.matchedQueries >= 2)
+  assert.ok(snapshot?.bestDistance <= 0.84)
+})
+
+await run('duplicate face snapshot does not block a weak single-query resemblance', () => {
+  const person = {
+    descriptors: [
+      [1, 0, 0, 0],
+      [0.98, 0.18, 0, 0],
+      [0.98, -0.18, 0, 0],
+      [0.95, 0.05, 0.3, 0],
+    ],
+  }
+
+  const queryDescriptors = [
+    [0.56, 0.83, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+  ]
+
+  const snapshot = buildDuplicateFaceSnapshot(person, queryDescriptors)
+
+  assert.equal(snapshot?.duplicate, false)
 })
 
 await run('firestore index manifest loads from repo root', async () => {
