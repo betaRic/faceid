@@ -97,6 +97,7 @@ export default function KioskSuccessScreen({
   onReenroll,
   requiresReenrollment = false,
   canSelfReenroll = false,
+  autoReenrollCountdown = null,
   privacyReturnCountdown = null,
 }) {
   const attendanceMode = String(currentMatch?.attendanceMode || '')
@@ -193,6 +194,11 @@ export default function KioskSuccessScreen({
                       : 'This scan worked, but the stored face data should be refreshed by an administrator.'
                   )}
                 </p>
+                {canSelfReenroll && autoReenrollCountdown ? (
+                  <div className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+                    Refresh prompt opens in {autoReenrollCountdown}s.
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
