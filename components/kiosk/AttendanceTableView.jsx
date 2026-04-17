@@ -110,7 +110,6 @@ function StateMessage({ title, message, actionLabel = 'Back to scan', onAction }
 export default function AttendanceTableView({
   currentMatch,
   onBack,
-  onRefreshBiometrics = null,
   autoReturnCountdown = null,
 }) {
   const [days, setDays] = useState([])
@@ -272,11 +271,6 @@ export default function AttendanceTableView({
                 <h2 className="truncate text-center text-sm font-semibold text-ink sm:text-lg">{currentMatch.name}</h2>
                 <div className="mt-0.5 flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted sm:text-xs">
                   <span>{currentMatch.employeeId}</span>
-                  {currentMatch?.needsReenrollment ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
-                      Legacy biometrics
-                    </span>
-                  ) : null}
                 </div>
                 {autoReturnCountdown ? (
                   <div className="mt-1 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
@@ -311,25 +305,6 @@ export default function AttendanceTableView({
                 )}
               </button>
             </div>
-
-            {currentMatch?.needsReenrollment ? (
-              <div className="mt-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-left">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">
-                  Face refresh recommended
-                </div>
-                <p className="mt-1.5 text-sm leading-6 text-amber-900">
-                  {currentMatch?.reenrollmentMessage || 'This profile still uses weak legacy face data. Refresh it now to reduce future scan mismatches.'}
-                </p>
-                {onRefreshBiometrics ? (
-                  <button
-                    onClick={onRefreshBiometrics}
-                    className="mt-3 w-full rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
-                  >
-                    Refresh face data now
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
           </div>
 
           <div className="shrink-0 border-b border-black/5 bg-stone-50 px-3 py-3 sm:px-4">

@@ -460,13 +460,8 @@ export function useKioskLoop({
               action: result.entry.action || '',
               attendanceMode: result.entry.attendanceMode || '',
               detail: `${actionLabel} successfully`,
-              needsReenrollment: result.needsReenrollment || false,
-              reenrollmentReason: result.reenrollmentReason || null,
-              reenrollmentMessage: result.reenrollmentMessage || '',
-              canSelfReenroll: result.canSelfReenroll || false,
               employeeViewSession: result.employeeViewSession || '',
               employeeViewSessionExpiresAt: result.employeeViewSessionExpiresAt || null,
-              personId: result.personId || null,
             })
             setKioskState('confirmed')
             setAlertState(null)
@@ -511,13 +506,8 @@ export function useKioskLoop({
               detail: safeDecision.detail,
               blocked: true,
               resultState: 'already-recorded',
-              needsReenrollment: Boolean(error?.needsReenrollment),
-              reenrollmentReason: error?.reenrollmentReason || null,
-              reenrollmentMessage: error?.reenrollmentMessage || '',
-              canSelfReenroll: Boolean(error?.canSelfReenroll),
               employeeViewSession: error?.employeeViewSession || '',
               employeeViewSessionExpiresAt: error?.employeeViewSessionExpiresAt || null,
-              personId: error?.personId || null,
             })
             setAlertState(null)
           } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {
@@ -562,13 +552,8 @@ export function useKioskLoop({
           detail: safeDecision.detail,
           blocked: true,
           resultState: 'already-recorded',
-          needsReenrollment: Boolean(error?.needsReenrollment),
-          reenrollmentReason: error?.reenrollmentReason || null,
-          reenrollmentMessage: error?.reenrollmentMessage || '',
-          canSelfReenroll: Boolean(error?.canSelfReenroll),
           employeeViewSession: error?.employeeViewSession || '',
           employeeViewSessionExpiresAt: error?.employeeViewSessionExpiresAt || null,
-          personId: error?.personId || null,
         })
         setAlertState(null)
       } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {

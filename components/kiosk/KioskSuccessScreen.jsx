@@ -94,10 +94,6 @@ export default function KioskSuccessScreen({
   currentMatch,
   onBack,
   onViewTable,
-  onReenroll,
-  requiresReenrollment = false,
-  canSelfReenroll = false,
-  autoReenrollCountdown = null,
   privacyReturnCountdown = null,
 }) {
   const attendanceMode = String(currentMatch?.attendanceMode || '')
@@ -179,28 +175,6 @@ export default function KioskSuccessScreen({
             </div>
 
             <MonthlySummary currentMatch={currentMatch} employeeId={currentMatch?.employeeId} />
-
-            {requiresReenrollment ? (
-              <div className={`mt-6 rounded-[1.5rem] border px-4 py-4 ${
-                canSelfReenroll ? 'border-amber-200 bg-amber-50' : 'border-black/5 bg-stone-50'
-              }`}>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-                  {canSelfReenroll ? 'Biometric refresh required' : 'Biometric refresh recommended'}
-                </div>
-                <p className="mt-2 text-sm leading-6 text-ink">
-                  {currentMatch?.reenrollmentMessage || (
-                    canSelfReenroll
-                      ? 'This scan worked, but the stored face data should be refreshed to reduce future mismatches.'
-                      : 'This scan worked, but the stored face data should be refreshed by an administrator.'
-                  )}
-                </p>
-                {canSelfReenroll && autoReenrollCountdown ? (
-                  <div className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
-                    Refresh prompt opens in {autoReenrollCountdown}s.
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </div>
 
           <aside className="flex flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5">
@@ -221,15 +195,6 @@ export default function KioskSuccessScreen({
             ) : null}
 
             <div className="grid gap-3">
-              {canSelfReenroll && onReenroll ? (
-                <button
-                  className="w-full rounded-2xl bg-amber-500 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-amber-600"
-                  onClick={onReenroll}
-                >
-                  Refresh face data
-                </button>
-              ) : null}
-
               {onViewTable ? (
                 <button
                   className="flex w-full items-center justify-center gap-2 rounded-2xl border border-navy/20 bg-white px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/5"

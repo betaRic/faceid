@@ -74,17 +74,32 @@ export default function KioskScanningOverlay({
     <>
       <div className="absolute inset-0 z-[0] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.12),transparent_40%),linear-gradient(180deg,rgba(2,8,7,0.96),rgba(5,8,8,0.99))]" />
 
-      <div className="absolute inset-x-0 top-3 z-[4] flex justify-center px-3 sm:top-4 sm:px-4">
-        {!isBlocked && !isUnknown ? (
-          <CaptureGuideHud
-            className="w-full max-w-[20rem] sm:max-w-[22rem]"
-            title={guideTitle}
-            tone={guideTone}
-          />
-        ) : null}
+      <div className="absolute inset-x-0 top-3 z-[4] px-3 sm:top-4 sm:px-4">
+        <div className="mx-auto flex w-full max-w-[24rem] flex-col gap-2 sm:max-w-none sm:flex-row sm:items-start sm:justify-between">
+          <div className="grid grid-cols-2 gap-2 sm:w-auto sm:min-w-[14rem] sm:grid-cols-1">
+            <div className="rounded-full border border-white/12 bg-slate-950/58 px-3 py-2 text-left shadow-lg backdrop-blur-xl">
+              <div className="truncate text-[11px] font-semibold text-white/92">{locationBadgeLabel}</div>
+            </div>
+            <div className="rounded-full border border-white/12 bg-slate-950/58 px-3 py-2 text-right shadow-lg backdrop-blur-xl sm:hidden">
+              <div className="font-display text-sm leading-none text-white">{clock}</div>
+            </div>
+          </div>
+
+          {!isBlocked && !isUnknown ? (
+            <CaptureGuideHud
+              className="w-full sm:max-w-[22rem]"
+              title={guideTitle}
+              tone={guideTone}
+            />
+          ) : null}
+
+          <div className="hidden rounded-full border border-white/12 bg-slate-950/58 px-3 py-2 text-right shadow-lg backdrop-blur-xl sm:block sm:min-w-[10rem]">
+            <div className="font-display text-sm leading-none text-white sm:text-base">{clock}</div>
+          </div>
+        </div>
       </div>
 
-      <div className="absolute inset-0 z-[1] flex items-center justify-center px-4 pb-20 pt-20 sm:px-6 sm:pb-24 sm:pt-24">
+      <div className="absolute inset-0 z-[1] flex items-center justify-center px-4 pb-20 pt-[7.25rem] sm:px-6 sm:pb-24 sm:pt-24">
         <div
           className="relative"
           style={{
@@ -123,14 +138,6 @@ export default function KioskScanningOverlay({
 
       {isConfirmed && <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/15 animate-pulse" />}
       {(isBlocked || isUnknown) && <div className="absolute inset-0 z-[3] bg-red-500/10" />}
-
-      <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-full border border-white/12 bg-slate-950/58 px-3 py-1.5 text-right shadow-lg backdrop-blur-xl sm:right-5 sm:top-5">
-        <div className="font-display text-sm leading-none text-white sm:text-base">{clock}</div>
-      </div>
-
-      <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-full border border-white/12 bg-slate-950/58 px-3 py-1.5 text-left shadow-lg backdrop-blur-xl sm:left-5 sm:top-5">
-        <div className="text-[10px] font-medium text-slate-100/88">{locationBadgeLabel}</div>
-      </div>
 
       {faceDistanceInfo && !isVerifying && !isConfirmed && !isBlocked && !isUnknown && (
         <div className="absolute inset-x-0 bottom-0 z-[4] flex justify-center px-3 pb-3 pointer-events-none sm:px-4 sm:pb-4">

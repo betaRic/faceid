@@ -57,35 +57,37 @@ export default function CaptureStep({
       >
         <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
-        <div className="absolute left-3 top-3 z-[6] flex items-center gap-2">
-          <button
-            className="rounded-full border border-white/12 bg-black/42 px-4 py-2 text-sm font-semibold text-white backdrop-blur-xl hover:bg-black/56"
-            onClick={onBack}
-            type="button"
-          >
-            ← Details
-          </button>
-          {onExit ? (
-            <button
-              className="rounded-full border border-white/10 bg-white/6 px-4 py-2 text-sm font-semibold text-white/82 backdrop-blur-xl hover:bg-white/12"
-              onClick={onExit}
-              type="button"
-            >
-              Exit
-            </button>
-          ) : null}
+        <div className="absolute inset-x-0 top-3 z-[6] px-3 sm:top-4 sm:px-4">
+          <div className="mx-auto flex w-full max-w-[24rem] flex-col gap-2 sm:max-w-[26rem]">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <button
+                className="min-w-0 rounded-full border border-white/12 bg-black/42 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-black/56"
+                onClick={onBack}
+                type="button"
+              >
+                <span className="truncate">← Details</span>
+              </button>
+              {onExit ? (
+                <button
+                  className="rounded-full border border-white/10 bg-white/6 px-4 py-2.5 text-sm font-semibold text-white/88 backdrop-blur-xl transition hover:bg-white/12"
+                  onClick={onExit}
+                  type="button"
+                >
+                  Exit
+                </button>
+              ) : null}
+            </div>
+
+            <CaptureGuideHud
+              className="w-full"
+              steps={guideSteps}
+              title={guideTitle}
+              tone={guideTone}
+            />
+          </div>
         </div>
 
-        <div className="absolute inset-x-0 top-3 z-[5] flex justify-center px-3 sm:top-4 sm:px-4">
-          <CaptureGuideHud
-            className="w-full max-w-[20rem] sm:max-w-[22rem]"
-            steps={guideSteps}
-            title={guideTitle}
-            tone={guideTone}
-          />
-        </div>
-
-        <div className="relative z-[2] flex min-h-0 flex-1 items-center justify-center px-4 pb-20 pt-24 sm:px-6 sm:pb-24 sm:pt-24">
+        <div className="relative z-[2] flex min-h-0 flex-1 items-center justify-center px-4 pb-20 pt-[7.5rem] sm:px-6 sm:pb-24 sm:pt-32">
           <div
             className="relative w-[74vw] sm:w-[54vw]"
             style={{
