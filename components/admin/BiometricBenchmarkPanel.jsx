@@ -32,10 +32,36 @@ function MetricTile({ label, value, detail }) {
   )
 }
 
+function BreakdownList({ title, items = [] }) {
+  if (!items.length) return null
+  return (
+    <div className="rounded-[1.2rem] border border-black/5 bg-white p-4">
+      <div className="text-xs font-semibold uppercase tracking-widest text-muted">{title}</div>
+      <div className="mt-3 grid gap-2">
+        {items.map(item => (
+          <div key={item.key} className="rounded-xl bg-stone-50 px-3 py-2.5 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <span className="min-w-0 flex-1 text-ink">{item.key}</span>
+              <span className="shrink-0 text-xs font-semibold text-muted">{item.total}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-muted">
+              <span>Accepted {formatPercent(item.acceptedRate)}</span>
+              <span>No-match {formatPercent(item.noReliableMatchRate)}</span>
+              <span>Ambiguous {formatPercent(item.ambiguousRate)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function BiometricBenchmarkPanel() {
   const [report, setReport] = useState(null)
+  const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [copyState, setCopyState] = useState('')
 
   const fetchReport = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -43,6 +69,7 @@ export function BiometricBenchmarkPanel() {
       const res = await fetch('/api/admin/biometric-benchmark?days=14&limit=1200', { cache: 'no-store' })
       const data = await res.json()
       if (data.ok) {
+        setPayload(data)
         setReport(data.report)
       }
     } catch {
@@ -75,6 +102,22 @@ export function BiometricBenchmarkPanel() {
   const mobile = report.byDevice?.mobile || {}
   const desktop = report.byDevice?.desktop || {}
   const gate = report.operationalGate || { status: 'insufficient', checks: [], summary: 'No report available.' }
+  const deployment = report.deploymentHealth || {}
+  const breakdowns = report.breakdowns || {}
+  const handleCopyReport = async () => {
+    if (!payload || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      setCopyState('Copy unavailable')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+      setCopyState('Copied')
+      window.setTimeout(() => setCopyState(''), 1800)
+    } catch {
+      setCopyState('Copy failed')
+      window.setTimeout(() => setCopyState(''), 1800)
+    }
+  }
 
   return (
     <div className="rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
@@ -97,14 +140,24 @@ export function BiometricBenchmarkPanel() {
           </div>
           <p className="mt-2 text-sm leading-6 text-muted">{gate.summary}</p>
         </div>
-        <button
-          className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-ink transition hover:bg-stone-100 disabled:opacity-50"
-          disabled={refreshing}
-          onClick={() => fetchReport(true)}
-          type="button"
-        >
-          {refreshing ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-ink transition hover:bg-stone-100 disabled:opacity-50"
+            disabled={refreshing}
+            onClick={handleCopyReport}
+            type="button"
+          >
+            {copyState || 'Copy report JSON'}
+          </button>
+          <button
+            className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-ink transition hover:bg-stone-100 disabled:opacity-50"
+            disabled={refreshing}
+            onClick={() => fetchReport(true)}
+            type="button"
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 rounded-[1.2rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
@@ -113,10 +166,17 @@ export function BiometricBenchmarkPanel() {
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="Challenge coverage" value={formatPercent(report.summary?.challengeCoverageRate)} detail="Recent requests using the challenge-protected path" />
+        <MetricTile label="Success rate" value={formatPercent(deployment.successRate)} detail="Accepted scans across the full report window" />
+        <MetricTile label="No-match rate" value={formatPercent(deployment.noMatchRate)} detail="Hard false-reject proxy" />
+        <MetricTile label="Spoof blocks" value={formatPercent(deployment.spoofBlockRate)} detail="Anti-spoof and liveness hard blocks" />
+        <MetricTile label="WFH challenge pass" value={formatPercent(deployment.wfhChallengePassRate)} detail="Accepted WFH scans after active challenge" />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Challenge coverage" value={formatPercent(report.summary?.challengeCoverageRate)} detail="Requests using the challenge-protected path" />
+        <MetricTile label="Active challenge rate" value={formatPercent(deployment.activeChallengeRate)} detail="Scans escalated into the motion challenge flow" />
         <MetricTile label="Mobile no-match" value={formatPercent(mobile.noReliableMatchRate)} detail={`${mobile.total || 0} mobile events`} />
         <MetricTile label="Desktop no-match" value={formatPercent(desktop.noReliableMatchRate)} detail={`${desktop.total || 0} desktop events`} />
-        <MetricTile label="Accepted p95 distance" value={formatMetric(report.summary?.acceptedP95Distance)} detail="Lower is better" />
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
@@ -163,6 +223,12 @@ export function BiometricBenchmarkPanel() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <BreakdownList title="Device quality hotspots" items={breakdowns.deviceQualityHotspots || []} />
+        <BreakdownList title="Browser breakdown" items={breakdowns.byBrowser || []} />
+        <BreakdownList title="Challenge modes" items={breakdowns.byChallengeMode || []} />
       </div>
     </div>
   )

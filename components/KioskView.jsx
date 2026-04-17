@@ -49,6 +49,8 @@ export default function KioskView({
     setFlashKey,
     alertState,
     setAlertState,
+    challengeState,
+    setChallengeState,
     resumeKey,
     faceDistanceInfo,
     setFaceDistanceInfo,
@@ -63,7 +65,7 @@ export default function KioskView({
     pauseScanning,
   } = useKioskState(camera)
 
-  const { captureVerificationBurst } = useVerificationBurst(camera)
+  const { captureVerificationBurst, captureActiveChallenge } = useVerificationBurst(camera)
 
   const { runScan, startLoop, stopLoop } = useKioskLoop({
     camera,
@@ -75,6 +77,7 @@ export default function KioskView({
     setCapturedFrameUrl,
     setFlashKey,
     setAlertState,
+    setChallengeState,
     setFaceDistanceInfo,
     confirmRef,
     confirmedTimer,
@@ -95,8 +98,8 @@ export default function KioskView({
   }, [])
 
   const handleRunScan = useCallback(() => {
-    return runScan(captureVerificationBurst)
-  }, [runScan, captureVerificationBurst])
+    return runScan(captureVerificationBurst, captureActiveChallenge)
+  }, [runScan, captureVerificationBurst, captureActiveChallenge])
 
   useEffect(() => {
     if (!workspaceReady || !modelsReady || !camera.camOn) return () => {}
@@ -298,6 +301,7 @@ export default function KioskView({
       fitViewport
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
       onBeforeNavigate={pauseScanning}
+      showNavigation={false}
     >
       <div className="page-frame h-full min-h-0">
         <motion.section
@@ -344,8 +348,10 @@ export default function KioskView({
               flashKey={flashKey}
               clock={clock}
               dateStr={dateStr}
+              challengeState={challengeState}
               locationState={locationState}
               faceDistanceInfo={faceDistanceInfo}
+              modelsReady={modelsReady}
             />
           )}
           <KioskAlert alertState={alertState} />

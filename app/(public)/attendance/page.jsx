@@ -43,10 +43,10 @@ function UnauthorizedView() {
           <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Attendance</div>
           <h2 className="font-display text-3xl font-bold text-ink">Your Attendance</h2>
           <p className="max-w-md text-sm leading-7 text-muted">
-            Log in at the kiosk to record your attendance. Your attendance history will appear here after your first check-in.
+            Complete a scan attendance session to record your attendance. Your attendance history will appear here after your first check-in.
           </p>
           <div className="mt-2 rounded-xl bg-stone-100 px-5 py-3 text-sm text-muted">
-            Ask your HR or admin to direct you to a kiosk station.
+            Open the scan page on your device to start a new attendance session.
           </div>
         </motion.section>
       </div>

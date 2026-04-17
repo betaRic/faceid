@@ -21,8 +21,6 @@ export default function RegisterRuntimeApp() {
     workspaceReady,
     retry,
     locationState,
-    continueWithoutLocation,
-    canBypassLocation,
   } = runtime
 
   const [offices, setOffices] = useState([])
@@ -63,12 +61,10 @@ export default function RegisterRuntimeApp() {
         <div className="page-frame h-full min-h-0">
           <BiometricWorkspaceGate
             bootStage={bootStage}
-            canBypassLocation={canBypassLocation}
             errorMessage={blockingError}
             loadingLabel={officesLoading ? 'Loading office list...' : ''}
             locationState={locationState}
             modelStatus={modelStatus}
-            onContinueWithoutLocation={continueWithoutLocation}
             page="register"
             onRetry={retry}
           />
@@ -84,7 +80,7 @@ export default function RegisterRuntimeApp() {
       manageOwnCamera
       modelsReady={modelsReady}
       offices={offices}
-      onBack={() => router.push('/kiosk')}
+      onBack={() => router.push('/scan')}
       onEnrollPerson={handleEnrollPerson}
       workspaceReady={workspaceReady}
     />

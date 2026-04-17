@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getVideoTrackSettingsSnapshot, isProbablyMobileDevice } from '@/lib/biometrics/device-profile'
 
 export function useCamera() {
   const videoRef = useRef(null)
@@ -16,6 +17,10 @@ export function useCamera() {
   const clearOverlay = useCallback(() => {
     const canvas = overlayRef.current
     if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+  }, [])
+
+  const getTrackSettings = useCallback(() => {
+    return getVideoTrackSettingsSnapshot(streamRef.current)
   }, [])
 
   const attachStreamToVideo = useCallback(async () => {
@@ -79,14 +84,16 @@ export function useCamera() {
       try {
         const stream = await requestPreferredCameraStream()
         
-        const track = stream.getVideoTracks()[0]
-        if (track) {
-          const settings = track.getSettings()
+        const settings = getVideoTrackSettingsSnapshot(stream)
+        if (settings) {
           if (settings.width && settings.width < 640) {
             console.warn('[Camera] Low resolution detected:', settings.width, 'x', settings.height)
           }
           if (settings.frameRate && settings.frameRate < 15) {
             console.warn('[Camera] Low frame rate detected:', settings.frameRate, 'fps')
+          }
+          if (process.env.NODE_ENV !== 'production') {
+            console.info('[Camera] Active video track settings:', settings)
           }
         }
         
@@ -160,54 +167,86 @@ export function useCamera() {
     stop,
     captureImageData,
     clearOverlay,
+    getTrackSettings,
   }
 }
 
 async function requestPreferredCameraStream() {
-  const preferredConstraints = [
-    {
-      audio: false,
-      video: {
-        facingMode: 'user',
-        width: { ideal: 1280, max: 1920 },
-        height: { ideal: 720, max: 1080 },
-        frameRate: { ideal: 30, min: 15 },
-        aspectRatio: { ideal: 16 / 9 },
-        resizeMode: 'none',
-      },
-    },
-    {
-      audio: false,
-      video: {
-        facingMode: 'user',
-        width: { ideal: 960, max: 1280 },
-        height: { ideal: 720, max: 960 },
-        frameRate: { ideal: 30, min: 15 },
-        resizeMode: 'none',
-      },
-    },
-    {
-      audio: false,
-      video: {
-        facingMode: 'user',
-        width: { ideal: 640, min: 480 },
-        height: { ideal: 480, min: 360 },
-        frameRate: { ideal: 30, min: 15 },
-        resizeMode: 'none',
-      },
-    },
-    {
-      audio: false,
-      video: {
-        facingMode: 'user',
-        resizeMode: 'none',
-      },
-    },
-    {
-      audio: false,
-      video: true,
-    },
-  ]
+  const preferredConstraints = isProbablyMobileDevice()
+    ? [
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 960, max: 1440 },
+            frameRate: { ideal: 30, min: 15 },
+          },
+        },
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 960, max: 1280 },
+            height: { ideal: 720, max: 960 },
+            frameRate: { ideal: 24, min: 12 },
+          },
+        },
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'user' },
+          },
+        },
+        {
+          audio: false,
+          video: true,
+        },
+      ]
+    : [
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 30, min: 15 },
+            aspectRatio: { ideal: 16 / 9 },
+            resizeMode: 'none',
+          },
+        },
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 960, max: 1280 },
+            height: { ideal: 720, max: 960 },
+            frameRate: { ideal: 30, min: 15 },
+            resizeMode: 'none',
+          },
+        },
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 640, min: 480 },
+            height: { ideal: 480, min: 360 },
+            frameRate: { ideal: 30, min: 15 },
+            resizeMode: 'none',
+          },
+        },
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'user' },
+            resizeMode: 'none',
+          },
+        },
+        {
+          audio: false,
+          video: true,
+        },
+      ]
 
   let lastError = null
 

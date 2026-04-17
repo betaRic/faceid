@@ -1,6 +1,6 @@
 'use client'
 
-import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import { useAdminStore } from '@/lib/admin/store'
 import { useOffices } from '@/lib/admin/hooks/useOffices'
 import AdminOfficePanel from '@/components/AdminOfficePanel'
@@ -23,29 +23,59 @@ export default function OfficePanel() {
     handleUseMyLocation,
   } = useOffices()
   const { setActivePanel } = useAdminStore()
+  const [mobileView, setMobileView] = useState(selectedOfficeId ? 'editor' : 'list')
+
+  useEffect(() => {
+    if (!selectedOfficeId) {
+      setMobileView('list')
+    }
+  }, [selectedOfficeId])
+
+  const handleSelectOffice = officeId => {
+    setSelectedOfficeId(officeId)
+    setActivePanel('office')
+    setMobileView('editor')
+  }
 
   if (!officesLoaded) {
     return (
-      <motion.section
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-center py-20"
-        initial={{ opacity: 0, y: 18 }}
-        transition={{ duration: 0.35 }}
-      >
+      <section className="flex items-center justify-center py-20">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-      </motion.section>
+      </section>
     )
   }
 
   return (
-    <motion.section
-      animate={{ opacity: 1, y: 0 }}
-      className="grid gap-5 xl:h-full xl:min-h-0"
-      initial={{ opacity: 0, y: 18 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
-    >
+    <section className="grid h-full min-h-0 gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+      <div className="xl:hidden">
+        <div className="inline-flex rounded-full border border-black/5 bg-white p-1 shadow-sm">
+          <button
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              mobileView === 'list'
+                ? 'bg-navy text-white'
+                : 'text-ink hover:bg-stone-100'
+            }`}
+            onClick={() => setMobileView('list')}
+            type="button"
+          >
+            Office list
+          </button>
+          <button
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              mobileView === 'editor'
+                ? 'bg-navy text-white'
+                : 'text-ink hover:bg-stone-100'
+            }`}
+            onClick={() => setMobileView('editor')}
+            type="button"
+          >
+            Editor
+          </button>
+        </div>
+      </div>
+
       {/* Office list table */}
-      <section className="overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 shadow-glow backdrop-blur xl:flex xl:min-h-0 xl:flex-col">
+      <section className={`${mobileView === 'editor' ? 'hidden xl:flex' : 'flex'} overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-sm min-h-0 flex-col`}>
         <div className="flex flex-col gap-3 border-b border-black/5 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Office</div>
@@ -57,7 +87,54 @@ export default function OfficePanel() {
         </div>
 
         <div className="overflow-auto xl:min-h-0 xl:flex-1 xl:overflow-auto">
-          <table className="w-full text-left text-sm">
+          <div className="divide-y divide-black/5 bg-white lg:hidden">
+            {visibleOffices.map(office => {
+              const selected = office.id === selectedOfficeId
+              return (
+                <div key={office.id} className="grid gap-3 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
+                        {office.code || office.shortName || office.id}
+                      </div>
+                      <div className="mt-1 text-base font-semibold text-ink">{office.name}</div>
+                      <div className="mt-1 text-sm text-muted">{office.provinceOrCity || office.location}</div>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
+                      (office.status || 'active') === 'active'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {(office.status || 'active') === 'active' ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-xl bg-stone-50 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-widest text-muted">Type</div>
+                      <div className="mt-1 text-ink">{office.officeType || '--'}</div>
+                    </div>
+                    <div className="rounded-xl bg-stone-50 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-widest text-muted">Employees</div>
+                      <div className="mt-1 text-ink">{office.employees || 0}</div>
+                    </div>
+                  </div>
+                  <button
+                    className={`inline-flex min-h-[44px] items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                      selected
+                        ? 'border-navy/30 bg-navy text-white'
+                        : 'border-black/10 bg-white text-ink hover:bg-stone-100'
+                    }`}
+                    onClick={() => handleSelectOffice(office.id)}
+                    type="button"
+                  >
+                    {selected ? 'Editing this office' : 'Edit office'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+
+          <table className="hidden w-full text-left text-sm lg:table">
             <thead className="bg-stone-50 text-xs uppercase tracking-[0.16em] text-muted">
               <tr>
                 <th className="px-5 py-4">Code</th>
@@ -76,7 +153,7 @@ export default function OfficePanel() {
                   <tr
                     key={office.id}
                     className={`cursor-pointer transition hover:bg-sky-light/40 ${selected ? 'bg-navy/5' : ''}`}
-                    onClick={() => { setSelectedOfficeId(office.id); setActivePanel('office') }}
+                    onClick={() => handleSelectOffice(office.id)}
                   >
                     <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
                       {office.code || office.shortName || office.id}
@@ -106,8 +183,7 @@ export default function OfficePanel() {
                         }`}
                         onClick={e => {
                           e.stopPropagation()
-                          setSelectedOfficeId(office.id)
-                          setActivePanel('office')
+                          handleSelectOffice(office.id)
                         }}
                         type="button"
                       >
@@ -123,7 +199,20 @@ export default function OfficePanel() {
       </section>
 
       {/* Office editor */}
-      <section className="rounded-[2rem] border border-black/5 bg-white/80 p-5 shadow-glow backdrop-blur sm:p-6 xl:min-h-0 xl:overflow-auto">
+      <section className={`${mobileView === 'list' ? 'hidden xl:block' : 'block'} min-h-0 rounded-[2rem] border border-black/5 bg-white p-5 shadow-sm sm:p-6 xl:overflow-auto`}>
+        <div className="mb-4 flex items-center justify-between gap-3 xl:hidden">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Office editor</div>
+            <div className="text-sm text-muted">{activeOffice?.name || 'Select an office from the list first'}</div>
+          </div>
+          <button
+            className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
+            onClick={() => setMobileView('list')}
+            type="button"
+          >
+            Back to list
+          </button>
+        </div>
         <AdminOfficePanel
           activeOffice={activeOffice}
           updateDraft={updateDraft}
@@ -137,6 +226,6 @@ export default function OfficePanel() {
           savePending={savePending}
         />
       </section>
-    </motion.section>
+    </section>
   )
 }

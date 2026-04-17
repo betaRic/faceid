@@ -79,7 +79,7 @@ function HrUsersPanelInner() {
           <option value="">Select office</option>
           {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
-        <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setHrPin(e.target.value)} placeholder="PIN (optional)" type="password" value={hrPin} maxLength={8} />
+        <input autoComplete="new-password" className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setHrPin(e.target.value)} placeholder="PIN (optional)" type="password" value={hrPin} maxLength={8} />
         <div className="lg:col-span-2 xl:col-span-3">
           <button
             className={`rounded-xl bg-navy px-6 py-2 text-sm font-semibold text-white transition hover:bg-navy-dark ${isPending('hr-user-create') ? 'opacity-50' : ''}`}

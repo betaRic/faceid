@@ -24,9 +24,11 @@ export async function GET(request) {
     timestamp: new Date().toISOString(),
     runtime: 'vercel-node-compatible',
     ...readiness,
-    recommendation: readiness.productionReady
-      ? 'Runtime configuration is present. Continue with controlled pilot testing before production use.'
-      : 'Set the missing environment variables before deployment.',
+    recommendation: !readiness.productionReady
+      ? 'Set the missing environment variables before deployment.'
+      : readiness.scaleReady
+        ? 'Runtime configuration is present. Continue with controlled pilot testing before production use.'
+        : 'Baseline runtime configuration is present, but scale-critical services are still missing. Configure Redis before broad rollout.',
   })
 }
 

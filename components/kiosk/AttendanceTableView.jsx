@@ -82,7 +82,7 @@ function FilterField({ label, children }) {
   )
 }
 
-function StateMessage({ title, message, actionLabel = 'Back to kiosk', onAction }) {
+function StateMessage({ title, message, actionLabel = 'Back to scan', onAction }) {
   return (
     <div className="flex h-full items-center justify-center p-4 sm:p-6">
       <div className="w-full max-w-md rounded-[1.5rem] border border-black/5 bg-white p-5 text-center shadow-sm">
@@ -173,7 +173,7 @@ export default function AttendanceTableView({
         } else {
           setError(
             res.status === 401 || res.status === 403
-              ? 'Attendance session expired. Scan again at the kiosk.'
+              ? 'Attendance session expired. Scan again on the scan page.'
               : (data.message || 'Failed to load attendance'),
           )
         }
@@ -280,7 +280,7 @@ export default function AttendanceTableView({
                 </div>
                 {autoReturnCountdown ? (
                   <div className="mt-1 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-                    Returns to kiosk in {autoReturnCountdown}s
+                    Returns to scan in {autoReturnCountdown}s
                   </div>
                 ) : null}
               </div>
@@ -318,7 +318,7 @@ export default function AttendanceTableView({
                   Face refresh recommended
                 </div>
                 <p className="mt-1.5 text-sm leading-6 text-amber-900">
-                  {currentMatch?.reenrollmentMessage || 'This profile still uses weak legacy face data. Refresh it now to reduce future kiosk mismatches.'}
+                  {currentMatch?.reenrollmentMessage || 'This profile still uses weak legacy face data. Refresh it now to reduce future scan mismatches.'}
                 </p>
                 {onRefreshBiometrics ? (
                   <button
@@ -426,7 +426,7 @@ export default function AttendanceTableView({
               <StateMessage
                 title="No attendance records"
                 message="No attendance records were found for the selected range."
-                actionLabel="Back to kiosk"
+                actionLabel="Back to scan"
                 onAction={onBack}
               />
             ) : (

@@ -3,7 +3,7 @@
 FaceAttend is a mobile-first face attendance system for DILG Region XII built with Next.js, React, Tailwind CSS, Framer Motion, Firebase, and protected server routes.
 
 It supports:
-- kiosk attendance
+- anonymous open-and-scan attendance
 - employee enrollment
 - public enrollment approval workflow
 - office and GPS management
@@ -33,28 +33,31 @@ Supported office structure:
 `/`
 
 Main entry page for:
-- kiosk
+- scan
 - registration
 - admin login
 - system blueprint
 
-### 2. Kiosk Attendance
-`/kiosk`
+### 2. Public Scan Attendance
+`/scan`
+Compatibility alias: `/kiosk`
 
-Shared camera attendance mode with:
+Phone-first anonymous attendance mode with:
 - one-time biometric runtime boot before camera is shown
-- local live face detection
-- one final descriptor submission to the server
+- client-side burst capture and descriptor generation
+- challenge-protected submission to the server
+- active liveness escalation for risky scans
 - server-side identity decision
 - server-side GPS / WFH / employee status validation
+- office-first candidate narrowing before global fallback
 
 ### 3. Registration Wizard
 `/registration`
 
 Wizard-based enrollment flow:
-1. capture face
-2. review preview
-3. enter employee details
+1. enter employee details
+2. capture face
+3. review preview
 4. submit enrollment for admin review
 
 Features:
@@ -79,8 +82,8 @@ Admin features:
 
 ## Tech Stack
 
-- Next.js 14
-- React 18
+- Next.js 16
+- React
 - Tailwind CSS
 - Framer Motion
 - Firebase Firestore
@@ -97,7 +100,7 @@ The client is responsible for:
 - camera preview
 - live face detection
 - capture guidance
-- wizard flow and kiosk UX
+- wizard flow and scan UX
 
 ### Server
 
@@ -115,8 +118,9 @@ The server is responsible for:
 
 Current attendance flow:
 1. the client detects a face locally
-2. the client sends one final descriptor for attendance
-3. the server matches identity and decides whether attendance is accepted
+2. the client requests a short-lived attendance challenge
+3. the client sends the descriptor, capture telemetry, PAD scores, and optional active motion trace
+4. the server matches identity and decides whether attendance is accepted
 
 This is operationally simpler, but it is not a hardened biometric trust model because descriptors still come from the client.
 
@@ -133,6 +137,8 @@ What is already improved:
 - pending / rejected enrollments are excluded from attendance matching
 - ambiguous matches are blocked
 - weak captures are rejected
+- public scans require verified GPS
+- risky scans escalate to active liveness
 - final attendance identity is now decided by the server
 
 What is still true:
@@ -156,21 +162,26 @@ This is the correct compromise for the current browser + Vercel + Firebase archi
 
 ```text
 app/
+  (public)/
+    page.jsx
+    scan/
+    registration/
+    login/
+    attendance/
+    summary/
+    kiosk/        # compatibility redirect to /scan
   admin/
   api/
-  attendance/
-  blueprint/
-  kiosk/
-  registration/
   favicon.ico
 
 components/
   AdminDashboard.jsx
   AdminLogin.jsx
   BrandMark.jsx
-  FaceAttendanceApp.jsx
   KioskView.jsx
   PlatformNavigator.jsx
+  ScanRuntimeApp.jsx
+  RegisterRuntimeApp.jsx
   RegisterView.jsx
 
 hooks/
@@ -258,7 +269,13 @@ Deploy Firestore configuration with the Firebase CLI:
 firebase deploy --only firestore --project YOUR_FIREBASE_PROJECT_ID
 ```
 
-If you only need to push composite indexes:
+Preferred headless path for indexes:
+
+```bash
+npm run sync:firestore-indexes
+```
+
+Fallback Firebase CLI path:
 
 ```bash
 firebase deploy --only firestore:indexes --project YOUR_FIREBASE_PROJECT_ID
@@ -268,6 +285,12 @@ firebase deploy --only firestore:indexes --project YOUR_FIREBASE_PROJECT_ID
 
 ```bash
 npm run backfill:biometric-index
+```
+
+Warm the biometric cache after index or enrollment changes:
+
+```bash
+npm run warm:biometric-cache
 ```
 
 ### 3. Deploy the Next.js app to Vercel
@@ -365,12 +388,14 @@ Before deploying:
 1. set all required environment variables in Vercel
 2. deploy the Firestore rules from `firestore.rules`
 3. deploy the Firestore indexes from `firestore.indexes.json`
-4. redeploy
-5. test `/admin/login`
-6. test `/admin`
-7. test `/registration`
-8. test `/kiosk`
-9. test `/api/system/status`
+4. run `npm run backfill:biometric-index` if person biometrics already exist
+5. run `npm run warm:biometric-cache`
+6. redeploy
+7. test `/admin/login`
+8. test `/admin`
+9. test `/registration`
+10. test `/scan`
+11. test `/api/system/status`
 
 Production note:
 - this app must not silently fall back to browser local storage in production

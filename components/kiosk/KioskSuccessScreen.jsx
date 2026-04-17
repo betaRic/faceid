@@ -213,7 +213,7 @@ export default function KioskSuccessScreen({
 
         {privacyReturnCountdown ? (
           <div className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-            Returns to kiosk in {privacyReturnCountdown}s to protect employee privacy.
+            Returns to scan in {privacyReturnCountdown}s to protect employee privacy.
           </div>
         ) : null}
 
@@ -239,7 +239,7 @@ export default function KioskSuccessScreen({
             onClick={onBack}
             className={`w-full rounded-2xl px-6 py-3.5 text-sm font-semibold text-white transition ${statusTone.button}`}
           >
-            Back to Kiosk
+            Back to Scan
           </button>
         </div>
       </motion.div>

@@ -1,7 +1,6 @@
 'use client'
 
 import { memo, useState } from 'react'
-import { motion } from 'framer-motion'
 import { useAdmins, useHrUsers } from '@/lib/admin/hooks'
 import { useAdminStore } from '@/lib/admin/store'
 import { StatusBadge } from '@/components/shared/ui'
@@ -16,16 +15,11 @@ function AdminsPanelInner() {
 
   if (roleScope !== 'regional') {
     return (
-      <motion.section
-        animate={{ opacity: 1, y: 0 }}
-        className="flex h-full items-center justify-center rounded-[2rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
-        initial={{ opacity: 0, y: 18 }}
-        transition={{ duration: 0.35 }}
-      >
+      <section className="flex h-full items-center justify-center rounded-[2rem] border border-black/5 bg-white p-6 shadow-sm">
         <div className="rounded-xl border border-dashed border-black/10 bg-stone-50 px-8 py-6 text-center text-sm text-muted">
           Only regional admins can manage admin accounts.
         </div>
-      </motion.section>
+      </section>
     )
   }
 
@@ -77,26 +71,21 @@ function AdminsPanelInner() {
   }
 
   return (
-    <motion.section
-      animate={{ opacity: 1, y: 0 }}
-      className="flex h-full flex-col gap-5 rounded-[2rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
-      initial={{ opacity: 0, y: 18 }}
-      transition={{ duration: 0.35 }}
-    >
-      <div className="flex items-center justify-between">
+    <section className="flex h-full flex-col gap-5 rounded-[2rem] border border-black/5 bg-white p-4 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Roles</div>
           <h2 className="mt-1 font-display text-3xl font-bold text-ink">Manage Roles</h2>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="rounded-xl bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark"
+          className="w-full rounded-xl bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark sm:w-auto sm:py-2.5"
         >
           + Add Role
         </button>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setFilterRole('all')}
           className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
@@ -125,7 +114,87 @@ function AdminsPanelInner() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
-        <table className="w-full text-left text-sm">
+        <div className="divide-y divide-black/5 bg-white lg:hidden">
+          {(!adminsLoaded || !hrUsersLoaded) ? (
+            <div className="px-4 py-8 text-center text-sm text-muted">Loading...</div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted">No records found.</div>
+          ) : (
+            filteredUsers.map((user) => (
+              <div key={user.id} className="grid gap-3 px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-base font-semibold text-ink">{user.displayName || user.email}</div>
+                    <div className="mt-1 text-xs text-muted">{user.email || 'No email'}</div>
+                  </div>
+                  <StatusBadge active={user.active !== false} />
+                </div>
+
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  <div className="rounded-xl bg-stone-50 px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-widest text-muted">Role</div>
+                    <div className="mt-1">
+                      {user.userType === 'hr' ? (
+                        <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">HR</span>
+                      ) : (
+                        <select
+                          className="w-full rounded-xl border border-black/10 bg-white px-2 py-2 text-xs outline-none transition focus:border-navy capitalize"
+                          onChange={(e) => handleUpdate(user, { role: e.target.value }, user.userType)}
+                          value={user.role || 'admin'}
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="hr">HR</option>
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-stone-50 px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-widest text-muted">Scope</div>
+                    <div className="mt-1">
+                      {user.userType === 'hr' ? (
+                        <span className="text-sm text-ink">Office</span>
+                      ) : (
+                        <select
+                          className="w-full rounded-xl border border-black/10 bg-white px-2 py-2 text-xs outline-none transition focus:border-navy"
+                          onChange={(e) => handleUpdate(user, { scope: e.target.value, officeId: e.target.value === 'office' ? (user.officeId || '') : '' }, user.userType)}
+                          value={user.scope}
+                        >
+                          <option value="office">Office</option>
+                          <option value="regional">Regional</option>
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 text-xs text-muted">
+                  <span>{user.officeId ? 'Assigned office' : 'No office assigned'}</span>
+                  <span>{user.userType === 'hr' ? 'HR user' : 'Admin user'}</span>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${user.active !== false ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                    onClick={() => handleUpdate(user, { active: !user.active }, user.userType)}
+                    type="button"
+                  >
+                    {user.active !== false ? 'Disable' : 'Enable'}
+                  </button>
+                  <button
+                    className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-stone-100"
+                    onClick={() => handleDelete(user, user.userType)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <table className="hidden w-full text-left text-sm lg:table">
           <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
             <tr>
               <th className="px-5 py-3">User</th>
@@ -211,7 +280,7 @@ function AdminsPanelInner() {
         onSubmit={handleAddRole}
         isPending={isPending('admin-create')}
       />
-    </motion.section>
+    </section>
   )
 }
 

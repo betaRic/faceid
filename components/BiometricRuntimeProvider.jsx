@@ -13,11 +13,11 @@ import {
 const BiometricRuntimeContext = createContext(null)
 
 function isBiometricRoute(pathname) {
-  return pathname === '/kiosk' || pathname === '/registration' || pathname.startsWith('/admin/employee/')
+  return pathname === '/kiosk' || pathname === '/scan' || pathname === '/registration' || pathname.startsWith('/admin/employee/')
 }
 
 function isKioskRoute(pathname) {
-  return pathname === '/kiosk'
+  return pathname === '/kiosk' || pathname === '/scan'
 }
 
 function isAdminReenrollRoute(pathname) {
@@ -70,7 +70,6 @@ export function BiometricRuntimeProvider({ children }) {
   const [bootStage, setBootStage] = useState(areModelsReady() ? 'idle' : 'models')
   const [runtimeError, setRuntimeError] = useState(null)
   const [locationState, setLocationState] = useState(getDefaultLocationState())
-  const [locationBypassed, setLocationBypassed] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
@@ -82,7 +81,6 @@ export function BiometricRuntimeProvider({ children }) {
       setRuntimeError(null)
       setBootStage(areModelsReady() ? 'idle' : 'models')
       setLocationState(getDefaultLocationState())
-      setLocationBypassed(false)
       return () => {
         active = false
       }
@@ -91,7 +89,7 @@ export function BiometricRuntimeProvider({ children }) {
     async function resolveLocation({ boot = false } = {}) {
       setLocationState(current => ({
         ...current,
-        bypassed: locationBypassed,
+        bypassed: false,
         error: null,
         status: boot ? 'Checking device location...' : 'Refreshing device location...',
       }))
@@ -116,7 +114,6 @@ export function BiometricRuntimeProvider({ children }) {
           updatedAt: Date.now(),
           wifiSsid: getWifiSsid(),
         })
-        setLocationBypassed(false)
         return true
       } catch (error) {
         if (!active) return false
@@ -127,15 +124,13 @@ export function BiometricRuntimeProvider({ children }) {
 
           return {
             ...current,
-            bypassed: locationBypassed,
+            bypassed: false,
             coords: current.coords,
             error: error?.message || 'Unable to determine device location.',
             ready: hadKnownLocation,
             status: hadKnownLocation
               ? 'Using last known location'
-              : locationBypassed
-                ? 'Location unavailable, WFH fallback active'
-                : 'Location unavailable',
+              : 'Location unavailable',
             updatedAt: current.updatedAt,
             wifiSsid: getWifiSsid(),
           }
@@ -162,8 +157,8 @@ export function BiometricRuntimeProvider({ children }) {
           const locationResolved = await resolveLocation({ boot: true })
 
           if (!active) return
-          if (!locationResolved && !locationBypassed) {
-            setRuntimeError('Location required for kiosk. For WFH, continue without GPS.')
+          if (!locationResolved) {
+            setRuntimeError('Verified GPS location is required before scan attendance can start.')
             return
           }
           let locationRefreshPending = false
@@ -195,34 +190,21 @@ export function BiometricRuntimeProvider({ children }) {
       active = false
       if (refreshInterval) window.clearInterval(refreshInterval)
     }
-  }, [biometricRoute, kioskRoute, locationBypassed, requiresImmediateCamera, retryKey, startCamera, stopCamera])
+  }, [biometricRoute, kioskRoute, requiresImmediateCamera, retryKey, startCamera, stopCamera])
 
   const value = useMemo(() => ({
     biometricRoute,
     bootStage,
     camera,
-    canBypassLocation: kioskRoute && bootStage === 'location' && Boolean(runtimeError),
-    continueWithoutLocation() {
-      setRuntimeError(null)
-      setLocationBypassed(true)
-      setLocationState(current => ({
-        ...current,
-        bypassed: true,
-        error: current.error,
-        ready: false,
-        status: 'Location unavailable, WFH fallback active',
-      }))
-    },
     kioskRoute,
     locationState: {
       ...locationState,
-      bypassed: locationBypassed || locationState.bypassed,
+      bypassed: false,
     },
     modelStatus,
     modelsReady,
     retry() {
       stopCamera()
-      setLocationBypassed(false)
       setLocationState(getDefaultLocationState())
       setRetryKey(current => current + 1)
     },
@@ -232,10 +214,10 @@ export function BiometricRuntimeProvider({ children }) {
         modelsReady
         && bootStage === 'ready'
         && (!requiresImmediateCamera || camOn)
-        && (!kioskRoute || locationState.ready || locationBypassed)
+        && (!kioskRoute || locationState.ready)
       )
       : true,
-  }), [adminReenrollRoute, biometricRoute, bootStage, camOn, camera, kioskRoute, locationBypassed, locationState, modelStatus, modelsReady, requiresImmediateCamera, runtimeError, stopCamera])
+  }), [biometricRoute, bootStage, camOn, camera, kioskRoute, locationState, modelStatus, modelsReady, requiresImmediateCamera, runtimeError, stopCamera])
 
   return (
     <BiometricRuntimeContext.Provider value={value}>

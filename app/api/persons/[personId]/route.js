@@ -226,7 +226,7 @@ async function hardDeleteEmployee(db, resolvedSession, personId, personData) {
     enrollmentLockRefs.push(db.collection('person_enrollment_locks').doc(employeeIdStr))
   }
 
-  await deletePersonBiometricIndex(db, personIdStr)
+  await deletePersonBiometricIndex(db, personIdStr, { officeIds: [officeIdStr] })
   await deletePersonBiometricsRecord(db, personIdStr)
   const attendanceDeleted = await commitDeleteBatch(db, attendanceRefs)
   const attendanceDailyDeleted = await commitDeleteBatch(db, attendanceDailyRefs)
@@ -319,7 +319,7 @@ export async function DELETE(request, { params }) {
     }
 
     await db.collection('persons').doc(personId).delete()
-    await deletePersonBiometricIndex(db, personId)
+    await deletePersonBiometricIndex(db, personId, { officeIds: [personData.officeId] })
     await deletePersonBiometricsRecord(db, personId)
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

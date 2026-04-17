@@ -162,7 +162,7 @@ export async function POST(request) {
       nextSteps: [
         'Re-enroll employees at /registration',
         'Approve enrollments in admin dashboard',
-        'Rebuild biometric index from admin maintenance panel',
+        'No biometric index rebuild is needed after a full reset because persons and index rows were deleted together',
       ],
     })
   } catch (error) {

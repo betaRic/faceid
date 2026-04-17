@@ -9,7 +9,6 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Primary palette
         navy: {
           DEFAULT: '#032D57',
           light: '#0A4278',
@@ -26,8 +25,6 @@ module.exports = {
           900: '#000D1B',
         },
         brand: { DEFAULT: '#032D57', light: '#0A4278', dark: '#021E3A' },
-
-        // Accent orange
         amber: {
           DEFAULT: '#EA921F',
           light: '#F2A94B',
@@ -43,15 +40,11 @@ module.exports = {
           800: '#834E09',
           900: '#5C3606',
         },
-
-        // Sky blue
         sky: {
           DEFAULT: '#C5D8E8',
           light: '#E0ECF5',
           dark: '#9BBDD8',
         },
-
-        // Slate neutral
         slate: {
           DEFAULT: '#38444B',
           light: '#5A6875',
@@ -67,23 +60,18 @@ module.exports = {
           800: '#141A1E',
           900: '#080B0D',
         },
-
-        // Semantic tokens
         ink: '#252E34',
         muted: '#5A6875',
         warn: '#991B1B',
       },
-
       fontFamily: {
-        sans: ['Poppins', 'sans-serif'],
-        display: ['Poppins', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['var(--font-sans)', 'sans-serif'],
+        display: ['var(--font-sans)', 'sans-serif'],
+        mono: ['var(--font-mono)', 'monospace'],
       },
-
       fontSize: {
         '2xs': ['0.65rem', { lineHeight: '1rem' }],
       },
-
       fontWeight: {
         thin: '100',
         extralight: '200',
@@ -95,7 +83,6 @@ module.exports = {
         extrabold: '800',
         black: '900',
       },
-
       boxShadow: {
         card: '0 4px 24px rgba(3, 45, 87, 0.08)',
         'card-hover': '0 8px 40px rgba(3, 45, 87, 0.14)',
@@ -103,26 +90,22 @@ module.exports = {
         'glow-orange': '0 0 40px rgba(234, 146, 31, 0.18)',
         inner: 'inset 0 2px 8px rgba(3, 45, 87, 0.08)',
       },
-
       borderRadius: {
         '4xl': '2rem',
         '5xl': '2.5rem',
       },
-
       backgroundImage: {
         'hero-gradient': 'linear-gradient(135deg, #032D57 0%, #0A4278 50%, #021E3A 100%)',
         'card-gradient': 'linear-gradient(135deg, #FFFFFF 0%, #E0ECF5 100%)',
         'orange-gradient': 'linear-gradient(135deg, #EA921F 0%, #F2A94B 100%)',
         'navy-fade': 'linear-gradient(180deg, rgba(3,45,87,0) 0%, rgba(3,45,87,0.06) 100%)',
       },
-
       animation: {
         'fade-up': 'fadeUp 0.5s ease-out forwards',
         'fade-in': 'fadeIn 0.4s ease-out forwards',
         'slide-in': 'slideIn 0.4s ease-out forwards',
         shimmer: 'shimmer 2s linear infinite',
       },
-
       keyframes: {
         fadeUp: {
           '0%': { opacity: '0', transform: 'translateY(16px)' },

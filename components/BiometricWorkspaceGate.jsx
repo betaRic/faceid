@@ -7,15 +7,13 @@ export default function BiometricWorkspaceGate({
   errorMessage,
   locationState,
   onRetry,
-  canBypassLocation,
-  onContinueWithoutLocation,
   loadingLabel = '',
 }) {
-  const title = page === 'register' ? 'Preparing enrollment workspace' : 'Preparing attendance kiosk'
+  const title = page === 'register' ? 'Preparing enrollment workspace' : 'Preparing scan workspace'
   const detail = errorMessage
     ? errorMessage
     : bootStage === 'location'
-      ? 'Checking device location before the camera is shown. On-site attendance needs GPS; WFH can continue without it if location is unavailable.'
+      ? 'Checking verified device location before the camera is shown. Public scan attendance will not start without GPS.'
       : bootStage === 'camera'
         ? 'Starting the camera only after biometric models are fully ready.'
         : 'Loading biometric models before the camera is shown to the user.'
@@ -67,15 +65,6 @@ export default function BiometricWorkspaceGate({
               >
                 Retry workspace startup
               </button>
-              {canBypassLocation ? (
-                <button
-                  className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50"
-                  onClick={onContinueWithoutLocation}
-                  type="button"
-                >
-                  Continue for WFH only
-                </button>
-              ) : null}
             </div>
           ) : null}
         </div>

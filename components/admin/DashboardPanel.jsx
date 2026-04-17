@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAdminStore } from '@/lib/admin/store'
 import { useOffices, useAttendance, useEmployees, useAdmins } from '@/lib/admin/hooks'
@@ -46,11 +46,11 @@ function InfoRow({ label, value }) {
   )
 }
 
-function ActionButton({ children, onClick, disabled, className = '' }) {
+function ActionButton({ children, onClick, disabled, className = '', busy = false }) {
   return (
     <button
-      className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition ${className} ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:opacity-90'}`}
-      disabled={disabled}
+      className={`inline-flex min-h-[44px] items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition ${className} ${(disabled || busy) ? 'cursor-not-allowed opacity-50' : 'hover:opacity-90'}`}
+      disabled={disabled || busy}
       onClick={onClick}
       type="button"
     >
@@ -59,12 +59,151 @@ function ActionButton({ children, onClick, disabled, className = '' }) {
   )
 }
 
+function ReenrollmentQueueCard({ onOpenEmployees }) {
+  const [state, setState] = useState({ loading: true, candidates: [] })
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        const res = await fetch('/api/admin/reenrollment-candidates?limit=4&days=14', { cache: 'no-store' })
+        const data = await res.json().catch(() => null)
+        if (!cancelled && res.ok) {
+          setState({ loading: false, candidates: data?.candidates || [] })
+        } else if (!cancelled) {
+          setState({ loading: false, candidates: [] })
+        }
+      } catch {
+        if (!cancelled) setState({ loading: false, candidates: [] })
+      }
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  return (
+    <section className="flex flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-white p-5">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Biometric refresh</div>
+        <h3 className="mt-1 text-lg font-semibold text-ink">Reenrollment queue</h3>
+      </div>
+      {state.loading ? (
+        <div className="text-sm text-muted">Loading queue...</div>
+      ) : state.candidates.length === 0 ? (
+        <div className="text-sm text-muted">No flagged profiles right now.</div>
+      ) : (
+        <div className="grid gap-3">
+          {state.candidates.map(candidate => (
+            <div key={candidate.personId} className="rounded-2xl border border-black/5 bg-stone-50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-ink">{candidate.name}</div>
+                  <div className="mt-1 text-xs text-muted">{candidate.employeeId} • {candidate.officeName || 'Unassigned office'}</div>
+                </div>
+                <div className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                  {candidate.noMatchCount || 0} no-match
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-muted">
+                {candidate.reenrollmentReason || 'manual_review'} • {candidate.descriptorCount || 0} sample(s)
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <ActionButton className="border-black/10 bg-stone-50 text-ink hover:bg-white" onClick={onOpenEmployees}>
+        Review employees
+      </ActionButton>
+    </section>
+  )
+}
+
+function KioskDevicesCard() {
+  const [state, setState] = useState({ loading: true, summary: null, devices: [] })
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        const res = await fetch('/api/admin/kiosk-devices', { cache: 'no-store' })
+        const data = await res.json().catch(() => null)
+        if (!cancelled && res.ok) {
+          setState({
+            loading: false,
+            summary: data?.summary || null,
+            devices: data?.devices?.slice(0, 4) || [],
+          })
+        } else if (!cancelled) {
+          setState({ loading: false, summary: null, devices: [] })
+        }
+      } catch {
+        if (!cancelled) setState({ loading: false, summary: null, devices: [] })
+      }
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  return (
+    <section className="flex flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-white p-5">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Scan devices</div>
+        <h3 className="mt-1 text-lg font-semibold text-ink">Device activity</h3>
+      </div>
+      {state.summary ? (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-2xl bg-stone-50 px-3 py-3 text-center">
+            <div className="text-xs uppercase tracking-wide text-muted">Active</div>
+            <div className="mt-1 text-xl font-semibold text-ink">{state.summary.active}</div>
+          </div>
+          <div className="rounded-2xl bg-stone-50 px-3 py-3 text-center">
+            <div className="text-xs uppercase tracking-wide text-muted">Idle</div>
+            <div className="mt-1 text-xl font-semibold text-ink">{state.summary.idle}</div>
+          </div>
+          <div className="rounded-2xl bg-stone-50 px-3 py-3 text-center">
+            <div className="text-xs uppercase tracking-wide text-muted">Stale</div>
+            <div className="mt-1 text-xl font-semibold text-ink">{state.summary.stale}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm text-muted">{state.loading ? 'Loading devices...' : 'No scan telemetry yet.'}</div>
+      )}
+      {state.devices.length > 0 ? (
+        <div className="grid gap-3">
+          {state.devices.map(device => (
+            <div key={device.kioskId} className="rounded-2xl border border-black/5 bg-stone-50 px-4 py-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 truncate font-semibold text-ink">{device.kioskId}</div>
+                <div className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                  device.status === 'active'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : device.status === 'idle'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-rose-100 text-rose-700'
+                }`}>
+                  {device.status}
+                </div>
+              </div>
+              <div className="mt-1 text-xs text-muted">{device.officeName || 'Unassigned office'} • {device.source}</div>
+              <div className="mt-1 text-xs text-muted">{device.lastDecisionCode || 'No recent decision recorded'}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function DashboardPanelInner() {
   const { offices, selectedOfficeId, setSelectedOfficeId, activeOffice, visibleOffices } = useOffices()
-  const { attendance, attendanceLoaded, todaysLogs } = useAttendance()
+  const { attendanceLoaded, todaysLogs } = useAttendance()
   const { employeeTotal, employeesLoaded } = useEmployees()
   const { admins, adminsLoaded, roleScope } = useAdminStore()
-  const { setActivePanel, setPending, firestoreIndexSummary, setFirestoreIndexSummary } = useAdminStore()
+  const { setActivePanel, setPending, setFirestoreIndexSummary } = useAdminStore()
 
   const handleApplyIndexes = async () => {
     setPending('firestore-index-sync', true)
@@ -79,18 +218,6 @@ function DashboardPanelInner() {
     setPending('firestore-index-sync', false)
   }
 
-  const handleRebuildBiometricIndex = async () => {
-    setPending('biometric-index-rebuild', true)
-    try {
-      const res = await fetch('/api/admin/maintenance/biometric-index', { method: 'POST' })
-      const data = await res.json()
-      useAdminStore.getState().addToast(data.message || 'Biometric index rebuilt', 'success')
-    } catch {
-      useAdminStore.getState().addToast('Biometric index rebuild failed', 'error')
-    }
-    setPending('biometric-index-rebuild', false)
-  }
-
   const employeeMetric = employeesLoaded
     ? String(employeeTotal).padStart(2, '0')
     : String(offices.reduce((t, o) => t + Number(o.employees || 0), 0)).padStart(2, '0')
@@ -98,7 +225,7 @@ function DashboardPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full flex-col gap-6 rounded-[2rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+      className="flex h-full min-h-0 flex-col gap-6 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
@@ -202,20 +329,14 @@ function DashboardPanelInner() {
               <ActionButton busy={useAdminStore.getState().isPending('firestore-index-sync')} className="bg-navy text-white hover:bg-navy-dark" onClick={handleApplyIndexes}>
                 {useAdminStore.getState().isPending('firestore-index-sync') ? 'Applying...' : 'Apply indexes'}
               </ActionButton>
-              {roleScope === 'regional' && (
-                <>
-                  <div className="border-t border-black/5" />
-                  <h4 className="text-sm font-semibold text-ink">Biometric Index</h4>
-                  <BiometricIndexHealth onRebuildRequest={(data) => useAdminStore.getState().addToast(`Rebuilt: ${data.reindexedCount} entries`, 'success')} />
-                </>
-              )}
-              {roleScope !== 'regional' && (
-                <ActionButton busy={useAdminStore.getState().isPending('biometric-index-rebuild')} className="bg-amber-500 text-white hover:bg-amber-600" onClick={handleRebuildBiometricIndex}>
-                  {useAdminStore.getState().isPending('biometric-index-rebuild') ? 'Rebuilding...' : 'Rebuild Biometric Index'}
-                </ActionButton>
-              )}
+              <div className="border-t border-black/5" />
+              <h4 className="text-sm font-semibold text-ink">Biometric Index</h4>
+              <BiometricIndexHealth onRebuildRequest={(data) => useAdminStore.getState().addToast(`Rebuilt: ${data.reindexedCount} entries`, 'success')} />
             </section>
           )}
+
+          <ReenrollmentQueueCard onOpenEmployees={() => setActivePanel('employees')} />
+          <KioskDevicesCard />
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { isProbablyMobileDevice } from '@/lib/biometrics/device-profile'
 import { extractFaceRotationAngles, getHumanVerification } from '@/lib/biometrics/human'
 import { euclideanDistance, normalizeDescriptor } from '@/lib/biometrics/descriptor-utils'
 import { PREVIEW_MAX_DIMENSION, VERIFICATION_BURST_FRAMES, VERIFICATION_BURST_INTERVAL_MS } from '@/lib/config'
@@ -109,9 +110,7 @@ export function useVerificationBurst(camera) {
     const human = await getHumanVerification()
     const captures = []
     const landmarksBuffer = []
-    const isMobile = typeof navigator !== 'undefined'
-      ? (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') || navigator.userAgentData?.mobile === true)
-      : false
+    const isMobile = isProbablyMobileDevice()
     const targetFrames = isMobile ? Math.max(VERIFICATION_BURST_FRAMES, 8) : VERIFICATION_BURST_FRAMES
     const frameInterval = isMobile ? Math.max(VERIFICATION_BURST_INTERVAL_MS, 90) : VERIFICATION_BURST_INTERVAL_MS
 
@@ -195,5 +194,54 @@ export function useVerificationBurst(camera) {
     }
   }, [camera])
 
-  return { captureVerificationBurst }
+  const captureActiveChallenge = useCallback(async (motionType = '') => {
+    const human = await getHumanVerification()
+    const samples = []
+    const isMobile = isProbablyMobileDevice()
+    const targetFrames = isMobile ? 16 : 12
+    const frameInterval = isMobile ? 90 : 70
+    const startedAt = Date.now()
+
+    for (let attempt = 0; attempt < targetFrames; attempt += 1) {
+      const rawCanvas = camera.captureImageData({
+        maxWidth: PREVIEW_MAX_DIMENSION,
+        maxHeight: PREVIEW_MAX_DIMENSION,
+      })
+      const canvas = buildOvalCaptureCanvas(rawCanvas)
+      if (!canvas) {
+        if (attempt < targetFrames - 1) await wait(frameInterval)
+        continue
+      }
+      if (!camera.camOn) break
+
+      const result = await human.detect(canvas)
+      const detections = result.face.map(mapDetectedFace)
+      const strictPrimary = selectOvalReadyFace(detections, canvas.width, canvas.height)
+      const primary = strictPrimary?.detection || selectBestFallbackFace(detections)
+
+      if (primary?.detection?.box) {
+        const box = primary.detection.box
+        const metrics = measureFrameMetrics(canvas, box)
+        samples.push({
+          timestamp: Date.now(),
+          yaw: Number(primary.rotation?.yaw || 0),
+          pitch: Number(primary.rotation?.pitch || 0),
+          roll: Number(primary.rotation?.roll || 0),
+          faceAreaRatio: Number(metrics.faceAreaRatio || 0),
+          centeredness: Number(metrics.centeredness || 0),
+        })
+      }
+
+      if (attempt < targetFrames - 1) await wait(frameInterval)
+    }
+
+    return {
+      motionType: String(motionType || '').trim(),
+      startedAt,
+      completedAt: Date.now(),
+      samples,
+    }
+  }, [camera])
+
+  return { captureVerificationBurst, captureActiveChallenge }
 }

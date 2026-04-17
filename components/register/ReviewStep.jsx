@@ -1,37 +1,61 @@
-import { Field, InfoCard } from '@/components/shared/ui'
+import { InfoCard } from '@/components/shared/ui'
 
-export default function ReviewStep({ previewUrl, savingEnrollment, goToDetails, handleRetake, burstSummary, captureFeedback }) {
+export default function ReviewStep({
+  burstSummary,
+  captureFeedback,
+  detailsReady,
+  onEditDetails,
+  onRetake,
+  onSubmit,
+  pendingSampleCount,
+  previewUrl,
+  savingEnrollment,
+}) {
   return (
-    <section className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="flex min-h-[18rem] items-center justify-center overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-950 px-4 py-4 lg:min-h-0">
+    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_300px]">
+      <div className="flex min-h-[16rem] items-center justify-center overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-950">
         {previewUrl ? (
-          <img alt="Captured preview" className="max-h-[min(52vh,30rem)] w-full object-contain" src={previewUrl} />
+          <img alt="Captured" className="max-h-[min(52vh,30rem)] w-full object-contain" src={previewUrl} />
         ) : (
-          <div className="flex min-h-[18rem] items-center justify-center px-6 text-center text-sm text-stone-300 lg:min-h-0">No preview available yet.</div>
+          <div className="text-sm text-stone-300">No preview yet.</div>
         )}
       </div>
+
       <div className="grid content-start gap-3">
-        <div className="grid gap-3">
-          <button
-            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1rem] bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark sm:rounded-full"
-            disabled={savingEnrollment}
-            onClick={goToDetails}
-            type="button"
-          >
-            Continue to details
-          </button>
-          <button
-            className="inline-flex min-h-12 w-full items-center justify-center rounded-[1rem] border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-stone-50 sm:rounded-full"
-            disabled={savingEnrollment}
-            onClick={handleRetake}
-            type="button"
-          >
-            Retake capture
-          </button>
-        </div>
-        {burstSummary && <InfoCard title="Burst kept" text={`${burstSummary.keptCount} distinct sample(s) selected from ${burstSummary.detectedCount} detected burst frame(s).`} tone={captureFeedback?.tone || 'default'} />}
-        {captureFeedback && <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone={captureFeedback.tone} />}
+        <button
+          className="btn btn-primary w-full"
+          disabled={savingEnrollment || !detailsReady || !pendingSampleCount}
+          onClick={onSubmit}
+          type="button"
+        >
+          {savingEnrollment ? 'Submitting…' : 'Submit enrollment'}
+        </button>
+        <button className="btn btn-ghost w-full" onClick={onRetake} type="button">
+          Retake capture
+        </button>
+        <button className="btn btn-ghost w-full" onClick={onEditDetails} type="button">
+          Edit employee details
+        </button>
+
+        {burstSummary && !burstSummary.genuinelyDiverse ? (
+          <InfoCard
+            title="Single angle detected"
+            text="The system captured similar poses across the guided phases. For better accuracy, retake and follow the front, side, and chin-down prompts."
+            tone="warn"
+          />
+        ) : null}
+
+        {burstSummary && burstSummary.genuinelyDiverse ? (
+          <InfoCard
+            title={`${burstSummary.keptCount} diverse samples captured`}
+            text={`${burstSummary.detectedCount} frames processed across ${burstSummary.phasesCompleted} guided poses. Diverse poses improve cross-device recognition accuracy.`}
+          />
+        ) : null}
+
+        {captureFeedback?.tone === 'warn' ? (
+          <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone="warn" />
+        ) : null}
       </div>
-    </section>
+    </div>
   )
 }

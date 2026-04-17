@@ -55,6 +55,7 @@ const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-captur
 const dtrModule = await importLocalModule('../lib/dtr.js')
 const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
 const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/enrollment-policy.js')
+const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
 
 const { calculateDistanceMeters, isOfficeWfhDay } = officesModule
 const { deriveDailyAttendanceRecord } = dailyAttendanceModule
@@ -95,6 +96,7 @@ const {
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
 const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
+const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -502,6 +504,23 @@ await run('biometric benchmark report exposes operational gate and honest realit
   assert.equal(report.byDevice.mobile.total, 120)
   assert.equal(report.byDevice.desktop.total, 80)
   assert.equal(report.operationalGate.status, 'pass')
+})
+
+await run('match support snapshot blocks weak single-sample support on marginal matches', () => {
+  const descriptors = [
+    [1, 0],
+    [-1, 0],
+    [0, -1],
+    [-0.2, -0.98],
+  ]
+  const queryDescriptor = [0.68, 0.733]
+
+  const snapshot = buildMatchSupportSnapshot({ descriptors }, queryDescriptor, 0.85)
+
+  assert.equal(snapshot.descriptorCount, 4)
+  assert.equal(snapshot.requiresStrongSupport, true)
+  assert.equal(snapshot.supportCount, 1)
+  assert.equal(snapshot.weakSingleSample, true)
 })
 
 await run('public enrollment cannot silently change identity fields on an existing pending record', () => {

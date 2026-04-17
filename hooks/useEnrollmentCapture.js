@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { detectFaceBoxes, detectSingleDescriptor, detectPoseOnly } from '@/lib/biometrics/human'
+import { getNavigatorDeviceProfile } from '@/lib/biometrics/device-profile'
 import {
   getFaceAreaRatioFromBox,
   getFaceSizeGuidance,
@@ -77,6 +78,31 @@ const YAW_SIDE_GOOD = 0.18
 const PITCH_CHIN_DOWN_MIN = 0.18
 const CAPTURE_METRIC_SAMPLE_STEP = 4
 
+function getCaptureTimingProfile() {
+  const device = getNavigatorDeviceProfile()
+  if (device.mobile) {
+    return {
+      frameIntervalMs: 190,
+      frameMaxRetries: 10,
+      posePollIntervalMs: 115,
+      poseHoldStableMs: 420,
+      preCaptureDelayMs: 550,
+      registrationScanIntervalMs: Math.max(REGISTRATION_SCAN_INTERVAL_MS, 650),
+      profile: 'mobile-stabilized',
+    }
+  }
+
+  return {
+    frameIntervalMs: PHASE_FRAME_INTERVAL_MS,
+    frameMaxRetries: FRAME_MAX_RETRIES,
+    posePollIntervalMs: POSE_POLL_INTERVAL_MS,
+    poseHoldStableMs: POSE_HOLD_STABLE_MS,
+    preCaptureDelayMs: 400,
+    registrationScanIntervalMs: REGISTRATION_SCAN_INTERVAL_MS,
+    profile: 'default',
+  }
+}
+
 export function estimateHeadYaw(mesh) {
   if (!Array.isArray(mesh) || mesh.length < 455) return null
   const getX = (i) => {
@@ -132,31 +158,6 @@ function resolveFacePose(result) {
       : null
   const roll = Number.isFinite(result?.rotation?.roll) ? Number(result.rotation.roll) : null
   return { yaw, pitch, roll }
-}
-
-function getClientCaptureMetadata() {
-  if (typeof navigator === 'undefined') {
-    return {
-      userAgent: '',
-      platform: '',
-      mobile: false,
-      deviceMemoryGb: null,
-      hardwareConcurrency: null,
-    }
-  }
-
-  let uaDataMobile = null
-  try {
-    uaDataMobile = navigator.userAgentData?.mobile ?? null
-  } catch {}
-
-  return {
-    userAgent: String(navigator.userAgent || '').slice(0, 512),
-    platform: String(navigator.platform || '').slice(0, 120),
-    mobile: uaDataMobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''),
-    deviceMemoryGb: Number.isFinite(navigator.deviceMemory) ? Number(navigator.deviceMemory) : null,
-    hardwareConcurrency: Number.isFinite(navigator.hardwareConcurrency) ? Number(navigator.hardwareConcurrency) : null,
-  }
 }
 
 function isPoseCentered(yaw) {
@@ -294,6 +295,7 @@ function buildCandidate(canvas, faceResult, phaseIndex, frameIndex, pose) {
 }
 
 export function useEnrollmentCapture(camera) {
+  const timingProfileRef = useRef(getCaptureTimingProfile())
   const [capturePhase, setCapturePhase] = useState(-1)
   const [phaseProgress, setPhaseProgress] = useState(0)
   const [faceFound, setFaceFound] = useState(false)
@@ -318,15 +320,16 @@ export function useEnrollmentCapture(camera) {
   }, [])
 
   const waitForPose = useCallback(async (phaseType, sideAYw, updateStatus) => {
+    const timingProfile = timingProfileRef.current
     const deadline = Date.now() + POSE_WAIT_TIMEOUT_MS
     let poseAchievedAt = null
 
     while (Date.now() < deadline && !abortedRef.current) {
       const canvas = camera.captureImageData({ maxWidth: 360, maxHeight: 360 })
-      if (!canvas) { await wait(POSE_POLL_INTERVAL_MS); continue }
+      if (!canvas) { await wait(timingProfile.posePollIntervalMs); continue }
 
       const cropped = buildOvalCaptureCanvas(canvas)
-      if (!cropped) { await wait(POSE_POLL_INTERVAL_MS); continue }
+      if (!cropped) { await wait(timingProfile.posePollIntervalMs); continue }
       let pose = { yaw: null, pitch: null, roll: null }
       try {
         const result = await detectPoseOnly(cropped)
@@ -342,14 +345,14 @@ export function useEnrollmentCapture(camera) {
 
       if (poseMatch) {
         if (poseAchievedAt === null) poseAchievedAt = Date.now()
-        else if (Date.now() - poseAchievedAt >= POSE_HOLD_STABLE_MS) {
+        else if (Date.now() - poseAchievedAt >= timingProfile.poseHoldStableMs) {
           return pose
         }
       } else {
         poseAchievedAt = null
       }
 
-      await wait(POSE_POLL_INTERVAL_MS)
+      await wait(timingProfile.posePollIntervalMs)
     }
 
     updateStatus('⚠️ Pose timeout — capturing best available frames')
@@ -364,6 +367,7 @@ export function useEnrollmentCapture(camera) {
    * This ensures diversity is ACTUALLY captured, not just detected once before burst.
    */
   const capturePhaseFrames = useCallback(async (phaseIndex, phaseType, sideAYw) => {
+    const timingProfile = timingProfileRef.current
     const captures = []
     let frameSlot = 0
 
@@ -371,13 +375,13 @@ export function useEnrollmentCapture(camera) {
       let attempts = 0
       let captured = false
 
-      while (attempts < FRAME_MAX_RETRIES && !captured && !abortedRef.current) {
+      while (attempts < timingProfile.frameMaxRetries && !captured && !abortedRef.current) {
         const canvas = camera.captureImageData({
           maxWidth: PREVIEW_MAX_DIMENSION,
           maxHeight: PREVIEW_MAX_DIMENSION,
         })
         const cropped = buildOvalCaptureCanvas(canvas)
-        if (!cropped) { await wait(PHASE_FRAME_INTERVAL_MS); continue }
+        if (!cropped) { await wait(timingProfile.frameIntervalMs); continue }
 
         let faceResult = null
         try {
@@ -403,19 +407,19 @@ export function useEnrollmentCapture(camera) {
 
         if (!captured) {
           attempts++
-          await wait(PHASE_FRAME_INTERVAL_MS)
+          await wait(timingProfile.frameIntervalMs)
         }
       }
 
       // If we couldn't get a pose-valid frame after max retries, skip this slot
       // (better to have 2 good frames than 3 frames including a bad one)
       if (!captured) {
-        console.warn(`[EnrollmentCapture] Phase ${phaseIndex} frame slot ${frameSlot} — could not capture valid pose after ${FRAME_MAX_RETRIES} attempts, skipping`)
+        console.warn(`[EnrollmentCapture] Phase ${phaseIndex} frame slot ${frameSlot} — could not capture valid pose after ${timingProfile.frameMaxRetries} attempts, skipping`)
         frameSlot++
       }
 
       if (captured) {
-        await wait(PHASE_FRAME_INTERVAL_MS)
+        await wait(timingProfile.frameIntervalMs)
       }
     }
 
@@ -488,6 +492,7 @@ export function useEnrollmentCapture(camera) {
       const captureMetadata = {
         modelVersion: 'human-faceres-browser-v1',
         captureProfile: 'guided_4_phase',
+        timingProfile: timingProfileRef.current.profile,
         keptCount: selected.length,
         detectedCount: allCaptures.length,
         phasesCompleted: CAPTURE_PHASES.length,
@@ -495,7 +500,10 @@ export function useEnrollmentCapture(camera) {
         genuinelyDiverse,
         qualityScore: Math.round((Number(primary.score || 0)) * 100) / 100,
         primaryMetrics: primary.metrics,
-        device: getClientCaptureMetadata(),
+        device: {
+          ...getNavigatorDeviceProfile(),
+          ...(camera?.getTrackSettings?.() || {}),
+        },
       }
 
       return {
@@ -528,6 +536,7 @@ export function useEnrollmentCapture(camera) {
     captureAttemptRef.current = false
     abortedRef.current = false
     previewUrlRef.current = null
+    timingProfileRef.current = getCaptureTimingProfile()
     setFaceFound(false)
     setFaceNeedsAlignment(false)
     setCurrentYaw(null)
@@ -591,7 +600,7 @@ export function useEnrollmentCapture(camera) {
 
         stopDetect()
         setStatusMsg(`Face detected — starting ${CAPTURE_PHASES.length}-phase guided capture...`)
-        await wait(400)
+        await wait(timingProfileRef.current.preCaptureDelayMs)
 
         const result = await captureAllPhases((msg) => setStatusMsg(msg))
 
@@ -612,7 +621,7 @@ export function useEnrollmentCapture(camera) {
     }
 
     runDetection()
-    autoRef.current = window.setInterval(runDetection, REGISTRATION_SCAN_INTERVAL_MS)
+    autoRef.current = window.setInterval(runDetection, timingProfileRef.current.registrationScanIntervalMs)
   }, [camera, captureAllPhases, stopDetect])
 
   useEffect(() => {

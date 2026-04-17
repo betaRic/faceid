@@ -9,6 +9,7 @@ import {
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
+import { clearBiometricIndexCache } from '@/lib/biometric-index'
 import { syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import { PERSON_APPROVAL_PENDING } from '@/lib/person-approval'
 import { writeAuditLog } from '@/lib/audit-log'
@@ -149,6 +150,7 @@ export async function POST(request) {
 
     // Step 2: Wipe the biometric index
     const indexDeleted = await deleteCollection(db, 'biometric_index')
+    const cacheInvalidation = await clearBiometricIndexCache()
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -159,7 +161,13 @@ export async function POST(request) {
       targetId: 'biometric_index',
       officeId: '',
       summary: `Biometric reset: cleared descriptors for ${clearedCount} persons, returned ${pendingReviewCount} persons to pending review, deleted ${indexDeleted} index entries`,
-      metadata: { clearedCount, pendingReviewCount, biometricsMirrorSynced, indexDeleted },
+      metadata: {
+        clearedCount,
+        pendingReviewCount,
+        biometricsMirrorSynced,
+        indexDeleted,
+        cacheKeysCleared: cacheInvalidation.cleared,
+      },
     })
 
     return NextResponse.json({
@@ -169,6 +177,7 @@ export async function POST(request) {
       pendingReviewCount,
       biometricsMirrorSynced,
       deletedIndexEntries: indexDeleted,
+      clearedBiometricCacheKeys: cacheInvalidation.cleared,
       nextSteps: [
         'All employees must re-enroll at /registration',
         'Approve enrollments in admin dashboard',

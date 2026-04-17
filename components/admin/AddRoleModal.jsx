@@ -175,6 +175,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, isPending }) {
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">PIN</label>
               <input
+                autoComplete="new-password"
                 type="password"
                 className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-navy"
                 placeholder="4-8 digit PIN"

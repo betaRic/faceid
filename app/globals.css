@@ -46,7 +46,8 @@
   --radius-2xl: 2rem;
 
   /* Typography */
-  --font-sans: 'Poppins', sans-serif;
+  --font-sans: var(--font-poppins), 'Poppins', sans-serif;
+  --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
 }
 
 /* =========================================================

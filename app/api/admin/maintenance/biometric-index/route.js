@@ -10,7 +10,7 @@ import {
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
-import { syncPersonBiometricIndex } from '@/lib/biometric-index'
+import { clearBiometricIndexCache, syncPersonBiometricIndex } from '@/lib/biometric-index'
 import { writeAuditLog } from '@/lib/audit-log'
 import { normalizeStoredDescriptors } from '@/lib/biometrics/descriptor-utils'
 import { createOriginGuard } from '@/lib/csrf'
@@ -73,6 +73,8 @@ export async function POST(request) {
       reindexedCount += 1
     }
 
+    const cacheInvalidation = await clearBiometricIndexCache()
+
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
       actorScope: resolvedSession.scope,
@@ -85,6 +87,7 @@ export async function POST(request) {
       metadata: {
         normalizedCount,
         reindexedCount,
+        cacheKeysCleared: cacheInvalidation.cleared,
       },
     })
 
@@ -92,6 +95,7 @@ export async function POST(request) {
       ok: true,
       normalizedCount,
       reindexedCount,
+      clearedBiometricCacheKeys: cacheInvalidation.cleared,
     })
   } catch (error) {
     return NextResponse.json(

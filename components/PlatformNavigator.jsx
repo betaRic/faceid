@@ -31,12 +31,12 @@ const stats = [
 
 const modules = [
   {
-    title: 'Attendance Kiosk',
+    title: 'Public Scan',
     tag: 'Live',
     tagStyle: 'bg-emerald-100 text-emerald-700',
-    href: '/kiosk',
-    description: 'Walk-up face scanning for enrolled employees. The browser captures the face burst, the server makes the attendance decision, GPS validates location, and the system records AM/PM attendance.',
-    features: ['Auto face detection', 'Challenge-protected attendance requests', 'GPS context validation', 'AM / PM session tracking'],
+    href: '/scan',
+    description: 'Phone-first face scanning for enrolled employees. The browser captures the face burst, the server makes the attendance decision, GPS validates location, and the system records AM/PM attendance.',
+    features: ['Open-and-scan flow', 'Challenge-protected attendance requests', 'GPS context validation', 'AM / PM session tracking'],
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -93,8 +93,8 @@ const howItWorks = [
   },
   {
     step: '03',
-    title: 'Kiosk Scans',
-    body: 'At the office, the employee walks up to the kiosk. The browser captures the verification burst, the server evaluates the match and attendance policy, and GPS confirms they are within the approved geofence.',
+    title: 'Employee Scans',
+    body: 'At the office or during WFH, the employee opens the scan page. The browser captures the verification burst, the server evaluates the match and attendance policy, and GPS confirms the attendance context.',
   },
   {
     step: '04',
@@ -153,12 +153,12 @@ export default function PlatformNavigator() {
               className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-sky/80 sm:text-lg"
             >
               A GPS-validated, biometric attendance platform built for DILG Region XII government offices.
-              Server-enforced identity verification with a full admin workflow — from enrollment to daily summary exports.
+              Server-enforced identity verification with a phone-first scan flow and a full admin workflow from enrollment to daily summary exports.
             </motion.p>
 
             <motion.div variants={fadeUp} className="mt-10 flex flex-wrap items-center justify-center gap-3">
-              <Link href="/kiosk" className="btn btn-amber text-base px-7 py-3.5 shadow-glow-orange">
-                Open Kiosk
+              <Link href="/scan" className="btn btn-amber text-base px-7 py-3.5 shadow-glow-orange">
+                Open Scan
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>
@@ -214,7 +214,7 @@ export default function PlatformNavigator() {
             <span className="badge badge-navy mb-3">Platform Modules</span>
             <h2 className="text-2xl font-bold text-navy sm:text-3xl">Three focused tools, one system.</h2>
             <p className="mt-2 max-w-xl text-slate-light">
-              Each module has a single responsibility — kiosk attendance, enrollment, or administration. No feature bloat.
+              Each module has a single responsibility: scan attendance, enrollment, or administration. No feature bloat.
             </p>
           </motion.div>
 
@@ -362,10 +362,10 @@ export default function PlatformNavigator() {
           >
             <div>
               <h3 className="text-xl font-bold text-navy">Ready to start?</h3>
-              <p className="mt-1 text-sm text-slate-light">Open the kiosk for walk-up attendance or log in to the admin portal to manage your office.</p>
+              <p className="mt-1 text-sm text-slate-light">Open the scan page for attendance or log in to the admin portal to manage your office.</p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-3">
-              <Link href="/kiosk" className="btn btn-primary px-6 py-3">Open Kiosk</Link>
+              <Link href="/scan" className="btn btn-primary px-6 py-3">Open Scan</Link>
               <Link href="/login" className="btn btn-ghost px-6 py-3">Admin Portal</Link>
             </div>
           </motion.div>

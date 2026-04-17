@@ -119,6 +119,7 @@ export default function AdminLogin() {
                   <label className="field-label">Regional PIN</label>
                   <div className="mt-1 flex gap-2">
                     <input
+                      autoComplete="current-password"
                       className="input flex-1"
                       type="password"
                       placeholder="Enter regional PIN"

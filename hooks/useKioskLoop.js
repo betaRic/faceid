@@ -15,7 +15,10 @@
  */
 
 import { useCallback, useRef } from 'react'
+import { requestAttendanceChallenge } from '@/lib/data-store'
+import { getNavigatorDeviceProfile } from '@/lib/biometrics/device-profile'
 import { detectFaceBoxes } from '@/lib/biometrics/human'
+import { SCAN_CAPTURE_POLICY_VERSION } from '@/lib/attendance/capture-policy'
 import {
   CONFIRM_FRAMES,
   DESCRIPTOR_LENGTH,
@@ -37,7 +40,6 @@ import {
 } from '@/lib/biometrics/face-size-guidance'
 
 function getClientCaptureContext() {
-  if (typeof navigator === 'undefined') return {}
   let kioskId = ''
   try {
     kioskId = window.localStorage.getItem('faceattend:kiosk-device-id') || ''
@@ -46,16 +48,8 @@ function getClientCaptureContext() {
       window.localStorage.setItem('faceattend:kiosk-device-id', kioskId)
     }
   } catch {}
-  let uaDataMobile = null
-  try {
-    uaDataMobile = navigator.userAgentData?.mobile ?? null
-  } catch {}
   return {
-    userAgent: navigator.userAgent || '',
-    platform: navigator.platform || '',
-    mobile: uaDataMobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''),
-    deviceMemoryGb: Number.isFinite(navigator.deviceMemory) ? Number(navigator.deviceMemory) : null,
-    hardwareConcurrency: Number.isFinite(navigator.hardwareConcurrency) ? Number(navigator.hardwareConcurrency) : null,
+    ...getNavigatorDeviceProfile(),
     kioskId,
   }
 }
@@ -64,6 +58,15 @@ function roundMetric(value, digits = 4) {
   if (!Number.isFinite(value)) return null
   const factor = 10 ** digits
   return Math.round(Number(value) * factor) / factor
+}
+
+function getBrowserLabel(userAgent = '') {
+  const value = String(userAgent || '')
+  if (/edg/i.test(value)) return 'Edge'
+  if (/chrome|crios/i.test(value)) return 'Chrome'
+  if (/safari/i.test(value) && !/chrome|crios|android/i.test(value)) return 'Safari'
+  if (/firefox|fxios/i.test(value)) return 'Firefox'
+  return 'Unknown'
 }
 
 /**
@@ -99,6 +102,7 @@ export function useKioskLoop({
   setCapturedFrameUrl,
   setFlashKey,
   setAlertState,
+  setChallengeState,
   setFaceDistanceInfo,
   confirmRef,
   confirmedTimer,
@@ -116,7 +120,7 @@ export function useKioskLoop({
   const faceDetectedRef = useRef(false)
   const distanceSamplesRef = useRef([])
 
-  const runScan = useCallback(async (captureVerificationBurst) => {
+  const runScan = useCallback(async (captureVerificationBurst, captureActiveChallenge) => {
     if (busyRef.current || pausedRef.current || !camera.camOn || !modelsReady) return
 
     busyRef.current = true
@@ -298,60 +302,147 @@ export function useKioskLoop({
         setCapturedFrameUrl(bestCanvas.toDataURL('image/jpeg', 0.82))
         const coordinates = locationState?.coords || null
         const timing = buildAttendanceEntryTiming(now)
-        const captureContext = getClientCaptureContext()
+        const trackSettings = camera.getTrackSettings?.() || {}
+        const captureContext = {
+          ...getClientCaptureContext(),
+          trackWidth: trackSettings.width ?? null,
+          trackHeight: trackSettings.height ?? null,
+          trackAspectRatio: trackSettings.aspectRatio ?? null,
+          trackFrameRate: trackSettings.frameRate ?? null,
+          trackFacingMode: trackSettings.facingMode || '',
+          trackResizeMode: trackSettings.resizeMode || '',
+        }
         const networkStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+        const baseAttendanceEntry = {
+          id: `${now}`,
+          name: '',
+          employeeId: '',
+          officeId: '',
+          officeName: '',
+          attendanceMode: '',
+          geofenceStatus: '',
+          confidence: 0,
+          landmarks: landmarks || [],
+          antispoof,
+          liveness,
+          captureContext: {
+            ...captureContext,
+            capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
+            captureResolution: `${bestCanvas.width}x${bestCanvas.height}`,
+            verificationFrames: allCaptures.length,
+            descriptorSpread: Number.isFinite(descriptorSpread) ? descriptorSpread : null,
+            burstQualityScore: roundMetric(burstDiagnostics?.bestQualityScore),
+            strictFrames: burstDiagnostics?.strictFrames ?? null,
+            fallbackFrames: burstDiagnostics?.fallbackFrames ?? null,
+            trackWidth: captureContext.trackWidth,
+            trackHeight: captureContext.trackHeight,
+            trackAspectRatio: captureContext.trackAspectRatio,
+            trackFrameRate: captureContext.trackFrameRate,
+            trackFacingMode: captureContext.trackFacingMode,
+            trackResizeMode: captureContext.trackResizeMode,
+            screenOrientation: captureContext.screenOrientation,
+            clientKey: captureContext.kioskId || '',
+          },
+          scanDiagnostics: {
+            deviceClass: captureContext.mobile ? 'mobile' : 'desktop',
+            browser: getBrowserLabel(captureContext.userAgent),
+            bestFaceAreaRatio: roundMetric(burstDiagnostics?.bestFaceAreaRatio),
+            bestCenteredness: roundMetric(burstDiagnostics?.bestCenteredness),
+            bestYaw: roundMetric(burstDiagnostics?.bestYaw),
+            bestPitch: roundMetric(burstDiagnostics?.bestPitch),
+            bestRoll: roundMetric(burstDiagnostics?.bestRoll),
+            targetFrames: burstDiagnostics?.targetFrames ?? null,
+            capturedFrames: burstDiagnostics?.capturedFrames ?? null,
+            strictFrames: burstDiagnostics?.strictFrames ?? null,
+            fallbackFrames: burstDiagnostics?.fallbackFrames ?? null,
+            aggregatedFrames: burstDiagnostics?.aggregatedFrames ?? null,
+            multiFaceFrames: burstDiagnostics?.multiFaceFrames ?? null,
+            descriptorSpread: roundMetric(descriptorSpread),
+          },
+          kioskContext: {
+            kioskId: captureContext.kioskId || '',
+            clientKey: captureContext.kioskId || '',
+            source: 'web-scan',
+          },
+          verificationMode: 'challenge_v2',
+          verificationStage: 'passive',
+          timestamp: timing.timestamp,
+          dateKey: timing.dateKey,
+          dateLabel: timing.dateLabel,
+          date: timing.date,
+          time: timing.time,
+          latitude: coordinates?.latitude ?? null,
+          longitude: coordinates?.longitude ?? null,
+          descriptor,
+        }
+
+        const runActiveChallengeStep = async (challenge) => {
+          if (!challenge) {
+            throw new Error('Active challenge metadata is missing.')
+          }
+
+          setChallengeState({
+            ...challenge,
+            startedAt: Date.now(),
+            sampleCount: 0,
+          })
+          setKioskState('challenge')
+
+          const activeTrace = await captureActiveChallenge(challenge.motionType || '')
+
+          setChallengeState(current => (
+            current
+              ? {
+                  ...current,
+                  completedAt: Date.now(),
+                  sampleCount: Array.isArray(activeTrace?.samples) ? activeTrace.samples.length : 0,
+                }
+              : current
+          ))
+          setKioskState('verifying')
+          return activeTrace
+        }
 
         try {
-          const result = await onLogAttendance({
-            id: `${now}`,
-            name: '',
-            employeeId: '',
-            officeId: '',
-            officeName: '',
-            attendanceMode: '',
-            geofenceStatus: '',
-            confidence: 0,
-            landmarks: landmarks || [],
-            antispoof: antispoof,
-            liveness: liveness,
-            captureContext: {
-              ...captureContext,
-              captureResolution: `${bestCanvas.width}x${bestCanvas.height}`,
-              verificationFrames: allCaptures.length,
-              descriptorSpread: Number.isFinite(descriptorSpread) ? descriptorSpread : null,
-              burstQualityScore: roundMetric(burstDiagnostics?.bestQualityScore),
-              strictFrames: burstDiagnostics?.strictFrames ?? null,
-              fallbackFrames: burstDiagnostics?.fallbackFrames ?? null,
-            },
-            scanDiagnostics: {
-              deviceClass: captureContext.mobile ? 'mobile' : 'desktop',
-              bestFaceAreaRatio: roundMetric(burstDiagnostics?.bestFaceAreaRatio),
-              bestCenteredness: roundMetric(burstDiagnostics?.bestCenteredness),
-              bestYaw: roundMetric(burstDiagnostics?.bestYaw),
-              bestPitch: roundMetric(burstDiagnostics?.bestPitch),
-              bestRoll: roundMetric(burstDiagnostics?.bestRoll),
-              targetFrames: burstDiagnostics?.targetFrames ?? null,
-              capturedFrames: burstDiagnostics?.capturedFrames ?? null,
-              strictFrames: burstDiagnostics?.strictFrames ?? null,
-              fallbackFrames: burstDiagnostics?.fallbackFrames ?? null,
-              aggregatedFrames: burstDiagnostics?.aggregatedFrames ?? null,
-              multiFaceFrames: burstDiagnostics?.multiFaceFrames ?? null,
-              descriptorSpread: roundMetric(descriptorSpread),
-            },
-            kioskContext: {
-              kioskId: captureContext.kioskId || '',
-              source: 'web-kiosk',
-            },
-            verificationMode: 'challenge_v2_preferred',
-            timestamp: timing.timestamp,
-            dateKey: timing.dateKey,
-            dateLabel: timing.dateLabel,
-            date: timing.date,
-            time: timing.time,
-            latitude: coordinates?.latitude ?? null,
-            longitude: coordinates?.longitude ?? null,
-            descriptor,
-          })
+          const challengeResult = await requestAttendanceChallenge(baseAttendanceEntry)
+          if (!challengeResult?.challenge?.token && !challengeResult?.challenge?.challengeId) {
+            throw new Error('Attendance challenge was not issued.')
+          }
+
+          let submissionEntry = {
+            ...baseAttendanceEntry,
+            challenge: challengeResult.challenge,
+            riskFlags: Array.isArray(challengeResult.riskFlags) ? challengeResult.riskFlags : [],
+          }
+
+          if (challengeResult.challenge?.mode === 'active') {
+            submissionEntry = {
+              ...submissionEntry,
+              verificationStage: 'active',
+              activeChallengeTrace: await runActiveChallengeStep(challengeResult.challenge),
+            }
+          }
+
+          let result
+
+          try {
+            result = await onLogAttendance(submissionEntry)
+          } catch (initialError) {
+            if (initialError?.decisionCode !== 'challenge_required' || !initialError?.challenge) {
+              throw initialError
+            }
+
+            submissionEntry = {
+              ...baseAttendanceEntry,
+              challenge: initialError.challenge,
+              riskFlags: Array.isArray(initialError?.riskFlags) ? initialError.riskFlags : submissionEntry.riskFlags,
+              verificationStage: 'active',
+              activeChallengeTrace: await runActiveChallengeStep(initialError.challenge),
+            }
+            result = await onLogAttendance(submissionEntry)
+          }
+
+          setChallengeState(null)
           recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, true)
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, true)
 
@@ -385,6 +476,7 @@ export function useKioskLoop({
             showAlertAndResume('No reliable face match was found. Ensure you are enrolled.', 3000)
           }
         } catch (error) {
+          setChallengeState(null)
           recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, false)
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           const decisionCode = error?.decisionCode || 'blocked_server_error'
@@ -492,7 +584,7 @@ export function useKioskLoop({
       recordScan?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - scanStartedAt)
       busyRef.current = false
     }
-  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork])
+  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, setChallengeState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork])
 
   const startLoop = useCallback((runScanFn) => {
     if (scanRef.current) return

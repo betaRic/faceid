@@ -64,11 +64,12 @@ export async function POST(request, { params }) {
       descriptors: [],
       sampleCount: 0,
       approvalStatus: PERSON_APPROVAL_PENDING,
+      needsReenrollment: true,
       biometricResetAt: FieldValue.serverTimestamp(),
       biometricResetByEmail: resolvedSession.email || '',
     })
 
-    await deletePersonBiometricIndex(db, personId)
+    await deletePersonBiometricIndex(db, personId, { officeIds: [person.officeId] })
     try {
       await syncPersonBiometricsRecord(db, personId, {
         ...person,

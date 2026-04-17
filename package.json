@@ -2,6 +2,7 @@
   "name": "face-id-app",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,6 +11,7 @@
     "test": "node tests/run-tests.mjs",
     "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs",
     "sync:firestore-indexes": "node scripts/sync-firestore-indexes.mjs",
+    "warm:biometric-cache": "node scripts/warm-biometric-cache.mjs",
     "deploy:firestore": "firebase deploy --only firestore",
     "deploy:firestore:indexes": "firebase deploy --only firestore:indexes"
   },

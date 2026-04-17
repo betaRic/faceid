@@ -3,13 +3,16 @@
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PERSON_APPROVAL_PENDING } from '../lib/person-approval'
-import { OVAL_CAPTURE_ASPECT_RATIO } from '../lib/biometrics/oval-capture'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
 import { checkEnrollmentDuplicate } from '../lib/data-store'
 import { useAudioCue } from '../hooks/useAudioCue'
-import { useEnrollmentCapture, CAPTURE_PHASES } from '../hooks/useEnrollmentCapture'
-import FaceSizeGuidance from './biometrics/FaceSizeGuidance'
+import { useEnrollmentCapture } from '../hooks/useEnrollmentCapture'
 import AppShell from './AppShell'
+import CompleteStep from './register/CompleteStep'
+import CaptureStep from './register/CaptureStep'
+import DetailsStep from './register/DetailsStep'
+import ReviewStep from './register/ReviewStep'
+import RegisterStepRail from './register/RegisterStepRail'
 
 const STEPS = [
   { id: 'details', number: '1', title: 'Employee details', description: 'Name, ID, and assigned office.' },
@@ -17,182 +20,6 @@ const STEPS = [
   { id: 'review', number: '3', title: 'Review and submit', description: 'Retake if unclear, then submit.' },
   { id: 'complete', number: '4', title: 'Complete', description: 'Add samples or enroll another.' },
 ]
-
-const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
-
-function PoseArcIndicator({ yaw, poseOk, phaseType, sideAYw }) {
-  if (phaseType === null || phaseType === undefined) return null
-
-  const isCenterPhase = phaseType === 'center'
-
-  let leftFill = 0
-  let rightFill = 0
-
-  if (yaw !== null) {
-    if (isCenterPhase) {
-      const deviation = Math.min(1, Math.abs(yaw) / 0.25) * 0.5
-      leftFill = deviation
-      rightFill = deviation
-    } else {
-      // Raw canvas is non-mirrored; display has scaleX(-1).
-      // Positive yaw = nose moved right in raw = user turned LEFT in mirror.
-      // Fill left arc when yaw > 0 so the glow matches what the user sees.
-      if (yaw > 0) {
-        leftFill = Math.min(1, (yaw - 0.08) / 0.20)
-      } else {
-        rightFill = Math.min(1, (-yaw - 0.08) / 0.20)
-      }
-    }
-  }
-
-  const color = poseOk
-    ? 'bg-emerald-400'
-    : yaw !== null && Math.abs(yaw) > 0.06
-      ? 'bg-amber-400'
-      : 'bg-white/30'
-
-  return (
-    <div className="flex items-center gap-1">
-      <div className="h-1 w-8 overflow-hidden rounded-full bg-white/15">
-        <div
-          className={`h-full rounded-full transition-all duration-150 ${color}`}
-          style={{ width: `${leftFill * 100}%`, marginLeft: 'auto' }}
-        />
-      </div>
-      <div className={`h-2 w-2 rounded-full border transition-all duration-150 ${
-        poseOk ? 'border-emerald-400 bg-emerald-400' : 'border-white/50 bg-transparent'
-      }`} />
-      <div className="h-1 w-8 overflow-hidden rounded-full bg-white/15">
-        <div
-          className={`h-full rounded-full transition-all duration-150 ${color}`}
-          style={{ width: `${rightFill * 100}%` }}
-        />
-      </div>
-    </div>
-  )
-}
-
-function PhaseIndicator({ capturePhase, poseOk, currentYaw, statusMsg, sideAYaw, faceSizeGuidance }) {
-  const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
-
-  return (
-    <div className="w-full max-w-md space-y-2 sm:max-w-lg">
-      <div className="rounded-[1.1rem] border border-white/16 bg-black/72 p-3 backdrop-blur">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/58">Distance</span>
-          <span className={`text-xs font-semibold ${
-            faceSizeGuidance?.isCaptureReady ? 'text-emerald-300' : 'text-amber-300'
-          }`}>
-            {faceSizeGuidance?.label || 'Position face'}
-          </span>
-        </div>
-        <div className="mt-2">
-          <FaceSizeGuidance className="w-full" compact guidance={faceSizeGuidance} theme="dark" />
-        </div>
-        {faceSizeGuidance?.detail ? (
-          <p className="mt-2 text-xs leading-5 text-white/70">
-            {faceSizeGuidance.detail}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="rounded-[1.1rem] border border-white/16 bg-black/78 p-3 backdrop-blur">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/58">Live guidance</div>
-            <div className="mt-1 text-sm font-semibold text-white sm:text-base">
-              {phase ? phase.label : 'Position your face in the oval'}
-            </div>
-            {phase?.subtitle ? (
-              <p className="mt-1 text-xs leading-5 text-white/58">
-                {phase.subtitle}
-              </p>
-            ) : null}
-          </div>
-          {phase ? (
-            <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72">
-              {capturePhase + 1}/{CAPTURE_PHASES.length}
-            </span>
-          ) : null}
-        </div>
-
-        {phase ? (
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5">
-              {CAPTURE_PHASES.map((p, i) => (
-                <div key={p.id} className="flex items-center">
-                  <div
-                    className={`h-2 w-2 rounded-full transition-all ${
-                      i < capturePhase
-                        ? 'bg-emerald-400'
-                        : i === capturePhase
-                          ? poseOk
-                            ? 'bg-emerald-400'
-                            : 'bg-amber-400'
-                          : 'bg-white/24'
-                    }`}
-                  />
-                  {i < CAPTURE_PHASES.length - 1 ? (
-                    <div className={`h-px w-2 ${i < capturePhase ? 'bg-emerald-400' : 'bg-white/24'}`} />
-                  ) : null}
-                </div>
-              ))}
-            </div>
-            <PoseArcIndicator
-              yaw={currentYaw}
-              poseOk={poseOk}
-              phaseType={phase.poseType}
-              sideAYw={sideAYaw}
-            />
-          </div>
-        ) : null}
-
-        <p className={`mt-3 text-sm leading-6 ${
-          poseOk ? 'text-emerald-300' : 'text-white/90'
-        }`}>
-          {statusMsg}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function WizardStep({ active, complete, number, title, description }) {
-  return (
-    <div className={`rounded-[1.1rem] border px-3 py-3 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-navy/30 bg-navy/8' : 'border-black/5 bg-stone-50'}`}>
-      <div className="flex items-center gap-3">
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-navy text-white' : 'bg-white text-muted'}`}>
-          {complete ? '✓' : number}
-        </span>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-ink">{title}</div>
-          <div className="hidden text-xs leading-5 text-muted sm:block">{description}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function InfoCard({ title, text, tone = 'default' }) {
-  const cls = tone === 'warn'
-    ? 'border-amber-200 bg-amber-50 text-amber-900'
-    : 'border-black/5 bg-stone-50 text-muted'
-  return (
-    <section className={`rounded-[1.5rem] border p-4 ${cls}`}>
-      <h3 className="text-sm font-semibold uppercase tracking-[0.14em]">{title}</h3>
-      <p className="mt-2 text-sm leading-7">{text}</p>
-    </section>
-  )
-}
 
 export default function RegisterView({
   camera,
@@ -228,16 +55,16 @@ export default function RegisterView({
     statusMsg,
     currentYaw,
     poseOk,
-    sideAYaw,
     faceSizeGuidance,
     startDetect,
     stopDetect,
     resetCapture,
   } = useEnrollmentCapture(camera)
 
-  const selectedOffice = offices.find(o => o.id === officeId) || null
+  const selectedOffice = offices.find(office => office.id === officeId) || null
   const pendingSampleCount = pendingDescriptors.length
-  const stepIndex = STEPS.findIndex(s => s.id === step)
+  const stepIndex = STEPS.findIndex(item => item.id === step)
+  const currentStep = STEPS[stepIndex] || STEPS[0]
   const detailsReady = Boolean(name.trim() && employeeId.trim() && officeId)
 
   useEffect(() => {
@@ -266,16 +93,31 @@ export default function RegisterView({
     }
   }, [camera, manageOwnCamera, step])
 
-  function showToast(msg, duration = 3500) {
-    setToast(msg)
+  function showToast(message, duration = 3500) {
+    setToast(message)
     window.setTimeout(() => setToast(null), duration)
   }
 
-  function handleEmployeeIdChange(val) {
-    const sanitized = val.replace(/[^A-Za-z0-9-]/g, '')
+  function handleEmployeeIdChange(value) {
+    const sanitized = value.replace(/[^A-Za-z0-9-]/g, '')
     setEmployeeId(sanitized)
-    setEmployeeIdError(val !== sanitized ? 'Only letters, numbers, and dashes (-)' : '')
+    setEmployeeIdError(value !== sanitized ? 'Only letters, numbers, and dashes (-)' : '')
   }
+
+  const clearPendingCapture = useCallback(() => {
+    setPreviewUrl(null)
+    setPendingDescriptors([])
+    setCaptureMetadata(null)
+    setCaptureFeedback(null)
+    setBurstSummary(null)
+    resetCapture()
+    camera.clearOverlay()
+  }, [camera, resetCapture])
+
+  const handleRetake = useCallback(() => {
+    clearPendingCapture()
+    setStep('capture')
+  }, [clearPendingCapture])
 
   const handleCaptureComplete = useCallback(async (result) => {
     setCheckingDuplicate(true)
@@ -302,8 +144,8 @@ export default function RegisterView({
       setBurstSummary(result.burstSummary)
       playAudioCue('notify')
       setStep('review')
-    } catch (err) {
-      showToast(err?.message || 'Failed to verify duplicate enrollment', 5000)
+    } catch (error) {
+      showToast(error?.message || 'Failed to verify duplicate enrollment', 5000)
       setPendingDescriptors([])
       setCaptureMetadata(null)
       setPreviewUrl(null)
@@ -324,21 +166,6 @@ export default function RegisterView({
 
     return stopDetect
   }, [camera.camOn, handleCaptureComplete, modelsReady, startDetect, step, stopDetect, workspaceReady])
-
-  const clearPendingCapture = useCallback(() => {
-    setPreviewUrl(null)
-    setPendingDescriptors([])
-    setCaptureMetadata(null)
-    setCaptureFeedback(null)
-    setBurstSummary(null)
-    resetCapture()
-    camera.clearOverlay()
-  }, [camera, resetCapture])
-
-  const handleRetake = useCallback(() => {
-    clearPendingCapture()
-    setStep('capture')
-  }, [clearPendingCapture])
 
   const handleContinueFromDetails = useCallback(() => {
     if (!name.trim()) {
@@ -364,13 +191,27 @@ export default function RegisterView({
   }, [employeeId, name, officeId, pendingSampleCount, previewUrl])
 
   const handleRegister = useCallback(async () => {
-    if (!name.trim()) { showToast('Enter the employee name'); nameRef.current?.focus(); return }
-    if (!employeeId.trim()) { showToast('Enter the employee ID'); return }
-    if (!officeId) { showToast('Select the assigned office'); return }
-    if (pendingSampleCount === 0) { showToast('Capture a face first'); return }
+    if (!name.trim()) {
+      showToast('Enter the employee name')
+      nameRef.current?.focus()
+      return
+    }
+    if (!employeeId.trim()) {
+      showToast('Enter the employee ID')
+      return
+    }
+    if (!officeId) {
+      showToast('Select the assigned office')
+      return
+    }
+    if (pendingSampleCount === 0) {
+      showToast('Capture a face first')
+      return
+    }
 
     setSavingEnrollment(true)
     let result = null
+
     try {
       const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
       result = await onEnrollPerson(
@@ -384,11 +225,12 @@ export default function RegisterView({
         },
         pendingDescriptors,
       )
-    } catch (err) {
-      showToast(err.message || 'Failed to save enrollment')
+    } catch (error) {
+      showToast(error.message || 'Failed to save enrollment')
       setSavingEnrollment(false)
       return
     }
+
     setSavingEnrollment(false)
 
     const savedCount = Number(result?.savedSampleCount || pendingSampleCount || 1)
@@ -420,159 +262,61 @@ export default function RegisterView({
   return (
     <AppShell
       fitViewport
-      actions={
+      actions={(
         <div className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm">
           Enrollment
         </div>
-      }
-      contentClassName="px-3 py-3 sm:px-5 lg:px-8 min-h-0 flex flex-col"
+      )}
+      contentClassName="min-h-0 flex flex-col px-3 py-3 sm:px-5 lg:px-8"
+      showNavigation={step !== 'capture'}
     >
-      {toast && (
+      {toast ? (
         <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-navy-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
           {toast}
         </div>
-      )}
+      ) : null}
 
-      {(savingEnrollment || checkingDuplicate) && (
+      {savingEnrollment || checkingDuplicate ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/35 px-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-[1.8rem] border border-black/5 bg-white px-6 py-6 text-center shadow-2xl">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-navy/10">
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-navy border-t-transparent" />
             </div>
-            <h2 className="mt-4 text-xl font-bold text-ink">{checkingDuplicate ? 'Checking duplicate face' : 'Saving enrollment'}</h2>
-            <p className="mt-2 text-sm text-muted">{checkingDuplicate ? 'Comparing this capture against enrolled staff…' : 'Submitting to server…'}</p>
+            <h2 className="mt-4 text-xl font-bold text-ink">
+              {checkingDuplicate ? 'Checking duplicate face' : 'Saving enrollment'}
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              {checkingDuplicate ? 'Comparing this capture against enrolled staff…' : 'Submitting to server…'}
+            </p>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {step === 'capture' && (
-        <div className="page-frame h-full min-h-0">
-          <motion.section
-            animate={{ opacity: 1, y: 0 }}
-            initial={{ opacity: 0, y: 18 }}
-            transition={{ duration: 0.35 }}
-            className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow"
-          >
-            <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
-
-            <div className="relative z-[2] flex min-h-0 flex-1 items-center justify-center px-4 pt-6 sm:pb-36">
-              <div className="absolute left-3 top-3 z-[4] flex items-center gap-2">
-                <button
-                  className="rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-black/50"
-                  onClick={() => setStep('details')}
-                  type="button"
-                >
-                  ← Details
-                </button>
-                {onBack ? (
-                  <button
-                    className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm font-semibold text-white/88 backdrop-blur hover:bg-white/12"
-                    onClick={onBack}
-                    type="button"
-                  >
-                    Exit
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="absolute right-3 top-3 z-[4] hidden rounded-full bg-black/35 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/78 backdrop-blur sm:block">
-                {employeeId || 'Pending ID'} · {selectedOffice?.shortName || selectedOffice?.name || 'Office'}
-              </div>
-
-              <div
-                className="relative w-[72vw] sm:w-[54vw]"
-                style={{
-                  aspectRatio: String(OVAL_CAPTURE_ASPECT_RATIO),
-                  maxWidth: `min(430px, calc(min(72vh, 640px) * ${OVAL_CAPTURE_ASPECT_RATIO}))`,
-                }}
-              >
-                <div
-                  className={`absolute inset-0 transition-all duration-200 ${
-                    capturePhase >= 0 && poseOk
-                      ? 'ring-2 ring-emerald-400/80 shadow-[0_0_50px_rgba(16,185,129,0.32)]'
-                      : capturePhase >= 0
-                        ? 'ring-2 ring-blue-400/60 shadow-[0_0_40px_rgba(59,130,246,0.20)]'
-                        : faceFound
-                          ? faceSizeGuidance?.isCaptureReady
-                            ? 'ring-2 ring-emerald-400/70'
-                            : 'ring-2 ring-amber-400/70 shadow-[0_0_30px_rgba(251,191,36,0.24)]'
-                          : 'ring-1 ring-white/18'
-                  }`}
-                  style={OVAL_FRAME_STYLE}
-                />
-                <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_FRAME_STYLE}>
-                  <video ref={camera.setVideoRef} playsInline muted autoPlay className="absolute inset-0 h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-                  <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
-                </div>
-              </div>
-            </div>
-
-            {!camera.camOn && (
-              <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-black/60 text-center text-white">
-                <div className="text-5xl opacity-60">◈</div>
-                <div className="text-sm">{camera.camError || 'Camera offline'}</div>
-              </div>
-            )}
-
-            <div className="relative z-[5] border-t border-white/10 bg-black/88 px-3 pb-3 pt-3 sm:hidden">
-              <div className="mb-3 rounded-[1.1rem] border border-white/12 bg-white/6 px-3.5 py-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">Employee</div>
-                <div className="mt-1 text-sm font-semibold text-white">{name || 'Enter employee details first'}</div>
-                <div className="mt-1 text-xs text-white/62">
-                  {employeeId || 'Pending employee ID'} · {selectedOffice?.name || 'Select assigned office'}
-                </div>
-              </div>
-              <PhaseIndicator
-                capturePhase={capturePhase}
-                poseOk={poseOk}
-                currentYaw={currentYaw}
-                statusMsg={statusMsg}
-                sideAYaw={sideAYaw}
-                faceSizeGuidance={faceSizeGuidance}
-              />
-            </div>
-
-            <div className="absolute inset-x-0 bottom-0 z-[5] hidden justify-center px-3 pb-3 sm:flex sm:px-4 sm:pb-4">
-              <PhaseIndicator
-                capturePhase={capturePhase}
-                poseOk={poseOk}
-                currentYaw={currentYaw}
-                statusMsg={statusMsg}
-                sideAYaw={sideAYaw}
-                faceSizeGuidance={faceSizeGuidance}
-              />
-            </div>
-
-            {errorMessage && (
-              <div className="absolute inset-x-3 bottom-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
-                {errorMessage}
-              </div>
-            )}
-          </motion.section>
-        </div>
-      )}
-
-      {step !== 'capture' && (
-        <div className="page-frame h-full min-h-0 flex-col gap-3 overflow-hidden">
+      {step === 'capture' ? (
+        <CaptureStep
+          camera={camera}
+          capturePhase={capturePhase}
+          currentYaw={currentYaw}
+          employeeId={employeeId}
+          errorMessage={errorMessage}
+          faceFound={faceFound}
+          faceSizeGuidance={faceSizeGuidance}
+          name={name}
+          onBack={() => setStep('details')}
+          onExit={onBack}
+          poseOk={poseOk}
+          selectedOffice={selectedOffice}
+          statusMsg={statusMsg}
+        />
+      ) : (
+        <div className="page-frame flex h-full min-h-0 flex-col gap-3 overflow-hidden">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.35 }}
             className="shrink-0 rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow"
           >
-            <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-              {STEPS.map((item, idx) => (
-                <WizardStep
-                  key={item.id}
-                  active={item.id === step}
-                  complete={idx < stepIndex}
-                  description={item.description}
-                  number={item.number}
-                  title={item.title}
-                />
-              ))}
-            </div>
+            <RegisterStepRail activeStep={step} stepIndex={stepIndex} steps={STEPS} />
           </motion.div>
 
           <motion.div
@@ -584,9 +328,9 @@ export default function RegisterView({
             <div className="flex shrink-0 flex-col gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Enrollment</span>
-                <h2 className="mt-0.5 font-display text-xl text-ink sm:text-2xl">{STEPS[stepIndex]?.title}</h2>
+                <h2 className="mt-0.5 font-display text-xl text-ink sm:text-2xl">{currentStep.title}</h2>
               </div>
-              {burstSummary && (
+              {burstSummary ? (
                 <div className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
                   burstSummary.genuinelyDiverse
                     ? 'bg-emerald-100 text-emerald-800'
@@ -595,177 +339,50 @@ export default function RegisterView({
                   {burstSummary.keptCount} samples
                   {burstSummary.genuinelyDiverse ? ' · Diverse angles ✓' : ' · Single angle — retake recommended'}
                 </div>
-              )}
+              ) : null}
             </div>
 
-            {step === 'review' && (
-              <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_300px]">
-                <div className="flex min-h-[16rem] items-center justify-center overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-950">
-                  {previewUrl
-                    ? <img alt="Captured" className="max-h-[min(52vh,30rem)] w-full object-contain" src={previewUrl} />
-                    : <div className="text-sm text-stone-300">No preview yet.</div>
-                  }
-                </div>
-                <div className="grid content-start gap-3">
-                  <button
-                    className="btn btn-primary w-full"
-                    disabled={savingEnrollment || !detailsReady || !pendingSampleCount}
-                    onClick={handleRegister}
-                    type="button"
-                  >
-                    {savingEnrollment ? 'Submitting…' : 'Submit enrollment'}
-                  </button>
-                  <button className="btn btn-ghost w-full" onClick={handleRetake} type="button">
-                    Retake capture
-                  </button>
-                  <button className="btn btn-ghost w-full" onClick={() => setStep('details')} type="button">
-                    Edit employee details
-                  </button>
+            {step === 'details' ? (
+              <DetailsStep
+                detailsReady={detailsReady}
+                employeeId={employeeId}
+                employeeIdError={employeeIdError}
+                name={name}
+                nameRef={nameRef}
+                officeId={officeId}
+                offices={offices}
+                onBack={onBack}
+                onContinue={handleContinueFromDetails}
+                onEmployeeIdChange={handleEmployeeIdChange}
+                onNameChange={setName}
+                onOfficeChange={setOfficeId}
+                onRetake={handleRetake}
+                pendingSampleCount={pendingSampleCount}
+                previewUrl={previewUrl}
+              />
+            ) : null}
 
-                  {burstSummary && !burstSummary.genuinelyDiverse && (
-                    <InfoCard
-                      title="Single angle detected"
-                      text="The system captured similar poses across the guided phases. For better accuracy, retake and follow the front, side, and chin-down prompts."
-                      tone="warn"
-                    />
-                  )}
+            {step === 'review' ? (
+              <ReviewStep
+                burstSummary={burstSummary}
+                captureFeedback={captureFeedback}
+                detailsReady={detailsReady}
+                onEditDetails={() => setStep('details')}
+                onRetake={handleRetake}
+                onSubmit={handleRegister}
+                pendingSampleCount={pendingSampleCount}
+                previewUrl={previewUrl}
+                savingEnrollment={savingEnrollment}
+              />
+            ) : null}
 
-                  {burstSummary && burstSummary.genuinelyDiverse && (
-                    <InfoCard
-                      title={`${burstSummary.keptCount} diverse samples captured`}
-                      text={`${burstSummary.detectedCount} frames processed across ${burstSummary.phasesCompleted} guided poses. Diverse poses improve cross-device recognition accuracy.`}
-                      tone="default"
-                    />
-                  )}
-
-                  {captureFeedback && captureFeedback.tone === 'warn' && (
-                    <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone="warn" />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {step === 'details' && (
-              <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="grid content-start gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
-                  <div className="rounded-[1.25rem] border border-navy/10 bg-navy/5 px-4 py-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy/70">Before face capture</div>
-                    <p className="mt-2 text-sm leading-7 text-muted">
-                      Enter the employee details first. The system should not start biometric work before the basic identity fields are complete.
-                    </p>
-                  </div>
-
-                  <Field label="Full name">
-                    <input
-                      ref={nameRef}
-                      className="input uppercase"
-                      onChange={e => setName(e.target.value.toUpperCase())}
-                      onKeyDown={e => e.key === 'Enter' && handleContinueFromDetails()}
-                      placeholder="Enter full name"
-                      type="text"
-                      value={name}
-                    />
-                  </Field>
-                  <Field label="Employee ID">
-                    <input
-                      className={`input ${employeeIdError ? 'border-amber-400' : ''}`}
-                      onChange={e => handleEmployeeIdChange(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleContinueFromDetails()}
-                      placeholder="Enter employee ID"
-                      type="text"
-                      value={employeeId}
-                    />
-                    {employeeIdError && <p className="text-xs text-amber-600">{employeeIdError}</p>}
-                  </Field>
-                  <Field label="Assigned office">
-                    <select className="input" onChange={e => setOfficeId(e.target.value)} value={officeId}>
-                      {offices.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-                    </select>
-                  </Field>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {onBack ? (
-                      <button className="btn btn-ghost w-full" onClick={onBack} type="button">
-                        Back to kiosk
-                      </button>
-                    ) : <div className="hidden sm:block" />}
-                    <button
-                      className="btn btn-primary w-full"
-                      disabled={!detailsReady}
-                      onClick={handleContinueFromDetails}
-                      type="button"
-                    >
-                      {pendingSampleCount > 0 ? 'Review saved capture' : 'Continue to face capture'}
-                    </button>
-                  </div>
-
-                  {pendingSampleCount > 0 ? (
-                    <button className="btn btn-ghost w-full" onClick={handleRetake} type="button">
-                      Retake face capture
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="grid content-start gap-3">
-                  <InfoCard
-                    title="Approval workflow"
-                    text="Public registration is open, but the submitted employee record and biometric samples stay pending and non-matchable until an admin explicitly approves them."
-                    tone="warn"
-                  />
-                  <InfoCard
-                    title="Office matters"
-                    text="Choose the real assigned office before capture. Public resubmissions are not allowed to silently move an existing employee record to a different office."
-                  />
-                  {previewUrl ? (
-                    <div className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-950">
-                      <img alt="Preview" className="max-h-[18rem] w-full object-contain" src={previewUrl} />
-                    </div>
-                  ) : (
-                    <InfoCard
-                      title="Capture standard"
-                      text="The guided capture uses the same oval crop, face-size band, and model runtime used in kiosk verification and admin re-enrollment."
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {step === 'complete' && (
-              <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_280px]">
-                <div className="overflow-auto rounded-[1.5rem] border border-emerald-200 bg-emerald-50 p-5">
-                  <span className={`inline-flex rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] ${
-                    lastSavedSummary?.approvalStatus === PERSON_APPROVAL_PENDING
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}>
-                    {lastSavedSummary?.approvalStatus === PERSON_APPROVAL_PENDING ? 'Pending approval' : 'Saved'}
-                  </span>
-                  <h3 className="mt-4 font-display text-3xl text-ink">{lastSavedSummary?.name}</h3>
-                  <div className="mt-3 space-y-2 text-sm text-muted">
-                    <p><strong className="text-ink">Employee ID:</strong> {lastSavedSummary?.employeeId}</p>
-                    <p><strong className="text-ink">Office:</strong> {lastSavedSummary?.officeName}</p>
-                    <p><strong className="text-ink">Samples saved:</strong> {lastSavedSummary?.savedSampleCount} (guided multi-angle)</p>
-                    <p><strong className="text-ink">Total on record:</strong> {lastSavedSummary?.sampleCount}</p>
-                    {lastSavedSummary?.remaining > 0 && (
-                      <p><strong className="text-ink">Recommended additional:</strong> {lastSavedSummary?.remaining}</p>
-                    )}
-                  </div>
-                  {lastSavedSummary?.approvalStatus === PERSON_APPROVAL_PENDING ? (
-                    <div className="mt-4 rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
-                      Registration is open to the public, but kiosk access is not. This employee record and its biometric samples stay inactive until an admin approves the submission.
-                    </div>
-                  ) : null}
-                </div>
-                <div className="grid content-start gap-3">
-                  <button className="btn btn-primary w-full" onClick={handleRetake} type="button">
-                    Add another sample
-                  </button>
-                  <button className="btn btn-ghost w-full" onClick={handleNewPerson} type="button">
-                    Enroll new employee
-                  </button>
-                </div>
-              </div>
-            )}
+            {step === 'complete' ? (
+              <CompleteStep
+                lastSavedSummary={lastSavedSummary}
+                onAddAnotherSample={handleRetake}
+                onEnrollNewPerson={handleNewPerson}
+              />
+            ) : null}
           </motion.div>
         </div>
       )}

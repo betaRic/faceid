@@ -8,11 +8,13 @@ export default function AdminShell({
   roleScope = 'regional',
   actions = null,
 }) {
+  const activeItem = navItems.find(item => item.id === activePanel) || navItems[0] || null
+
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-[linear-gradient(180deg,#f6f8fc_0%,#edf2f8_100%)] text-ink">
-      <header className="sticky top-0 z-40 border-b border-black/5 bg-white/92 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
-          <div className="min-w-0">
+      <header className="sticky top-0 z-40 border-b border-black/5 bg-white">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+          <div className="min-w-0 flex-1">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-navy-dark">
               Admin workspace
             </div>
@@ -20,9 +22,34 @@ export default function AdminShell({
               {roleScope === 'regional' ? 'Regional control' : 'Office control'}
             </div>
           </div>
+          {activeItem ? (
+            <div className="xl:hidden">
+              <div className="rounded-full bg-stone-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+                {activeItem.label}
+              </div>
+            </div>
+          ) : null}
           <div className="ml-auto flex items-center gap-2">
             {actions}
           </div>
+          {navItems.length > 0 ? (
+            <div className="w-full xl:hidden">
+              <label className="grid gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Section</span>
+                <select
+                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm font-medium text-ink outline-none transition focus:border-navy"
+                  onChange={event => onPanelChange?.(event.target.value)}
+                  value={activeItem?.id || ''}
+                >
+                  {navItems.map(item => (
+                    <option key={`mobile-select-${item.id}`} disabled={item.disabled} value={item.id}>
+                      {item.badge ? `${item.label} (${item.badge > 99 ? '99+' : item.badge})` : item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -73,32 +100,6 @@ export default function AdminShell({
           </div>
         </main>
       </div>
-
-      <nav className="border-t border-black/5 bg-white/96 px-3 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur xl:hidden">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {navItems.map(item => {
-            const active = activePanel === item.id
-            return (
-              <button
-                key={`mobile-${item.id}`}
-                className={`shrink-0 rounded-xl px-3 py-2.5 text-[11px] font-semibold transition ${
-                  active
-                    ? 'bg-navy text-white'
-                    : item.disabled
-                      ? 'cursor-not-allowed opacity-40'
-                      : 'bg-stone-100 text-ink'
-                }`}
-                disabled={item.disabled}
-                onClick={() => onPanelChange?.(item.id)}
-                type="button"
-              >
-                {item.label}
-                {item.badge ? ` (${item.badge > 99 ? '99+' : item.badge})` : ''}
-              </button>
-            )
-          })}
-        </div>
-      </nav>
     </div>
   )
 }

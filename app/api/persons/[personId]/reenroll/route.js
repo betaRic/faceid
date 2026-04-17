@@ -186,7 +186,7 @@ export async function POST(request, { params }) {
     await personRef.update(updatePayload)
 
     // Rebuild biometric index (clear old entries, write new ones)
-    await deletePersonBiometricIndex(db, personId)
+    await deletePersonBiometricIndex(db, personId, { officeIds: [person.officeId] })
     await syncPersonBiometricIndex(db, personId, updatedPerson)
     try {
       await syncPersonBiometricsRecord(db, personId, updatedPerson)

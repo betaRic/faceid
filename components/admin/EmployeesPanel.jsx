@@ -62,7 +62,7 @@ function EmployeesPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full flex-col gap-5 rounded-[2rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+      className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >

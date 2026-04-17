@@ -1,7 +1,6 @@
 'use client'
 
 import { memo, useCallback, useState } from 'react'
-import { motion } from 'framer-motion'
 import { useThresholds } from '@/lib/admin/hooks/useThresholds'
 
 function SliderField({ fieldKey, meta, value, onChange }) {
@@ -76,12 +75,7 @@ function SectionCard({ sectionKey, section, onFieldChange, onSave, onReset, savi
   }
 
   return (
-    <motion.div
-      animate={{ opacity: 1, y: 0 }}
-      initial={{ opacity: 0, y: 12 }}
-      transition={{ duration: 0.3 }}
-      className="rounded-2xl border border-black/5 bg-white/90 p-5 shadow-sm backdrop-blur"
-    >
+    <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="font-display text-base font-bold text-ink">{section.label}</h3>
@@ -128,7 +122,7 @@ function SectionCard({ sectionKey, section, onFieldChange, onSave, onReset, savi
           </button>
         </div>
       )}
-    </motion.div>
+    </div>
   )
 }
 
@@ -160,13 +154,14 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
     ? 'Minimal blocking — strong matches never blocked'
     : 'Aggressive blocking — similar faces may be rejected'
 
+  const handleSave = async () => {
+    const values = Object.fromEntries(pending)
+    await onSave(values)
+    setDraft(Object.fromEntries(Object.entries(section.fields).map(([k, f]) => [k, f.current])))
+  }
+
   return (
-    <motion.div
-      animate={{ opacity: 1, y: 0 }}
-      initial={{ opacity: 0, y: 12 }}
-      transition={{ duration: 0.3 }}
-      className="rounded-2xl border border-black/5 bg-white/90 p-5 shadow-sm backdrop-blur"
-    >
+    <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="font-display text-base font-bold text-ink">{section.label}</h3>
@@ -199,7 +194,7 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
         ))}
       </div>
 
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
         {hasChanges && (
           <button
             onClick={() => {
@@ -212,8 +207,17 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
             Reset
           </button>
         )}
+        {hasChanges && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-full bg-navy px-5 py-2 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? 'Saving...' : 'Save changes'}
+          </button>
+        )}
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -258,51 +262,55 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
   const hasAnyPending = Object.keys(pending).length > 0
 
   return (
-    <div className="flex flex-col gap-5 overflow-y-auto">
-      <div className="flex items-center justify-between shrink-0">
+    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white p-4 shadow-sm sm:p-6">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="font-display text-2xl font-bold text-ink">System Settings</h2>
-          <p className="mt-0.5 text-sm text-muted">Tune biometric matching, kiosk behavior, and enrollment without redeploying.</p>
+          <p className="mt-0.5 text-sm text-muted">Tune biometric matching, scan behavior, and enrollment without redeploying.</p>
         </div>
-        {hasAnyPending && (
+        {hasAnyPending ? (
           <div className="flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
             Unsaved changes pending
           </div>
-        )}
+        ) : null}
       </div>
 
-      {sections.biometric && (
-        <BiometricSection
-          section={sections.biometric}
-          onFieldChange={handleFieldChange}
-          onSave={handleSave}
-          onReset={handleReset}
-          saving={saving}
-        />
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="grid gap-5">
+          {sections.biometric && (
+            <BiometricSection
+              section={sections.biometric}
+              onFieldChange={handleFieldChange}
+              onSave={handleSave}
+              onReset={handleReset}
+              saving={saving}
+            />
+          )}
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        {sections.kiosk && (
-          <SectionCard
-            sectionKey="kiosk"
-            section={sections.kiosk}
-            onFieldChange={handleFieldChange}
-            onSave={handleSave}
-            onReset={handleReset}
-            saving={saving}
-          />
-        )}
-        {sections.enrollment && (
-          <SectionCard
-            sectionKey="enrollment"
-            section={sections.enrollment}
-            onFieldChange={handleFieldChange}
-            onSave={handleSave}
-            onReset={handleReset}
-            saving={saving}
-          />
-        )}
+          <div className="grid gap-5 lg:grid-cols-2">
+            {sections.kiosk && (
+              <SectionCard
+                sectionKey="kiosk"
+                section={sections.kiosk}
+                onFieldChange={handleFieldChange}
+                onSave={handleSave}
+                onReset={handleReset}
+                saving={saving}
+              />
+            )}
+            {sections.enrollment && (
+              <SectionCard
+                sectionKey="enrollment"
+                section={sections.enrollment}
+                onFieldChange={handleFieldChange}
+                onSave={handleSave}
+                onReset={handleReset}
+                saving={saving}
+              />
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   )
 })

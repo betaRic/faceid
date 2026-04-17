@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo } from 'react'
-import { startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AdminShell from './admin/AdminShell'
 import { useAdminStore } from '@/lib/admin/store'
@@ -31,6 +30,9 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
   const isHr = !permissions.includes('dashboard') && !permissions.includes('office')
 
+  // Live pending approval count — polled every 60s
+  const { pendingCount } = usePendingApprovals(60_000)
+
   const navItems = useMemo(() => {
     const allItems = [
       { id: 'dashboard', label: 'Dashboard' },
@@ -51,9 +53,6 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
   // Boot office subscription here so it isn't gated behind officesLoaded
   useOffices()
-
-  // Live pending approval count — polled every 60s
-  const { pendingCount } = usePendingApprovals(60_000)
 
   useEffect(() => {
     setRoleScope(initialRoleScope)
@@ -98,10 +97,10 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
         </div>
       }
       navItems={navItems}
-      onPanelChange={(panel) => startTransition(() => setActivePanel(panel))}
+      onPanelChange={setActivePanel}
       roleScope={roleScope}
     >
-      <div className="min-h-full p-4 sm:p-5">
+      <div className="flex h-full min-h-0 flex-col p-3 sm:p-5">
         {isHr ? (
           <>
             {activePanel === 'employees' && <HrEmployeesPanel />}

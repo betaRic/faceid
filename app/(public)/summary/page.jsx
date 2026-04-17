@@ -68,7 +68,7 @@ function SummaryContent() {
           const accessDenied = monthlyRes.status === 401 || monthlyRes.status === 403 || dailyRes.status === 401 || dailyRes.status === 403
           if (accessDenied) {
             clearAttendanceMatch()
-            setError('Attendance view expired. Scan again at the kiosk.')
+            setError('Attendance view expired. Scan again on the scan page.')
           } else {
             setError(monthlyJson.message || dailyJson.message || 'Failed to load attendance')
           }
@@ -119,7 +119,7 @@ function SummaryContent() {
         </div>
       ) : !employeeId ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-700">
-          Please log in through the Kiosk first to view your attendance.
+          Complete a scan attendance session first to view your attendance.
         </div>
       ) : error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-red-700">

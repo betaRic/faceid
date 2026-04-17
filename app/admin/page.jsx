@@ -1,4 +1,4 @@
-import DynamicAdminDashboard from '@/components/DynamicAdminDashboard'
+import AdminDashboard from '@/components/AdminDashboard'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
@@ -14,7 +14,7 @@ export default async function AdminPage() {
   if (adminSession) {
     const resolvedSession = await resolveAdminSession(db, adminSession)
     if (resolvedSession) {
-      return <DynamicAdminDashboard 
+      return <AdminDashboard
         initialOfficeId={resolvedSession.officeId} 
         initialRoleScope={resolvedSession.scope}
         permissions={resolvedSession.permissions || ['dashboard', 'office', 'employees', 'summary', 'settings', 'roles']}
@@ -27,7 +27,7 @@ export default async function AdminPage() {
   if (hrSession) {
     const resolvedSession = await resolveHrSession(db, hrSession)
     if (resolvedSession) {
-      return <DynamicAdminDashboard
+      return <AdminDashboard
         initialOfficeId={resolvedSession.officeId}
         initialRoleScope={resolvedSession.scope}
         permissions={resolvedSession.permissions || ['employees', 'summary']}
