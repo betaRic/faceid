@@ -98,7 +98,7 @@ export default function OfficePanel() {
   }
 
   return (
-    <section className="grid h-full min-h-0 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
+    <section className={`grid h-full min-h-0 gap-5 ${draftOffice ? 'xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]' : ''}`}>
       <div className="xl:hidden">
         <div className="inline-flex rounded-full border border-black/5 bg-white p-1 shadow-sm">
           <button
@@ -320,6 +320,7 @@ export default function OfficePanel() {
       </section>
 
       {/* Office editor */}
+      {draftOffice ? (
       <section className={`${mobileView === 'list' ? 'hidden xl:block' : 'block'} min-h-0 rounded-[2rem] border border-black/5 bg-white p-5 shadow-sm sm:p-6 xl:overflow-auto`}>
         <div className="mb-4 flex items-center justify-between gap-3 xl:hidden">
           <div>
@@ -374,35 +375,9 @@ export default function OfficePanel() {
             savePending={savePending}
             saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}
           />
-        ) : (
-          <div className="flex h-full min-h-[280px] items-center justify-center rounded-[1.5rem] border border-dashed border-black/10 bg-stone-50 px-6 text-center">
-            <div className="max-w-md">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-navy-dark">Selected office</div>
-              <h3 className="mt-3 font-display text-2xl text-ink">{selectedOffice?.name}</h3>
-              <p className="mt-3 text-sm leading-7 text-muted">
-                The table already shows the office details. Use this panel only when you want to edit or create an office.
-              </p>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                <button
-                  className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-100"
-                  onClick={() => handleEditOffice(selectedOffice.id)}
-                  type="button"
-                >
-                  Edit office
-                </button>
-                <button
-                  className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-rose-200 bg-white px-5 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
-                  disabled={deletePending}
-                  onClick={() => handleDelete(selectedOffice)}
-                  type="button"
-                >
-                  Delete office
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        ) : null}
       </section>
+      ) : null}
     </section>
   )
 }
