@@ -160,11 +160,6 @@ export function BiometricBenchmarkPanel() {
         </div>
       </div>
 
-      <div className="mt-4 rounded-[1.2rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-        <div className="font-semibold">Current truth</div>
-        <div className="mt-1">{report.reality?.note}</div>
-      </div>
-
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Success rate" value={formatPercent(deployment.successRate)} detail="Accepted scans across the full report window" />
         <MetricTile label="No-match rate" value={formatPercent(deployment.noMatchRate)} detail="Hard false-reject proxy" />
@@ -179,7 +174,7 @@ export function BiometricBenchmarkPanel() {
         <MetricTile label="Desktop no-match" value={formatPercent(desktop.noReliableMatchRate)} detail={`${desktop.total || 0} desktop events`} />
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-[1.2rem] border border-black/5 bg-white p-4">
           <div className="text-xs font-semibold uppercase tracking-widest text-muted">Gate checks</div>
           <div className="mt-3 grid gap-2">
@@ -202,25 +197,13 @@ export function BiometricBenchmarkPanel() {
           </div>
         </div>
 
-        <div className="grid gap-4">
-          <div className="rounded-[1.2rem] border border-black/5 bg-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-widest text-muted">Device breakdown</div>
-            <div className="mt-3 grid gap-3">
-              <MetricTile label="Mobile accepted" value={formatPercent(mobile.acceptedRate)} detail={`median face ratio ${formatMetric(mobile.medianFaceAreaRatio)}`} />
-              <MetricTile label="Desktop accepted" value={formatPercent(desktop.acceptedRate)} detail={`median face ratio ${formatMetric(desktop.medianFaceAreaRatio)}`} />
-            </div>
-          </div>
-
-          <div className="rounded-[1.2rem] border border-black/5 bg-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-widest text-muted">Top decision codes</div>
-            <div className="mt-3 grid gap-2">
-              {report.decisions?.slice(0, 5).map(item => (
-                <div key={item.decisionCode} className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2 text-sm">
-                  <span className="truncate text-ink">{item.decisionCode}</span>
-                  <span className="shrink-0 font-semibold text-muted">{formatPercent(item.rate)}</span>
-                </div>
-              ))}
-            </div>
+        <div className="rounded-[1.2rem] border border-black/5 bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-widest text-muted">Device breakdown</div>
+          <div className="mt-3 grid gap-3">
+            <MetricTile label="Mobile accepted" value={formatPercent(mobile.acceptedRate)} detail={`median face ratio ${formatMetric(mobile.medianFaceAreaRatio)}`} />
+            <MetricTile label="Desktop accepted" value={formatPercent(desktop.acceptedRate)} detail={`median face ratio ${formatMetric(desktop.medianFaceAreaRatio)}`} />
+            <MetricTile label="Mobile burst quality" value={formatMetric(mobile.medianBurstQualityScore, 2)} detail={`${mobile.total || 0} mobile events`} />
+            <MetricTile label="Desktop burst quality" value={formatMetric(desktop.medianBurstQualityScore, 2)} detail={`${desktop.total || 0} desktop events`} />
           </div>
         </div>
       </div>

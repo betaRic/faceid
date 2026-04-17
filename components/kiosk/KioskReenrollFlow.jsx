@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useEnrollmentCapture, CAPTURE_PHASES } from '@/hooks/useEnrollmentCapture'
+import GuidedCapturePanel from '@/components/biometrics/GuidedCapturePanel'
 import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
 
 const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
@@ -41,18 +42,11 @@ function PromptScreen({ name, onAccept, onSkip }) {
   )
 }
 
-function CaptureScreen({ camera, capturePhase, poseOk, statusMsg }) {
+function CaptureScreen({ camera, capturePhase, poseOk, statusMsg, faceSizeGuidance }) {
   const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 bg-black px-4">
-      <div className="text-center">
-        <h2 className="font-display text-lg font-bold text-white">Re-enrolling Face</h2>
-        <p className="mt-1 text-sm text-white/70">
-          {phase ? `Phase ${capturePhase + 1}/${CAPTURE_PHASES.length} — ${phase.label}` : 'Preparing...'}
-        </p>
-      </div>
-
+    <div className="relative flex h-full flex-col items-center justify-center gap-4 bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.14),transparent_38%),linear-gradient(180deg,rgba(2,8,7,0.95),rgba(5,8,8,0.98))] px-4">
       <div
         className="relative w-full max-w-[280px]"
         style={{ aspectRatio: '0.68' }}
@@ -78,26 +72,15 @@ function CaptureScreen({ camera, capturePhase, poseOk, statusMsg }) {
         </div>
       </div>
 
-      {phase && (
-        <div className="flex items-center gap-3 rounded-full border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
-          <div className="flex items-center gap-1.5">
-            {CAPTURE_PHASES.map((p, i) => (
-              <div
-                key={p.id}
-                className={`h-2 w-2 rounded-full transition-all ${
-                  i < capturePhase ? 'bg-emerald-400'
-                    : i === capturePhase ? (poseOk ? 'bg-emerald-400' : 'bg-amber-400')
-                    : 'bg-white/30'
-                }`}
-              />
-            ))}
-          </div>
-          <div className="h-3 w-px bg-white/20" />
-          <span className={`text-xs font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'}`}>
-            {statusMsg}
-          </span>
-        </div>
-      )}
+      <GuidedCapturePanel
+        className="w-full max-w-sm"
+        faceSizeGuidance={faceSizeGuidance}
+        phase={phase}
+        phaseCount={CAPTURE_PHASES.length}
+        phaseIndex={capturePhase}
+        poseOk={poseOk}
+        statusMsg={statusMsg}
+      />
     </div>
   )
 }
@@ -152,6 +135,7 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
     capturePhase,
     poseOk,
     statusMsg,
+    faceSizeGuidance,
     startDetect,
     stopDetect,
     resetCapture,
@@ -225,6 +209,7 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
       <CaptureScreen
         camera={camera}
         capturePhase={capturePhase}
+        faceSizeGuidance={faceSizeGuidance}
         poseOk={poseOk}
         statusMsg={statusMsg}
       />

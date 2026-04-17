@@ -17,9 +17,7 @@ export default function KioskScanningOverlay({
   locationState,
   faceDistanceInfo,
 }) {
-  const locationBadgeLabel = locationState?.ready
-    ? 'Location ready'
-    : 'Location required'
+  const locationBadgeLabel = locationState?.ready ? 'Location ready' : 'Location required'
 
   const isChallenge = kioskState === 'challenge'
   const isScanning = kioskState === 'scanning'
@@ -56,8 +54,10 @@ export default function KioskScanningOverlay({
 
   return (
     <>
+      <div className="absolute inset-0 z-[0] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.12),transparent_40%),linear-gradient(180deg,rgba(2,8,7,0.96),rgba(5,8,8,0.99))]" />
+
       {/* Oval camera view */}
-      <div className="absolute inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 z-[1] flex items-center justify-center">
         <div
           className="relative"
           style={{
@@ -99,28 +99,28 @@ export default function KioskScanningOverlay({
       {(isBlocked || isUnknown) && <div className="absolute inset-0 z-[3] bg-red-500/10" />}
 
       {/* Clock — top right */}
-      <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-right shadow-lg backdrop-blur sm:right-5 sm:top-5 sm:px-5 sm:py-3">
+      <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/12 bg-slate-950/62 px-3.5 py-2 text-right shadow-lg backdrop-blur-xl sm:right-5 sm:top-5 sm:px-5 sm:py-3">
         <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
         <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs">{dateStr}</div>
       </div>
 
       {/* Location status — top left */}
-      <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/16 bg-slate-950/72 px-3.5 py-2 text-left shadow-lg backdrop-blur sm:left-5 sm:top-5 sm:px-5 sm:py-3">
-        <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/92 sm:text-xs">{locationBadgeLabel}</div>
-        <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationState?.status || 'Checking location'}</div>
+      <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/12 bg-slate-950/62 px-3.5 py-2 text-left shadow-lg backdrop-blur-xl sm:left-5 sm:top-5 sm:px-5 sm:py-3">
+        <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/88 sm:text-xs">Location</div>
+        <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationBadgeLabel}</div>
       </div>
 
       {/* Status pill — hidden when blocked/unknown (alert takes over) */}
       {!isBlocked && !isUnknown && (
-        <div className="absolute inset-x-0 bottom-16 z-[4] flex justify-center pointer-events-none sm:bottom-20">
-          <div className={`rounded-full px-5 py-2 text-sm font-semibold backdrop-blur shadow-lg ${
+        <div className="absolute inset-x-0 bottom-16 z-[4] flex justify-center px-4 pointer-events-none sm:bottom-20">
+          <div className={`rounded-full px-5 py-2 text-sm font-semibold backdrop-blur-xl shadow-lg ${
             isVerifying
               ? 'bg-blue-500/80 text-white'
               : isChallenge
                 ? 'bg-amber-500/85 text-slate-950'
               : isConfirmed
                 ? 'bg-emerald-500/80 text-white'
-                : 'bg-black/50 text-white/80'
+                : 'bg-black/45 text-white/82'
           }`}>
             {statusMessage}
           </div>
@@ -130,7 +130,7 @@ export default function KioskScanningOverlay({
       {/* Distance indicator bar — hidden during verification, confirmed, blocked, or unknown */}
       {faceDistanceInfo && !isVerifying && !isConfirmed && !isBlocked && !isUnknown && (
         <div className="absolute inset-x-0 bottom-28 z-[4] flex justify-center px-4 pointer-events-none sm:bottom-32">
-          <FaceSizeGuidance className="w-full max-w-xs" compact guidance={faceDistanceInfo} theme="dark" />
+          <FaceSizeGuidance className="w-full max-w-[18rem]" compact guidance={faceDistanceInfo} theme="dark" />
         </div>
       )}
 

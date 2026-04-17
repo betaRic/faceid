@@ -377,7 +377,8 @@ await run('capture quality summary flags dim low-contrast frames', () => {
 await run('shared face-size guidance now prefers a closer capture band', () => {
   assert.equal(getFaceSizeGuidance(0.12).status, 'move-closer')
   assert.equal(getFaceSizeGuidance(0.24).status, 'ready')
-  assert.equal(getFaceSizeGuidance(0.64).status, 'slightly-close')
+  assert.equal(getFaceSizeGuidance(0.64).status, 'ready')
+  assert.equal(getFaceSizeGuidance(0.8).status, 'slightly-close')
 })
 
 await run('oval capture region center-crops wide frames to portrait view', () => {

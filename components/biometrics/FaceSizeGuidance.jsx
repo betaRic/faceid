@@ -50,15 +50,15 @@ export default function FaceSizeGuidance({
 
   const shellClass = theme === 'light'
     ? 'border-black/8 bg-white/92 text-ink shadow-sm'
-    : 'border-white/20 bg-black/60 text-white backdrop-blur'
+    : 'border-white/12 bg-black/48 text-white shadow-[0_12px_30px_rgba(0,0,0,0.26)] backdrop-blur-xl'
 
   const labelClass = theme === 'light'
     ? 'text-[10px] uppercase tracking-[0.16em] text-muted'
-    : 'text-[10px] uppercase tracking-[0.16em] text-white/55'
+    : 'text-[10px] uppercase tracking-[0.16em] text-white/44'
 
   const endpointClass = theme === 'light'
     ? 'text-[10px] font-medium text-muted'
-    : 'text-[10px] font-medium text-white/50'
+    : 'text-[10px] font-medium text-white/42'
 
   const detailClass = theme === 'light'
     ? 'text-xs text-muted'
@@ -71,28 +71,30 @@ export default function FaceSizeGuidance({
 
   return (
     <div className={className}>
-      <div className={`rounded-[1.05rem] border px-3.5 py-2.5 ${shellClass}`}>
-        <div className={`flex ${compact ? 'items-center gap-3' : 'flex-col gap-2 sm:flex-row sm:items-center sm:gap-3'}`}>
+      <div className={`rounded-[1.05rem] border ${compact ? 'px-3 py-2.5' : 'px-3.5 py-3'} ${shellClass}`}>
+        <div className="flex items-center justify-between gap-3">
           <span className={labelClass}>Distance</span>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className={endpointClass}>Far</span>
-            <div className={`relative h-2 flex-1 overflow-hidden rounded-full ${trackClass}`}>
-              <div className="absolute inset-0 flex">
-                <div className={`h-full w-[28%] ${leftRangeClass}`} />
-                <div className={`h-full w-[44%] ${middleRangeClass}`} />
-                <div className={`h-full w-[28%] ${rightRangeClass}`} />
-              </div>
-              <div
-                className={`absolute top-0 h-full w-1.5 rounded-full transition-all duration-200 ${tone.marker}`}
-                style={{ left: `${resolvedGuidance.meterPosition}%`, transform: 'translateX(-50%)' }}
-              />
-            </div>
-            <span className={endpointClass}>Close</span>
-          </div>
-          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${tone.badge}`}>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone.badge}`}>
             {resolvedGuidance.label}
           </span>
         </div>
+
+        <div className="mt-2 flex min-w-0 items-center gap-2">
+          <span className={endpointClass}>Far</span>
+          <div className={`relative h-2 flex-1 overflow-hidden rounded-full ${trackClass}`}>
+            <div className="absolute inset-0 flex">
+              <div className={`h-full w-[24%] ${leftRangeClass}`} />
+              <div className={`h-full w-[52%] ${middleRangeClass}`} />
+              <div className={`h-full w-[24%] ${rightRangeClass}`} />
+            </div>
+            <div
+              className={`absolute top-0 h-full w-1.5 rounded-full transition-all duration-200 ${tone.marker}`}
+              style={{ left: `${resolvedGuidance.meterPosition}%`, transform: 'translateX(-50%)' }}
+            />
+          </div>
+          <span className={endpointClass}>Near</span>
+        </div>
+
         {!compact && (
           <div className={`mt-2 ${detailClass}`}>
             {resolvedGuidance.detail}
