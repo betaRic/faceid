@@ -1,6 +1,6 @@
 'use client'
 
-import { getGreeting, formatTime } from '@/lib/kiosk-utils'
+import { formatTime } from '@/lib/kiosk-utils'
 import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
@@ -15,6 +15,16 @@ const FileTextIcon = ({ className }) => (
 )
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function ResultStat({ label, value, subtext = '' }) {
+  return (
+    <div className="rounded-[1.25rem] border border-black/5 bg-white px-4 py-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-ink sm:text-xl">{value || '--'}</div>
+      {subtext ? <div className="mt-1 text-xs text-muted">{subtext}</div> : null}
+    </div>
+  )
+}
 
 function MonthlySummary({ employeeId, currentMatch }) {
   const [summary, setSummary] = useState(null)
@@ -32,12 +42,12 @@ function MonthlySummary({ employeeId, currentMatch }) {
           headers: buildEmployeeViewHeaders(currentMatch),
           cache: 'no-store',
         })
-        const data = await res.json()
-        if (data.ok) {
+        const data = await res.json().catch(() => null)
+        if (res.ok && data?.ok) {
           setSummary(data)
         }
-      } catch (e) {
-        console.error('Summary fetch error:', e)
+      } catch {
+        setSummary(null)
       } finally {
         setLoading(false)
       }
@@ -48,9 +58,9 @@ function MonthlySummary({ employeeId, currentMatch }) {
 
   if (loading) {
     return (
-      <div className="mt-6 grid animate-pulse gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5 sm:grid-cols-2 xl:grid-cols-4">
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-16 rounded-lg bg-black/5" />
+      <div className="mt-6 grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[...Array(4)].map((_, index) => (
+          <div key={index} className="h-16 animate-pulse rounded-xl bg-black/5" />
         ))}
       </div>
     )
@@ -61,34 +71,22 @@ function MonthlySummary({ employeeId, currentMatch }) {
   const monthName = MONTH_NAMES[summary.month - 1] || ''
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
+    <motion.section
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.2 }}
-      className="mt-6 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5"
+      className="mt-6 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4"
+      initial={{ opacity: 0, y: 8 }}
+      transition={{ delay: 0.15 }}
     >
-      <div className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-        {monthName} {summary.year} Summary
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+        {monthName} {summary.year} Activity
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="text-center">
-          <div className="font-display text-2xl text-ink">{summary.totalDays}</div>
-          <div className="text-xs text-muted">Days</div>
-        </div>
-        <div className="text-center">
-          <div className="font-display text-2xl text-emerald-600">{summary.checkIns}</div>
-          <div className="text-xs text-muted">Check In</div>
-        </div>
-        <div className="text-center">
-          <div className="font-display text-2xl text-amber-600">{summary.checkOuts}</div>
-          <div className="text-xs text-muted">Check Out</div>
-        </div>
-        <div className="text-center">
-          <div className="font-display text-2xl text-navy">{summary.wfhCount}</div>
-          <div className="text-xs text-muted">WFH</div>
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <ResultStat label="Days" value={summary.totalDays} />
+        <ResultStat label="Check-ins" value={summary.checkIns} />
+        <ResultStat label="Check-outs" value={summary.checkOuts} />
+        <ResultStat label="WFH" value={summary.wfhCount} />
       </div>
-    </motion.div>
+    </motion.section>
   )
 }
 
@@ -102,145 +100,154 @@ export default function KioskSuccessScreen({
   autoReenrollCountdown = null,
   privacyReturnCountdown = null,
 }) {
-  const attendanceMode = currentMatch?.attendanceMode || ''
+  const attendanceMode = String(currentMatch?.attendanceMode || '')
   const isWfh = attendanceMode.toLowerCase() === 'wfh'
   const isReviewOnly = currentMatch?.resultState === 'already-recorded'
+  const successTitle = isReviewOnly
+    ? 'Attendance already recorded'
+    : currentMatch?.action === 'checkout'
+      ? 'Check-out recorded'
+      : 'Check-in recorded'
+
   const statusTone = isReviewOnly
     ? {
-        shell: 'bg-amber-100 text-amber-700',
-        banner: 'text-amber-700/90',
-        card: 'border-amber-200 bg-amber-50',
-        button: 'bg-amber-500 hover:bg-amber-600',
-        title: 'Attendance already recorded',
-        timeLabel: 'Latest recorded time',
+        edge: 'bg-amber-500',
+        icon: 'bg-amber-100 text-amber-700',
+        banner: 'text-amber-700',
+        summary: 'border-amber-200 bg-amber-50',
+        primaryButton: 'bg-amber-500 hover:bg-amber-600',
       }
     : {
-        shell: 'bg-emerald-100 text-emerald-700',
-        banner: 'text-emerald-700/90',
-        card: 'border-black/5 bg-stone-50',
-        button: 'bg-navy hover:bg-navy/90',
-        title: null,
-        timeLabel: 'Time',
+        edge: 'bg-emerald-500',
+        icon: 'bg-emerald-100 text-emerald-700',
+        banner: 'text-emerald-700',
+        summary: 'border-black/5 bg-stone-50',
+        primaryButton: 'bg-navy hover:bg-navy/90',
       }
+
+  const modeLabel = attendanceMode ? (isWfh ? 'WFH' : 'On-site') : 'Attendance'
 
   return (
     <div className="absolute inset-0 z-[6] flex items-center justify-center overflow-auto px-4 py-6 sm:px-6">
       <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="w-full max-w-xl rounded-[2rem] border border-black/5 bg-white/85 px-6 py-8 text-center shadow-2xl backdrop-blur sm:px-10 sm:py-10"
+        className="w-full max-w-5xl overflow-hidden rounded-[2rem] border border-black/5 bg-white/92 shadow-2xl backdrop-blur"
+        initial={{ scale: 0.97, opacity: 0 }}
       >
-        <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${statusTone.shell}`}>
-          {isReviewOnly ? (
-            <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 8v4l3 3" />
-              <circle cx="12" cy="12" r="9" />
-            </svg>
-          ) : (
-            <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 6L9 17l-5-5" />
-            </svg>
-          )}
-        </div>
-        <div className={`mt-5 text-xs font-semibold uppercase tracking-[0.2em] ${statusTone.banner}`}>
-          {currentMatch.detail || 'Attendance recorded'}
-        </div>
-        <h2 className="mt-3 font-display text-3xl text-ink sm:text-4xl">
-          {statusTone.title || getGreeting(currentMatch.timestamp || Date.now())}
-        </h2>
-        <div className="mt-2 text-2xl font-semibold text-ink sm:text-3xl">
-          {currentMatch.name}
-        </div>
-        <div className="mt-2 text-sm text-muted sm:text-base">
-          {currentMatch.officeName || 'Unassigned office'}
-        </div>
-        {attendanceMode && (
-          <div className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
-            isWfh ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-          }`}>
-            {isWfh ? (
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                <polyline points="9,22 9,12 15,12 15,22" />
-              </svg>
-            ) : (
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <line x1="3" y1="9" x2="21" y2="9" />
-                <line x1="9" y1="21" x2="9" y2="9" />
-              </svg>
-            )}
-            {isWfh ? 'WFH' : 'On-site'}
-          </div>
-        )}
+        <div className={`h-1.5 w-full ${statusTone.edge}`} />
 
-        <div className={`mt-7 grid gap-3 rounded-[1.5rem] border p-5 text-left sm:grid-cols-2 ${statusTone.card}`}>
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">{statusTone.timeLabel}</div>
-            <div className="mt-2 font-display text-2xl text-ink">{currentMatch.time || formatTime(currentMatch.timestamp || Date.now())}</div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Employee ID</div>
-            <div className="mt-2 text-lg font-semibold text-ink">{currentMatch.employeeId || '--'}</div>
-          </div>
-        </div>
+        <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_360px]">
+          <div className="min-w-0">
+            <div className="flex items-start gap-4">
+              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${statusTone.icon}`}>
+                {isReviewOnly ? (
+                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 8v4l3 3" />
+                    <circle cx="12" cy="12" r="9" />
+                  </svg>
+                ) : (
+                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                )}
+              </div>
 
-        <MonthlySummary employeeId={currentMatch?.employeeId} currentMatch={currentMatch} />
-
-        {requiresReenrollment ? (
-          <div className={`mt-6 rounded-[1.5rem] border px-4 py-4 text-left ${
-            canSelfReenroll
-              ? 'border-amber-200 bg-amber-50'
-              : 'border-black/5 bg-stone-50'
-          }`}>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-              {canSelfReenroll ? 'Biometric refresh required' : 'Biometric refresh recommended'}
+              <div className="min-w-0">
+                <div className={`text-xs font-semibold uppercase tracking-[0.2em] ${statusTone.banner}`}>
+                  {currentMatch?.detail || 'Attendance recorded'}
+                </div>
+                <h2 className="mt-2 font-display text-3xl text-ink sm:text-4xl">{successTitle}</h2>
+                <div className="mt-3 text-2xl font-semibold text-ink sm:text-3xl">{currentMatch?.name || 'Employee'}</div>
+                <div className="mt-2 text-sm text-muted sm:text-base">
+                  {currentMatch?.officeName || 'Unassigned office'}
+                </div>
+                <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-stone-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-ink">
+                  <span className={`h-2 w-2 rounded-full ${isWfh ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  {modeLabel}
+                </div>
+              </div>
             </div>
-            <p className="mt-2 text-sm leading-6 text-ink">
-              {currentMatch?.reenrollmentMessage || (
-                canSelfReenroll
-                  ? 'This attendance scan succeeded, but the stored face samples are weak legacy data. Refreshing them now will reduce future mobile mismatches.'
-                  : 'This attendance scan succeeded, but the stored face samples should be refreshed. Self-service refresh is unavailable until the kiosk session secret is configured.'
-              )}
-            </p>
-            {canSelfReenroll && autoReenrollCountdown ? (
-              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
-                Refresh prompt opens automatically in {autoReenrollCountdown}s.
-              </p>
+
+            <div className={`mt-6 grid gap-3 rounded-[1.5rem] border p-4 ${statusTone.summary} sm:grid-cols-2 xl:grid-cols-4`}>
+              <ResultStat
+                label={isReviewOnly ? 'Latest recorded time' : 'Time'}
+                value={currentMatch?.time || formatTime(currentMatch?.timestamp || Date.now())}
+              />
+              <ResultStat label="Employee ID" value={currentMatch?.employeeId || '--'} />
+              <ResultStat label="Office" value={currentMatch?.officeName || '--'} />
+              <ResultStat label="Mode" value={modeLabel} />
+            </div>
+
+            <MonthlySummary currentMatch={currentMatch} employeeId={currentMatch?.employeeId} />
+
+            {requiresReenrollment ? (
+              <div className={`mt-6 rounded-[1.5rem] border px-4 py-4 ${
+                canSelfReenroll ? 'border-amber-200 bg-amber-50' : 'border-black/5 bg-stone-50'
+              }`}>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+                  {canSelfReenroll ? 'Biometric refresh required' : 'Biometric refresh recommended'}
+                </div>
+                <p className="mt-2 text-sm leading-6 text-ink">
+                  {currentMatch?.reenrollmentMessage || (
+                    canSelfReenroll
+                      ? 'This scan worked, but the stored face data should be refreshed to reduce future mismatches.'
+                      : 'This scan worked, but the stored face data should be refreshed by an administrator.'
+                  )}
+                </p>
+                {canSelfReenroll && autoReenrollCountdown ? (
+                  <div className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+                    Refresh prompt opens in {autoReenrollCountdown}s.
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
-        ) : null}
 
-        {privacyReturnCountdown ? (
-          <div className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-            Returns to scan in {privacyReturnCountdown}s to protect employee privacy.
-          </div>
-        ) : null}
+          <aside className="flex flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">Next actions</div>
+              <h3 className="mt-2 text-lg font-semibold text-ink">What to do next</h3>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                Return to scan for the next employee, or open the attendance table for more detail.
+              </p>
+            </div>
 
-        <div className="mt-6 flex flex-col gap-3">
-          {canSelfReenroll && onReenroll ? (
-            <button
-              onClick={onReenroll}
-              className="w-full rounded-2xl bg-amber-500 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-amber-600"
-            >
-              Refresh Face Data Now
-            </button>
-          ) : null}
-          {onViewTable && (
-            <button
-              onClick={onViewTable}
-              className="w-full flex items-center justify-center gap-2 rounded-2xl border border-navy/20 bg-navy/5 px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/10"
-            >
-              <FileTextIcon className="h-4 w-4" />
-              View Attendance Table
-            </button>
-          )}
-          <button
-            onClick={onBack}
-            className={`w-full rounded-2xl px-6 py-3.5 text-sm font-semibold text-white transition ${statusTone.button}`}
-          >
-            Back to Scan
-          </button>
+            {privacyReturnCountdown ? (
+              <div className="rounded-[1.25rem] border border-black/5 bg-white px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Privacy return</div>
+                <div className="mt-2 text-lg font-semibold text-ink">{privacyReturnCountdown}s</div>
+                <div className="mt-1 text-xs text-muted">This result closes automatically to protect employee privacy.</div>
+              </div>
+            ) : null}
+
+            <div className="grid gap-3">
+              {canSelfReenroll && onReenroll ? (
+                <button
+                  className="w-full rounded-2xl bg-amber-500 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-amber-600"
+                  onClick={onReenroll}
+                >
+                  Refresh face data
+                </button>
+              ) : null}
+
+              {onViewTable ? (
+                <button
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-navy/20 bg-white px-6 py-3.5 text-sm font-semibold text-navy transition hover:bg-navy/5"
+                  onClick={onViewTable}
+                >
+                  <FileTextIcon className="h-4 w-4" />
+                  View attendance table
+                </button>
+              ) : null}
+
+              <button
+                className={`w-full rounded-2xl px-6 py-3.5 text-sm font-semibold text-white transition ${statusTone.primaryButton}`}
+                onClick={onBack}
+              >
+                Back to scan
+              </button>
+            </div>
+          </aside>
         </div>
       </motion.div>
     </div>
