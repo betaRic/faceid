@@ -1,5 +1,6 @@
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
-import FaceSizeGuidance from '@/components/biometrics/FaceSizeGuidance'
+import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
+import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
 
 const OVAL_STYLE = { borderRadius: '44% / 34%' }
 
@@ -28,36 +29,69 @@ export default function KioskScanningOverlay({
     ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
     : isChallenge
       ? 'ring-2 ring-amber-400/80 shadow-[0_0_28px_rgba(251,191,36,0.28)]'
-    : isConfirmed
-      ? 'ring-2 ring-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
-      : isBlocked || isUnknown
-        ? 'ring-2 ring-red-400/80'
-        : isScanning
-          ? 'ring-2 ring-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.18)]'
-          : 'ring-1 ring-white/18'
+      : isConfirmed
+        ? 'ring-2 ring-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+        : isBlocked || isUnknown
+          ? 'ring-2 ring-red-400/80'
+          : isScanning
+            ? 'ring-2 ring-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.18)]'
+            : 'ring-1 ring-white/18'
 
   const statusMessage = isVerifying
     ? 'Verifying...'
     : isChallenge
       ? 'Complete the active liveness check'
-    : isConfirmed
-      ? '✓ Verified'
-      : isBlocked
-        ? 'Try again'
-        : isUnknown
-          ? 'Face not recognized'
-          : isScanning
-            ? 'Face detected — hold steady'
-            : camera.camOn
-              ? 'Ready — look at camera'
-              : 'Camera off'
+      : isConfirmed
+        ? 'Verified'
+        : isBlocked
+          ? 'Try again'
+          : isUnknown
+            ? 'Face not recognized'
+            : isScanning
+              ? 'Face detected — hold steady'
+              : camera.camOn
+                ? 'Ready — look at camera'
+                : 'Camera off'
+
+  const guideTitle = isChallenge
+    ? 'Follow the liveness prompt'
+    : isVerifying
+      ? 'Verifying your face'
+      : isScanning
+        ? (faceDistanceInfo?.isCaptureReady ? 'Hold steady' : (faceDistanceInfo?.label || 'Adjust your distance'))
+        : faceDistanceInfo?.label || 'Center your face'
+
+  const guideSubtitle = isChallenge
+    ? (challengeState?.prompt || 'Follow the prompt on screen and keep your face centered.')
+    : isVerifying
+      ? 'Please wait while we confirm your attendance.'
+      : faceDistanceInfo?.detail || (camera.camOn ? 'Look straight at the camera inside the oval.' : 'Camera is not ready yet.')
+
+  const guideTone = isChallenge
+    ? 'warn'
+    : isVerifying
+      ? 'active'
+      : isScanning
+        ? (faceDistanceInfo?.isCaptureReady ? 'ready' : 'warn')
+        : 'neutral'
 
   return (
     <>
       <div className="absolute inset-0 z-[0] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.12),transparent_40%),linear-gradient(180deg,rgba(2,8,7,0.96),rgba(5,8,8,0.99))]" />
 
-      {/* Oval camera view */}
-      <div className="absolute inset-0 z-[1] flex items-center justify-center">
+      <div className="absolute inset-x-0 top-3 z-[4] flex justify-center px-3 sm:top-4 sm:px-4">
+        {!isBlocked && !isUnknown ? (
+          <CaptureGuideHud
+            className="w-full max-w-[22rem] sm:max-w-[26rem]"
+            eyebrow="Live scan"
+            subtitle={guideSubtitle}
+            title={guideTitle}
+            tone={guideTone}
+          />
+        ) : null}
+      </div>
+
+      <div className="absolute inset-0 z-[1] flex items-center justify-center px-4 pb-20 pt-20 sm:px-6 sm:pb-24 sm:pt-24">
         <div
           className="relative"
           style={{
@@ -94,47 +128,25 @@ export default function KioskScanningOverlay({
 
       <canvas ref={camera.overlayRef} className="absolute inset-0 z-[2] h-full w-full" />
 
-      {/* State flash overlays */}
       {isConfirmed && <div key={flashKey} className="absolute inset-0 z-[3] bg-emerald-400/15 animate-pulse" />}
       {(isBlocked || isUnknown) && <div className="absolute inset-0 z-[3] bg-red-500/10" />}
 
-      {/* Clock — top right */}
       <div className="absolute right-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/12 bg-slate-950/62 px-3.5 py-2 text-right shadow-lg backdrop-blur-xl sm:right-5 sm:top-5 sm:px-5 sm:py-3">
         <div className="font-display text-lg leading-none text-white sm:text-3xl">{clock}</div>
         <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.16em] text-slate-100/88 sm:text-xs">{dateStr}</div>
       </div>
 
-      {/* Location status — top left */}
       <div className="absolute left-3 top-3 z-[4] max-w-[calc(100%-1.5rem)] rounded-[1.1rem] border border-white/12 bg-slate-950/62 px-3.5 py-2 text-left shadow-lg backdrop-blur-xl sm:left-5 sm:top-5 sm:px-5 sm:py-3">
         <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/88 sm:text-xs">Location</div>
         <div className="mt-1 text-xs text-slate-100/92 sm:text-sm">{locationBadgeLabel}</div>
       </div>
 
-      {/* Status pill — hidden when blocked/unknown (alert takes over) */}
-      {!isBlocked && !isUnknown && (
-        <div className="absolute inset-x-0 bottom-16 z-[4] flex justify-center px-4 pointer-events-none sm:bottom-20">
-          <div className={`rounded-full px-5 py-2 text-sm font-semibold backdrop-blur-xl shadow-lg ${
-            isVerifying
-              ? 'bg-blue-500/80 text-white'
-              : isChallenge
-                ? 'bg-amber-500/85 text-slate-950'
-              : isConfirmed
-                ? 'bg-emerald-500/80 text-white'
-                : 'bg-black/45 text-white/82'
-          }`}>
-            {statusMessage}
-          </div>
-        </div>
-      )}
-
-      {/* Distance indicator bar — hidden during verification, confirmed, blocked, or unknown */}
       {faceDistanceInfo && !isVerifying && !isConfirmed && !isBlocked && !isUnknown && (
-        <div className="absolute inset-x-0 bottom-28 z-[4] flex justify-center px-4 pointer-events-none sm:bottom-32">
-          <FaceSizeGuidance className="w-full max-w-[18rem]" compact guidance={faceDistanceInfo} theme="dark" />
+        <div className="absolute inset-x-0 bottom-0 z-[4] flex justify-center px-3 pb-3 pointer-events-none sm:px-4 sm:pb-4">
+          <CaptureDistanceHud className="w-full max-w-[18rem] sm:max-w-[20rem]" guidance={faceDistanceInfo} />
         </div>
       )}
 
-      {/* Camera off overlay */}
       {!camera.camOn && (
         <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
           <div className="text-5xl opacity-60">◈</div>

@@ -1,7 +1,8 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import GuidedCapturePanel from '@/components/biometrics/GuidedCapturePanel'
+import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
+import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 import { CAPTURE_PHASES } from '@/hooks/useEnrollmentCapture'
 
@@ -10,19 +11,43 @@ const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
 export default function CaptureStep({
   camera,
   capturePhase,
-  currentYaw,
-  employeeId,
   errorMessage,
   faceFound,
   faceSizeGuidance,
-  name,
   onBack,
   onExit,
   poseOk,
-  selectedOffice,
   statusMsg,
 }) {
   const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
+
+  const guideTitle = phase?.label
+    || (faceFound ? (faceSizeGuidance?.label || 'Center your face') : 'Center your face')
+
+  const guideSubtitle = phase
+    ? (statusMsg || phase.subtitle)
+    : (statusMsg || faceSizeGuidance?.detail || 'Place your face inside the oval and hold still.')
+
+  const guideTone = errorMessage
+    ? 'danger'
+    : phase
+      ? (poseOk ? 'ready' : 'active')
+      : faceFound
+        ? (faceSizeGuidance?.isCaptureReady ? 'ready' : 'warn')
+        : 'neutral'
+
+  const guideSteps = CAPTURE_PHASES.map((step, index) => ({
+    id: step.id,
+    label: index === 0
+      ? 'Center'
+      : index === 1
+        ? 'Turn 1'
+        : index === 2
+          ? 'Turn 2'
+          : 'Chin down',
+    complete: capturePhase > index,
+    active: capturePhase === index,
+  }))
 
   return (
     <div className="page-frame h-full min-h-0">
@@ -34,28 +59,39 @@ export default function CaptureStep({
       >
         <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
-        <div className="relative z-[2] flex min-h-0 flex-1 items-center justify-center px-4 pt-6 sm:pb-28">
-          <div className="absolute left-3 top-3 z-[4] flex items-center gap-2">
+        <div className="absolute left-3 top-3 z-[6] flex items-center gap-2">
+          <button
+            className="rounded-full border border-white/12 bg-black/42 px-4 py-2 text-sm font-semibold text-white backdrop-blur-xl hover:bg-black/56"
+            onClick={onBack}
+            type="button"
+          >
+            ← Details
+          </button>
+          {onExit ? (
             <button
-              className="rounded-full border border-white/12 bg-black/42 px-4 py-2 text-sm font-semibold text-white backdrop-blur-xl hover:bg-black/56"
-              onClick={onBack}
+              className="rounded-full border border-white/10 bg-white/6 px-4 py-2 text-sm font-semibold text-white/82 backdrop-blur-xl hover:bg-white/12"
+              onClick={onExit}
               type="button"
             >
-              ← Details
+              Exit
             </button>
-            {onExit ? (
-              <button
-                className="rounded-full border border-white/10 bg-white/6 px-4 py-2 text-sm font-semibold text-white/82 backdrop-blur-xl hover:bg-white/12"
-                onClick={onExit}
-                type="button"
-              >
-                Exit
-              </button>
-            ) : null}
-          </div>
+          ) : null}
+        </div>
 
+        <div className="absolute inset-x-0 top-3 z-[5] flex justify-center px-3 sm:top-4 sm:px-4">
+          <CaptureGuideHud
+            className="w-full max-w-[22rem] sm:max-w-[26rem]"
+            eyebrow="Live capture"
+            steps={guideSteps}
+            subtitle={guideSubtitle}
+            title={guideTitle}
+            tone={guideTone}
+          />
+        </div>
+
+        <div className="relative z-[2] flex min-h-0 flex-1 items-center justify-center px-4 pb-20 pt-24 sm:px-6 sm:pb-24 sm:pt-24">
           <div
-            className="relative w-[72vw] sm:w-[54vw]"
+            className="relative w-[74vw] sm:w-[54vw]"
             style={{
               aspectRatio: String(OVAL_CAPTURE_ASPECT_RATIO),
               maxWidth: `min(430px, calc(min(72vh, 640px) * ${OVAL_CAPTURE_ASPECT_RATIO}))`,
@@ -90,23 +126,18 @@ export default function CaptureStep({
           </div>
         ) : null}
 
-        <div className="absolute inset-x-0 bottom-0 z-[5] flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
-          <GuidedCapturePanel
-            className="w-full max-w-sm sm:max-w-md"
-            faceSizeGuidance={faceSizeGuidance}
-            phase={phase}
-            phaseCount={CAPTURE_PHASES.length}
-            phaseIndex={capturePhase}
-            poseOk={poseOk}
-            statusMsg={statusMsg}
-          />
-        </div>
-
         {errorMessage ? (
-          <div className="absolute inset-x-3 bottom-20 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg">
+          <div className="absolute inset-x-3 bottom-24 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2">
             {errorMessage}
           </div>
         ) : null}
+
+        <div className="absolute inset-x-0 bottom-0 z-[5] flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
+          <CaptureDistanceHud
+            className="w-full max-w-[18rem] sm:max-w-[20rem]"
+            guidance={faceSizeGuidance}
+          />
+        </div>
       </motion.section>
     </div>
   )

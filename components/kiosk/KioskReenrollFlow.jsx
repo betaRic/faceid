@@ -2,8 +2,9 @@
 
 import { useState, useCallback } from 'react'
 import { useEnrollmentCapture, CAPTURE_PHASES } from '@/hooks/useEnrollmentCapture'
-import GuidedCapturePanel from '@/components/biometrics/GuidedCapturePanel'
 import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
+import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
+import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
 
 const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
 
@@ -45,8 +46,42 @@ function PromptScreen({ name, onAccept, onSkip }) {
 function CaptureScreen({ camera, capturePhase, poseOk, statusMsg, faceSizeGuidance }) {
   const phase = capturePhase >= 0 ? CAPTURE_PHASES[capturePhase] : null
 
+  const guideTitle = phase?.label || faceSizeGuidance?.label || 'Center your face'
+  const guideSubtitle = phase
+    ? (statusMsg || phase.subtitle)
+    : (statusMsg || faceSizeGuidance?.detail || 'Place your face inside the oval to begin.')
+  const guideTone = phase
+    ? (poseOk ? 'ready' : 'active')
+    : faceSizeGuidance?.isCaptureReady
+      ? 'ready'
+      : 'warn'
+
+  const guideSteps = CAPTURE_PHASES.map((step, index) => ({
+    id: step.id,
+    label: index === 0
+      ? 'Center'
+      : index === 1
+        ? 'Turn 1'
+        : index === 2
+          ? 'Turn 2'
+          : 'Chin down',
+    complete: capturePhase > index,
+    active: capturePhase === index,
+  }))
+
   return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-4 bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.14),transparent_38%),linear-gradient(180deg,rgba(2,8,7,0.95),rgba(5,8,8,0.98))] px-4">
+    <div className="relative flex h-full flex-col items-center justify-center bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.14),transparent_38%),linear-gradient(180deg,rgba(2,8,7,0.95),rgba(5,8,8,0.98))] px-4 pb-20 pt-24">
+      <div className="absolute inset-x-0 top-3 z-[4] flex justify-center px-3 sm:top-4 sm:px-4">
+        <CaptureGuideHud
+          className="w-full max-w-[22rem] sm:max-w-[26rem]"
+          eyebrow="Face refresh"
+          steps={guideSteps}
+          subtitle={guideSubtitle}
+          title={guideTitle}
+          tone={guideTone}
+        />
+      </div>
+
       <div
         className="relative w-full max-w-[280px]"
         style={{ aspectRatio: '0.68' }}
@@ -72,15 +107,12 @@ function CaptureScreen({ camera, capturePhase, poseOk, statusMsg, faceSizeGuidan
         </div>
       </div>
 
-      <GuidedCapturePanel
-        className="w-full max-w-sm"
-        faceSizeGuidance={faceSizeGuidance}
-        phase={phase}
-        phaseCount={CAPTURE_PHASES.length}
-        phaseIndex={capturePhase}
-        poseOk={poseOk}
-        statusMsg={statusMsg}
-      />
+      <div className="absolute inset-x-0 bottom-0 z-[4] flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
+        <CaptureDistanceHud
+          className="w-full max-w-[18rem] sm:max-w-[20rem]"
+          guidance={faceSizeGuidance}
+        />
+      </div>
     </div>
   )
 }
@@ -162,46 +194,44 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
           body: JSON.stringify({
             descriptors: captureResult.descriptors,
             captureMetadata: captureResult.captureMetadata || null,
-            photoDataUrl: captureResult.previewUrl || null,
+            ...(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? { photoDataUrl: captureResult.previewUrl || null } : {}),
           }),
         })
-        const data = await res.json()
-        if (data.ok) {
-          setResult({
-            success: true,
-            message: data.message || `Saved ${data.sampleCount} face samples. Future scans will be faster.`,
-            needsReenrollment: Boolean(data.needsReenrollment),
-            reenrollmentReason: data.reenrollmentReason || null,
-            reenrollmentMessage: data.reenrollmentMessage || '',
-          })
-        } else {
-          setResult({ success: false, message: data.message || 'Failed to save face data.' })
+
+        const data = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(data?.message || 'Failed to update face data.')
         }
-      } catch {
-        setResult({ success: false, message: 'Network error — try again later.' })
+
+        setResult({
+          success: true,
+          message: data?.message || 'Your face data was successfully updated.',
+          payload: {
+            needsReenrollment: Boolean(data?.needsReenrollment),
+            reenrollmentReason: data?.reenrollmentReason || null,
+            reenrollmentMessage: data?.reenrollmentMessage || '',
+          },
+        })
+        setStage('done')
+      } catch (error) {
+        setResult({ success: false, message: error?.message || 'Failed to update face data.' })
+        setStage('done')
       }
-      setStage('done')
     }, true)
   }, [currentMatch, startDetect, stopDetect])
 
-  const handleSkip = useCallback(() => {
-    stopDetect()
-    resetCapture()
-    onSkip()
-  }, [stopDetect, resetCapture, onSkip])
-
   const handleContinue = useCallback(() => {
-    stopDetect()
-    resetCapture()
     if (result?.success) {
-      onComplete(result)
-    } else {
-      onSkip()
+      onComplete(result?.payload || null)
+      return
     }
-  }, [stopDetect, resetCapture, onComplete, onSkip, result])
+    setStage('prompt')
+    setResult(null)
+    resetCapture()
+  }, [onComplete, resetCapture, result])
 
   if (stage === 'prompt') {
-    return <PromptScreen name={currentMatch?.name || 'Employee'} onAccept={handleAccept} onSkip={handleSkip} />
+    return <PromptScreen name={currentMatch?.name || 'Employee'} onAccept={handleAccept} onSkip={onSkip} />
   }
 
   if (stage === 'capturing') {
@@ -220,5 +250,11 @@ export default function KioskReenrollFlow({ camera, currentMatch, onComplete, on
     return <SavingScreen />
   }
 
-  return <DoneScreen success={result?.success} message={result?.message} onContinue={handleContinue} />
+  return (
+    <DoneScreen
+      message={result?.message || 'Something went wrong.'}
+      onContinue={handleContinue}
+      success={Boolean(result?.success)}
+    />
+  )
 }

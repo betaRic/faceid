@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBiometricRuntime } from '@/components/BiometricRuntimeProvider'
-import FaceSizeGuidance from '@/components/biometrics/FaceSizeGuidance'
+import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
+import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
 import { CAPTURE_PHASES, useEnrollmentCapture } from '@/hooks/useEnrollmentCapture'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 
@@ -122,6 +123,33 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
     if (faceNeedsAlignment) return 'Move into the oval'
     return 'Scanning for face'
   }, [capturePhase, faceFound, faceNeedsAlignment, faceSizeGuidance])
+
+  const captureGuideTitle = CAPTURE_PHASES[capturePhase]?.label
+    || faceSizeGuidance?.label
+    || (faceNeedsAlignment ? 'Move into the oval' : 'Center your face')
+
+  const captureGuideSubtitle = capturePhase >= 0
+    ? (statusMsg || CAPTURE_PHASES[capturePhase]?.subtitle || 'Hold the requested pose.')
+    : (statusMsg || faceSizeGuidance?.detail || 'Look straight ahead inside the oval to begin.')
+
+  const captureGuideTone = capturePhase >= 0
+    ? (poseOk ? 'ready' : 'active')
+    : faceFound
+      ? (faceSizeGuidance?.isCaptureReady ? 'ready' : 'warn')
+      : 'neutral'
+
+  const captureGuideSteps = CAPTURE_PHASES.map((phase, index) => ({
+    id: phase.id,
+    label: index === 0
+      ? 'Center'
+      : index === 1
+        ? 'Turn 1'
+        : index === 2
+          ? 'Turn 2'
+          : 'Chin down',
+    complete: capturePhase > index,
+    active: capturePhase === index,
+  }))
 
   if (workspaceState === 'loading') {
     return (
@@ -264,7 +292,18 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
       <div className="relative min-h-[22rem] w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:min-h-[28rem]">
         <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
-        <div className="absolute inset-0 z-[2] flex items-center justify-center px-4 py-6">
+        <div className="absolute inset-x-0 top-3 z-[5] flex justify-center px-3 sm:top-4 sm:px-4">
+          <CaptureGuideHud
+            className="w-full max-w-[22rem] sm:max-w-[26rem]"
+            eyebrow="Admin live capture"
+            steps={captureGuideSteps}
+            subtitle={captureGuideSubtitle}
+            title={captureGuideTitle}
+            tone={captureGuideTone}
+          />
+        </div>
+
+        <div className="absolute inset-0 z-[2] flex items-center justify-center px-4 pb-20 pt-24">
           <div
             className="relative w-[78vw] sm:w-[54vw]"
             style={{
@@ -308,36 +347,11 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
           </div>
         )}
 
-        <div className="absolute inset-x-0 bottom-4 z-[5] flex justify-center px-4">
-          <div className="flex w-full max-w-3xl flex-col items-center gap-2">
-            <FaceSizeGuidance className="w-full max-w-xl" compact guidance={faceSizeGuidance} theme="dark" />
-            <div className="flex max-w-full items-center gap-4 rounded-[1.1rem] border border-white/20 bg-black/60 px-4 py-2 backdrop-blur">
-              <div className="flex items-center gap-1.5">
-                {CAPTURE_PHASES.map((phase, index) => (
-                  <div key={phase.id} className="flex items-center">
-                    <div
-                      className={`h-2 w-2 rounded-full transition-all ${
-                        index < capturePhase
-                          ? 'bg-emerald-400'
-                          : index === capturePhase
-                            ? poseOk
-                              ? 'bg-emerald-400'
-                              : 'bg-amber-400'
-                            : 'bg-white/30'
-                      }`}
-                    />
-                    {index < CAPTURE_PHASES.length - 1 && (
-                      <div className={`h-px w-2 ${index < capturePhase ? 'bg-emerald-400' : 'bg-white/30'}`} />
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="h-4 w-px bg-white/20" />
-              <span className={`max-w-[16rem] truncate text-sm font-medium ${poseOk ? 'text-emerald-300' : 'text-white/80'} sm:max-w-none`}>
-                {statusMsg}
-              </span>
-            </div>
-          </div>
+        <div className="absolute inset-x-0 bottom-0 z-[5] flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
+          <CaptureDistanceHud
+            className="w-full max-w-[18rem] sm:max-w-[20rem]"
+            guidance={faceSizeGuidance}
+          />
         </div>
       </div>
 
