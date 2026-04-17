@@ -21,6 +21,18 @@ function formatDays(values = []) {
     : 'None'
 }
 
+function formatScheduleSummary(office) {
+  const schedule = office?.workPolicy?.schedule
+  if (schedule) return schedule
+  return 'No schedule set'
+}
+
+function formatGeofenceSummary(office) {
+  const city = office?.provinceOrCity || office?.location || 'No location'
+  const radius = Number.isFinite(office?.gps?.radiusMeters) ? `${office.gps.radiusMeters} m` : 'No radius'
+  return `${city} · ${radius}`
+}
+
 export default function OfficePanel() {
   const {
     officesLoaded,
@@ -86,7 +98,7 @@ export default function OfficePanel() {
   }
 
   return (
-    <section className="grid h-full min-h-0 gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+    <section className="grid h-full min-h-0 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
       <div className="xl:hidden">
         <div className="inline-flex rounded-full border border-black/5 bg-white p-1 shadow-sm">
           <button
@@ -164,6 +176,14 @@ export default function OfficePanel() {
                       <div className="text-[11px] uppercase tracking-widest text-muted">Employees</div>
                       <div className="mt-1 text-ink">{office.employees || 0}</div>
                     </div>
+                    <div className="col-span-2 rounded-xl bg-stone-50 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-widest text-muted">Schedule</div>
+                      <div className="mt-1 text-ink">{formatScheduleSummary(office)}</div>
+                    </div>
+                    <div className="col-span-2 rounded-xl bg-stone-50 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-widest text-muted">Geofence</div>
+                      <div className="mt-1 text-ink">{formatGeofenceSummary(office)}</div>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -204,7 +224,8 @@ export default function OfficePanel() {
                 <th className="px-5 py-4">Code</th>
                 <th className="px-5 py-4">Office</th>
                 <th className="px-5 py-4">Type</th>
-                <th className="px-5 py-4">Province / City</th>
+                <th className="px-5 py-4">Geofence</th>
+                <th className="px-5 py-4">Schedule</th>
                 <th className="px-5 py-4">Employees</th>
                 <th className="px-5 py-4">Status</th>
                 <th className="px-5 py-4">Actions</th>
@@ -222,12 +243,25 @@ export default function OfficePanel() {
                     <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
                       {office.code || office.shortName || office.id}
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="font-semibold text-ink">{office.name}</div>
-                      <div className="text-xs text-muted">{office.location}</div>
+                    <td className="px-5 py-4 align-top">
+                      <div className="max-w-[260px] font-semibold leading-6 text-ink">{office.name}</div>
+                      <div className="mt-1 text-xs text-muted">
+                        {office.shortName || '--'} · {office.provinceOrCity || office.location || 'No city'}
+                      </div>
                     </td>
-                    <td className="px-5 py-4 text-muted">{office.officeType}</td>
-                    <td className="px-5 py-4 text-muted">{office.provinceOrCity || office.location}</td>
+                    <td className="px-5 py-4 align-top text-muted">{office.officeType}</td>
+                    <td className="px-5 py-4 align-top text-muted">
+                      <div>{office.provinceOrCity || office.location || 'No location'}</div>
+                      <div className="mt-1 text-xs text-muted/80">
+                        Radius {Number.isFinite(office.gps?.radiusMeters) ? `${office.gps.radiusMeters} m` : '--'}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 align-top text-muted">
+                      <div className="max-w-[220px] leading-6">{formatScheduleSummary(office)}</div>
+                      <div className="mt-1 text-xs text-muted/80">
+                        WFH {formatDays(office.workPolicy?.wfhDays || [])}
+                      </div>
+                    </td>
                     <td className="px-5 py-4 text-muted">{office.employees || 0}</td>
                     <td className="px-5 py-4">
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
@@ -341,14 +375,14 @@ export default function OfficePanel() {
             saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}
           />
         ) : (
-          <div className="grid gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Office overview</div>
-                <h3 className="mt-2 font-display text-3xl text-ink">{selectedOffice?.name}</h3>
-                <p className="mt-2 text-sm text-muted">{selectedOffice?.provinceOrCity || selectedOffice?.location || 'No location label set'}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
+          <div className="flex h-full min-h-[280px] items-center justify-center rounded-[1.5rem] border border-dashed border-black/10 bg-stone-50 px-6 text-center">
+            <div className="max-w-md">
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-navy-dark">Selected office</div>
+              <h3 className="mt-3 font-display text-2xl text-ink">{selectedOffice?.name}</h3>
+              <p className="mt-3 text-sm leading-7 text-muted">
+                The table already shows the office details. Use this panel only when you want to edit or create an office.
+              </p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
                 <button
                   className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-100"
                   onClick={() => handleEditOffice(selectedOffice.id)}
@@ -364,87 +398,6 @@ export default function OfficePanel() {
                 >
                   Delete office
                 </button>
-              </div>
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
-              <div className="grid gap-4">
-                <div className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-white p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Identity</div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Code</div>
-                      <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.code || '--'}</div>
-                    </div>
-                    <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Short name</div>
-                      <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.shortName || '--'}</div>
-                    </div>
-                    <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Office type</div>
-                      <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.officeType || '--'}</div>
-                    </div>
-                    <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Status</div>
-                      <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.status || 'active'}</div>
-                    </div>
-                    <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Province / city</div>
-                      <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.provinceOrCity || '--'}</div>
-                    </div>
-                    <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Employees</div>
-                      <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.employees || 0}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-white p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Schedule</div>
-                  <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                    <div className="text-sm font-semibold text-ink">{selectedOffice?.workPolicy?.schedule || '--'}</div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Working days</div>
-                        <div className="mt-2 text-sm text-ink">{formatDays(selectedOffice?.workPolicy?.workingDays || [])}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">WFH days</div>
-                        <div className="mt-2 text-sm text-ink">{formatDays(selectedOffice?.workPolicy?.wfhDays || [])}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-4">
-                <div className="rounded-[1.5rem] border border-black/5 bg-white p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Geofence</div>
-                  <div className="mt-3 grid gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-2xl bg-white p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Latitude</div>
-                        <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.gps?.latitude ?? '--'}</div>
-                      </div>
-                      <div className="rounded-2xl bg-white p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Longitude</div>
-                        <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.gps?.longitude ?? '--'}</div>
-                      </div>
-                      <div className="rounded-2xl bg-white p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Radius</div>
-                        <div className="mt-2 text-base font-semibold text-ink">{selectedOffice?.gps?.radiusMeters ?? '--'} m</div>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl bg-white p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">WiFi SSIDs</div>
-                      <div className="mt-2 text-sm text-ink">
-                        {Array.isArray(selectedOffice?.wifiSsid) && selectedOffice.wifiSsid.length > 0
-                          ? selectedOffice.wifiSsid.join(', ')
-                          : 'None configured'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

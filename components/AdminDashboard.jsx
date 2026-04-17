@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import AdminShell from './admin/AdminShell'
 import { useAdminStore } from '@/lib/admin/store'
@@ -87,6 +88,12 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       activePanel={activePanel}
       actions={
         <div className="flex items-center gap-3">
+          <Link
+            className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            href="/scan"
+          >
+            Kiosk
+          </Link>
           <button
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
             onClick={handleLogout}
