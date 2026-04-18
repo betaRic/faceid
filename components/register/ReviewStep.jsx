@@ -4,6 +4,7 @@ export default function ReviewStep({
   burstSummary,
   captureFeedback,
   detailsReady,
+  duplicateReviewHint,
   onEditDetails,
   onRetake,
   onSubmit,
@@ -54,6 +55,14 @@ export default function ReviewStep({
 
         {captureFeedback?.tone === 'warn' ? (
           <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone="warn" />
+        ) : null}
+
+        {duplicateReviewHint?.status === 'required' ? (
+          <InfoCard
+            title="Similarity review required"
+            text={duplicateReviewHint.message || 'A similar existing profile was found. This enrollment can continue, but an admin should verify it before approval.'}
+            tone="warn"
+          />
         ) : null}
       </div>
     </div>

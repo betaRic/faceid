@@ -2,11 +2,16 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
+import { DESCRIPTOR_LENGTH } from '@/lib/config'
 import {
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
+import {
+  collectDuplicateCandidatePersons,
+  evaluateDuplicateFaceCandidates,
+} from '@/lib/persons/duplicate-face'
 
 export async function GET(request) {
   const db = getAdminDb()
@@ -61,5 +66,48 @@ export async function GET(request) {
     totalSamples: snapshot.size,
     uniqueBuckets: Object.keys(bucketStats).length,
     bucketStats: Object.entries(bucketStats).slice(0, 20),
+  })
+}
+
+export async function POST(request) {
+  const db = getAdminDb()
+  const session = parseAdminSessionCookieValue(
+    request.cookies.get(getAdminSessionCookieName())?.value,
+  )
+  if (!session) {
+    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
+  }
+
+  const resolvedSession = await resolveAdminSession(db, session)
+  if (!resolvedSession) {
+    return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => null)
+  const descriptors = Array.isArray(body?.descriptors) ? body.descriptors : []
+  const excludePersonId = String(body?.excludePersonId || '').trim()
+
+  if (descriptors.length === 0) {
+    return NextResponse.json({ ok: false, message: 'Descriptors are required.' }, { status: 400 })
+  }
+
+  for (const descriptor of descriptors) {
+    if (
+      !Array.isArray(descriptor)
+      || descriptor.length !== DESCRIPTOR_LENGTH
+      || descriptor.some(value => !Number.isFinite(Number(value)))
+    ) {
+      return NextResponse.json({ ok: false, message: 'Invalid descriptor batch.' }, { status: 400 })
+    }
+  }
+
+  const snapshot = await db.collection('persons').get()
+  const candidates = collectDuplicateCandidatePersons(snapshot)
+  const evaluation = evaluateDuplicateFaceCandidates(candidates, descriptors, excludePersonId)
+
+  return NextResponse.json({
+    ok: true,
+    descriptorCount: descriptors.length,
+    evaluation,
   })
 }

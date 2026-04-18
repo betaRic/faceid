@@ -157,7 +157,7 @@ export async function POST(request) {
       }
     }
 
-    const { transactionResult, sampleCount, indexSyncWarning } = await enrollPerson(db, body, office, resolvedSession)
+    const { transactionResult, sampleCount, indexSyncWarning, duplicateReviewRequired } = await enrollPerson(db, body, office, resolvedSession)
 
     await uploadEnrollmentPhotoIfPending(
       db,
@@ -168,9 +168,12 @@ export async function POST(request) {
 
     await writeEnrollmentAuditLog(db, transactionResult, body, office, resolvedSession)
 
-    const message = transactionResult.nextPerson.approvalStatus === 'pending'
+    const baseMessage = transactionResult.nextPerson.approvalStatus === 'pending'
       ? 'Enrollment submitted for admin approval. The employee record and biometric samples are not active on the kiosk until approved.'
       : 'Enrollment saved.'
+    const message = duplicateReviewRequired
+      ? `${baseMessage} Similarity review required: an existing employee profile is close enough that an admin should verify this submission before approval.`
+      : baseMessage
 
     return NextResponse.json({
       ok: true,
@@ -178,13 +181,15 @@ export async function POST(request) {
       approvalStatus: transactionResult.nextPerson.approvalStatus,
       sampleCount,
       savedSampleCount: transactionResult.uniqueCount,
+      duplicateReviewRequired,
+      duplicateReviewStatus: transactionResult.nextPerson.duplicateReviewStatus || 'clear',
       message: indexSyncWarning ? `${message} Warning: ${indexSyncWarning}` : message,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to save enrollment.'
     const duplicateFace = error.duplicateFace
 
-    if (duplicateFace) {
+    if (duplicateFace?.duplicate) {
       return NextResponse.json(
         {
           ok: false,

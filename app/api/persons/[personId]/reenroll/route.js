@@ -133,7 +133,7 @@ export async function POST(request, { params }) {
       : (Number.isFinite(person.biometricQualityScore) ? Number(person.biometricQualityScore) : null)
 
     const duplicateFace = await checkDuplicateFace(db, accepted, personId)
-    if (duplicateFace) {
+    if (duplicateFace?.duplicate) {
       return NextResponse.json(
         {
           ok: false,

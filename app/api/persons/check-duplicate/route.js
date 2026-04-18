@@ -41,17 +41,27 @@ export async function POST(request) {
       String(body.personId || '').trim(),
     )
 
-    if (duplicateFace) {
+    if (duplicateFace?.duplicate) {
       // Do not expose which employee matched — a duplicate check is public/unauthenticated
       // and returning name/employeeId would leak PII to any caller with a face descriptor.
       return NextResponse.json({
         ok: true,
         duplicate: true,
+        reviewRequired: false,
         message: 'A face similar to an existing employee was found. Duplicate enrollment blocked.',
       })
     }
 
-    return NextResponse.json({ ok: true, duplicate: false })
+    if (duplicateFace?.reviewRequired) {
+      return NextResponse.json({
+        ok: true,
+        duplicate: false,
+        reviewRequired: true,
+        message: 'A similar face was found. Registration can continue, but this submission will be flagged for admin review.',
+      })
+    }
+
+    return NextResponse.json({ ok: true, duplicate: false, reviewRequired: false })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to check duplicate.' },

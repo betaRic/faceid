@@ -145,6 +145,17 @@ export async function PUT(request, { params }) {
       approvedAt,
     }
 
+    if (
+      approvalChanged
+      && existingData.duplicateReviewStatus === 'required'
+      && nextApprovalStatus !== PERSON_APPROVAL_PENDING
+    ) {
+      nextPerson.duplicateReviewRequired = false
+      nextPerson.duplicateReviewStatus = 'resolved'
+      nextPerson.duplicateReviewResolvedAt = FieldValue.serverTimestamp()
+      nextPerson.duplicateReviewResolvedByEmail = resolvedSession.email || ''
+    }
+
     await db.collection('persons').doc(personId).set(nextPerson, { merge: true })
     await syncPersonBiometricIndex(db, personId, nextPerson)
     try {

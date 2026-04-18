@@ -200,6 +200,19 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
           <div className="mt-5 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4">
             <h3 className="text-sm font-semibold text-amber-900">Pending Approval</h3>
             <p className="mt-1 text-sm text-amber-700">Review this enrollment before approving.</p>
+            {person.duplicateReviewRequired ? (
+              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-900">
+                <div className="font-semibold">Duplicate review required</div>
+                <div className="mt-1 text-red-800">
+                  {person.duplicateReviewCandidateName
+                    ? `Similar to ${person.duplicateReviewCandidateName}${person.duplicateReviewCandidateEmployeeId ? ` (${person.duplicateReviewCandidateEmployeeId})` : ''}.`
+                    : 'A similar existing employee profile was found.'}
+                  {Number.isFinite(person.duplicateReviewDistance)
+                    ? ` Best distance ${person.duplicateReviewDistance.toFixed(2)}.`
+                    : ''}
+                </div>
+              </div>
+            ) : null}
             <div className="mt-4 flex gap-3">
               <button
                 className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"

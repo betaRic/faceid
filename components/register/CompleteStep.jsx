@@ -26,6 +26,11 @@ export default function CompleteStep({ lastSavedSummary, onAddAnotherSample, onE
             Registration is open to the public, but scan access is not. This employee record and its biometric samples stay inactive until an admin approves the submission.
           </div>
         ) : null}
+        {lastSavedSummary?.duplicateReviewRequired ? (
+          <div className="mt-4 rounded-[1.25rem] border border-red-200 bg-red-50 px-4 py-4 text-sm leading-6 text-red-900">
+            {lastSavedSummary?.message || 'A similar employee profile was found. This enrollment was saved, but it requires explicit admin duplicate review before approval.'}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid content-start gap-3">

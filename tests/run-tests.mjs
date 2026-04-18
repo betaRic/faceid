@@ -97,7 +97,12 @@ const {
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
 const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
-const { buildDuplicateFaceSnapshot } = duplicateFaceModule
+const {
+  buildDuplicateFaceSnapshot,
+  evaluateDuplicateFaceCandidates,
+  DUPLICATE_STATUS_HARD_DUPLICATE,
+  DUPLICATE_STATUS_REVIEW_REQUIRED,
+} = duplicateFaceModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
@@ -560,6 +565,8 @@ await run('public enrollment cannot silently change identity fields on an existi
 
 await run('duplicate face snapshot catches same person across multiple guided query samples', () => {
   const person = {
+    id: 'person-a',
+    approvalStatus: 'approved',
     descriptors: [
       [1, 0, 0, 0],
       [0.98, 0.18, 0, 0],
@@ -577,35 +584,38 @@ await run('duplicate face snapshot catches same person across multiple guided qu
   const snapshot = buildDuplicateFaceSnapshot(person, queryDescriptors)
 
   assert.equal(snapshot?.duplicate, true)
+  assert.equal(snapshot?.status, DUPLICATE_STATUS_HARD_DUPLICATE)
   assert.ok(snapshot?.matchedQueries >= 2)
-  assert.ok(snapshot?.bestDistance < 0.78)
+  assert.ok(snapshot?.bestDistance < 0.5)
 })
 
-await run('duplicate face snapshot catches cross-device same-person samples even when only one stored sample supports each query', () => {
+await run('duplicate face snapshot routes uncertain duplicate evidence into review instead of hard block', () => {
   const person = {
+    id: 'person-b',
+    approvalStatus: 'approved',
     descriptors: [
       [1, 0, 0, 0],
-      [0.98, 0.18, 0, 0],
-      [0.98, -0.18, 0, 0],
-      [0.95, 0.05, 0.3, 0],
+      [0.99, 0.12, 0, 0],
     ],
   }
 
   const queryDescriptors = [
-    [0.56, 0.83, 0, 0],
-    [0.58, 0.8, 0.1, 0],
-    [0.52, 0.78, 0.2, 0],
+    [0.99, 0.11, 0, 0],
+    [0.98, 0.16, 0, 0],
+    [0.97, 0.19, 0, 0],
   ]
 
   const snapshot = buildDuplicateFaceSnapshot(person, queryDescriptors)
 
-  assert.equal(snapshot?.duplicate, true)
-  assert.ok(snapshot?.matchedQueries >= 2)
-  assert.ok(snapshot?.bestDistance <= 0.84)
+  assert.equal(snapshot?.duplicate, false)
+  assert.equal(snapshot?.reviewRequired, true)
+  assert.equal(snapshot?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
 })
 
 await run('duplicate face snapshot does not block a weak single-query resemblance', () => {
   const person = {
+    id: 'person-c',
+    approvalStatus: 'approved',
     descriptors: [
       [1, 0, 0, 0],
       [0.98, 0.18, 0, 0],
@@ -623,6 +633,75 @@ await run('duplicate face snapshot does not block a weak single-query resemblanc
   const snapshot = buildDuplicateFaceSnapshot(person, queryDescriptors)
 
   assert.equal(snapshot?.duplicate, false)
+  assert.equal(snapshot?.reviewRequired, false)
+})
+
+await run('duplicate evaluation degrades hard duplicate to review when the nearest second person is too close', () => {
+  const candidates = [
+    {
+      id: 'person-a',
+      name: 'ALPHA',
+      employeeId: 'A-1',
+      approvalStatus: 'approved',
+      descriptors: [
+        [1, 0, 0, 0],
+        [0.998, 0.06, 0, 0],
+        [0.997, -0.05, 0, 0],
+      ],
+    },
+    {
+      id: 'person-b',
+      name: 'BETA',
+      employeeId: 'B-1',
+      approvalStatus: 'approved',
+      descriptors: [
+        [0.999, 0.045, 0, 0],
+        [0.997, 0.08, 0, 0],
+        [0.996, -0.02, 0, 0],
+      ],
+    },
+  ]
+
+  const queryDescriptors = [
+    [0.999, 0.04, 0, 0],
+    [0.998, 0.03, 0, 0],
+    [0.999, 0.01, 0, 0],
+  ]
+
+  const evaluation = evaluateDuplicateFaceCandidates(candidates, queryDescriptors)
+
+  assert.equal(evaluation?.duplicate, false)
+  assert.equal(evaluation?.reviewRequired, true)
+  assert.equal(evaluation?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
+  assert.ok((evaluation?.marginToNext ?? 1) < 0.05)
+})
+
+await run('pending profiles can trigger review but cannot hard-block enrollment', () => {
+  const candidates = [
+    {
+      id: 'person-pending',
+      name: 'PENDING USER',
+      employeeId: 'P-1',
+      approvalStatus: 'pending',
+      descriptors: [
+        [1, 0, 0, 0],
+        [0.99, 0.11, 0, 0],
+        [0.99, -0.1, 0, 0],
+      ],
+    },
+  ]
+
+  const queryDescriptors = [
+    [0.999, 0.03, 0, 0],
+    [0.998, 0.05, 0, 0],
+    [0.999, -0.01, 0, 0],
+  ]
+
+  const evaluation = evaluateDuplicateFaceCandidates(candidates, queryDescriptors)
+
+  assert.equal(evaluation?.duplicate, false)
+  assert.equal(evaluation?.reviewRequired, true)
+  assert.equal(evaluation?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
 })
 
 await run('firestore index manifest loads from repo root', async () => {

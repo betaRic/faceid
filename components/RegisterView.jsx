@@ -42,6 +42,7 @@ export default function RegisterView({
   const [captureFeedback, setCaptureFeedback] = useState(null)
   const [burstSummary, setBurstSummary] = useState(null)
   const [lastSavedSummary, setLastSavedSummary] = useState(null)
+  const [duplicateReviewHint, setDuplicateReviewHint] = useState(null)
   const [savingEnrollment, setSavingEnrollment] = useState(false)
   const [checkingDuplicate, setCheckingDuplicate] = useState(false)
   const [toast, setToast] = useState(null)
@@ -110,6 +111,7 @@ export default function RegisterView({
     setCaptureMetadata(null)
     setCaptureFeedback(null)
     setBurstSummary(null)
+    setDuplicateReviewHint(null)
     resetCapture()
     camera.clearOverlay()
   }, [camera, resetCapture])
@@ -124,6 +126,7 @@ export default function RegisterView({
     try {
       const duplicateCheck = await checkEnrollmentDuplicate(result.descriptors)
       if (duplicateCheck.duplicate) {
+        setDuplicateReviewHint(null)
         setPendingDescriptors([])
         setCaptureMetadata(null)
         setPreviewUrl(null)
@@ -137,6 +140,19 @@ export default function RegisterView({
         return
       }
 
+      if (duplicateCheck.reviewRequired) {
+        setDuplicateReviewHint({
+          status: 'required',
+          message: duplicateCheck.message || 'Similarity review required.',
+        })
+        showToast(
+          duplicateCheck.message || 'A similar face was found. The submission can continue, but it will be flagged for admin review.',
+          5000,
+        )
+      } else {
+        setDuplicateReviewHint(null)
+      }
+
       setPendingDescriptors(result.descriptors)
       setCaptureMetadata(result.captureMetadata || null)
       setPreviewUrl(result.previewUrl)
@@ -145,6 +161,7 @@ export default function RegisterView({
       playAudioCue('notify')
       setStep('review')
     } catch (error) {
+      setDuplicateReviewHint(null)
       showToast(error?.message || 'Failed to verify duplicate enrollment', 5000)
       setPendingDescriptors([])
       setCaptureMetadata(null)
@@ -244,6 +261,9 @@ export default function RegisterView({
       savedSampleCount: savedCount,
       remaining: Math.max(0, ENROLLMENT_MIN_SAMPLES - totalCount),
       approvalStatus,
+      duplicateReviewRequired: Boolean(result?.duplicateReviewRequired),
+      duplicateReviewStatus: String(result?.duplicateReviewStatus || 'clear'),
+      message: result?.message || '',
     })
     setStep('complete')
     playAudioCue('success')
@@ -367,6 +387,7 @@ export default function RegisterView({
                 burstSummary={burstSummary}
                 captureFeedback={captureFeedback}
                 detailsReady={detailsReady}
+                duplicateReviewHint={duplicateReviewHint}
                 onEditDetails={() => setStep('details')}
                 onRetake={handleRetake}
                 onSubmit={handleRegister}

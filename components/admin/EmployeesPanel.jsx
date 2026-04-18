@@ -150,6 +150,7 @@ function EmployeesPanelInner() {
                   <ApprovalBadge status={person.approvalStatus} />
                   <Badge>{person.officeName}</Badge>
                   <Badge>{`${person.sampleCount ?? 0} sample(s)`}</Badge>
+                  {person.duplicateReviewRequired ? <Badge variant="warning">Duplicate review</Badge> : null}
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <ActionButton
@@ -199,6 +200,11 @@ function EmployeesPanelInner() {
                       <div>
                         <div className="font-medium text-ink">{person.name}</div>
                         <div className="text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                        {person.duplicateReviewRequired ? (
+                          <div className="mt-1">
+                            <Badge variant="warning">Duplicate review</Badge>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </td>
