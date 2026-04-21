@@ -82,24 +82,24 @@ function getCaptureTimingProfile() {
   const device = getNavigatorDeviceProfile()
   if (device.mobile) {
     return {
-      frameIntervalMs: 190,
-      frameMaxRetries: 10,
-      posePollIntervalMs: 115,
-      poseHoldStableMs: 420,
-      preCaptureDelayMs: 550,
-      registrationScanIntervalMs: Math.max(REGISTRATION_SCAN_INTERVAL_MS, 650),
-      profile: 'mobile-stabilized',
+      frameIntervalMs: 250,
+      frameMaxRetries: 12,
+      posePollIntervalMs: 150,
+      poseHoldStableMs: 500,
+      preCaptureDelayMs: 600,
+      registrationScanIntervalMs: Math.max(REGISTRATION_SCAN_INTERVAL_MS, 750),
+      profile: 'mobile-wasm',
     }
   }
 
   return {
-    frameIntervalMs: PHASE_FRAME_INTERVAL_MS,
+    frameIntervalMs: 200,
     frameMaxRetries: FRAME_MAX_RETRIES,
-    posePollIntervalMs: POSE_POLL_INTERVAL_MS,
-    poseHoldStableMs: POSE_HOLD_STABLE_MS,
-    preCaptureDelayMs: 400,
+    posePollIntervalMs: 120,
+    poseHoldStableMs: 400,
+    preCaptureDelayMs: 450,
     registrationScanIntervalMs: REGISTRATION_SCAN_INTERVAL_MS,
-    profile: 'default',
+    profile: 'desktop-wasm',
   }
 }
 

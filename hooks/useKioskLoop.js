@@ -242,6 +242,7 @@ export function useKioskLoop({
           fusedDescriptor,
           descriptorSpread,
           burstDiagnostics,
+          livenessEvidence,
         } = burstResult
         const primaryVerification = selectPrimaryFace(burstResult.detections, bestCanvas.width, bestCanvas.height)
 
@@ -280,7 +281,7 @@ export function useKioskLoop({
 
         const antispoof = primaryVerification.detection.antispoof
         const liveness = primaryVerification.detection.liveness
-        
+
         if (antispoof !== undefined && antispoof <= 0.3) {
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
@@ -295,6 +296,15 @@ export function useKioskLoop({
           setKioskState('blocked')
           pausedRef.current = true
           showAlertAndResume('Fake face detected. Please scan your live face.', 3500)
+          confirmRef.current = 0
+          return
+        }
+
+        if (livenessEvidence && !livenessEvidence.pass && livenessEvidence.reason === 'static_image_detected') {
+          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
+          setKioskState('blocked')
+          pausedRef.current = true
+          showAlertAndResume('Static image detected. Please present your live face.', 3500)
           confirmRef.current = 0
           return
         }
@@ -364,6 +374,7 @@ export function useKioskLoop({
             clientKey: captureContext.kioskId || '',
             source: 'web-scan',
           },
+          livenessEvidence: livenessEvidence || null,
           verificationMode: 'challenge_v2',
           verificationStage: 'passive',
           timestamp: timing.timestamp,

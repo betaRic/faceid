@@ -4,6 +4,7 @@ import { extractFaceRotationAngles, getHumanVerification } from '@/lib/biometric
 import { euclideanDistance, normalizeDescriptor } from '@/lib/biometrics/descriptor-utils'
 import { PREVIEW_MAX_DIMENSION, VERIFICATION_BURST_FRAMES, VERIFICATION_BURST_INTERVAL_MS } from '@/lib/config'
 import { selectOvalReadyFace, buildOvalCaptureCanvas } from '@/lib/biometrics/oval-capture'
+import { analyzeBurstLiveness } from '@/lib/biometrics/liveness'
 
 const wait = duration => new Promise(resolve => {
   window.setTimeout(resolve, duration)
@@ -111,8 +112,8 @@ export function useVerificationBurst(camera) {
     const captures = []
     const landmarksBuffer = []
     const isMobile = isProbablyMobileDevice()
-    const targetFrames = isMobile ? Math.max(VERIFICATION_BURST_FRAMES, 8) : VERIFICATION_BURST_FRAMES
-    const frameInterval = isMobile ? Math.max(VERIFICATION_BURST_INTERVAL_MS, 90) : VERIFICATION_BURST_INTERVAL_MS
+    const targetFrames = isMobile ? Math.max(VERIFICATION_BURST_FRAMES, 6) : VERIFICATION_BURST_FRAMES
+    const frameInterval = isMobile ? Math.max(VERIFICATION_BURST_INTERVAL_MS, 140) : VERIFICATION_BURST_INTERVAL_MS
 
     for (let attempt = 0; attempt < targetFrames; attempt += 1) {
       const rawCanvas = camera.captureImageData({
@@ -155,6 +156,17 @@ export function useVerificationBurst(camera) {
 
     if (captures.length === 0) return null
 
+    const livenessFrames = captures.map(capture => ({
+      primary: {
+        detection: {
+          landmarks: capture.primary?.detection?.landmarks || null,
+          antispoof: capture.primary?.detection?.antispoof ?? null,
+          liveness: capture.primary?.detection?.liveness ?? null,
+        },
+      },
+    }))
+    const livenessEvidence = analyzeBurstLiveness(livenessFrames)
+
     const rankedCaptures = [...captures].sort((left, right) => right.qualityScore - left.qualityScore)
     const aggregationCount = Math.min(isMobile ? 4 : 3, rankedCaptures.length)
     const selectedForAggregation = rankedCaptures.slice(0, aggregationCount)
@@ -191,6 +203,7 @@ export function useVerificationBurst(camera) {
       fusedDescriptor,
       descriptorSpread,
       burstDiagnostics,
+      livenessEvidence,
     }
   }, [camera])
 
@@ -198,8 +211,8 @@ export function useVerificationBurst(camera) {
     const human = await getHumanVerification()
     const samples = []
     const isMobile = isProbablyMobileDevice()
-    const targetFrames = isMobile ? 16 : 12
-    const frameInterval = isMobile ? 90 : 70
+    const targetFrames = isMobile ? 14 : 10
+    const frameInterval = isMobile ? 140 : 110
     const startedAt = Date.now()
 
     for (let attempt = 0; attempt < targetFrames; attempt += 1) {
