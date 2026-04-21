@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/firebase-admin'
+import { getAdminDb } from '@/lib/firebase-admin'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { DESCRIPTOR_LENGTH } from '@/lib/config'
 
