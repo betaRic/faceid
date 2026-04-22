@@ -181,6 +181,16 @@ async function requestPreferredCameraStream() {
             width: { ideal: 960, max: 1280 },
             height: { ideal: 720, max: 960 },
             frameRate: { ideal: 24 },
+            resizeMode: 'none',
+          },
+        },
+        {
+          audio: false,
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640, min: 480 },
+            height: { ideal: 480, min: 360 },
+            resizeMode: 'none',
           },
         },
         {
@@ -189,17 +199,8 @@ async function requestPreferredCameraStream() {
             facingMode: 'user',
             width: { ideal: 640 },
             height: { ideal: 480 },
+            resizeMode: 'none',
           },
-        },
-        {
-          audio: false,
-          video: {
-            facingMode: 'user',
-          },
-        },
-        {
-          audio: false,
-          video: true,
         },
       ]
     : [

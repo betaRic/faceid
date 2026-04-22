@@ -192,7 +192,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
   if (workspaceState === 'waiting') {
     return (
-      <div className="flex min-h-[28rem] items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-50 p-6">
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-50 p-6">
         <div className="text-center">
           <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-navy border-t-transparent" />
           <p className="mt-4 text-sm font-medium text-ink">Starting camera...</p>
@@ -207,12 +207,12 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
     const qualitySummary = captureResult?.qualitySummary
 
     return (
-      <div className="flex min-h-0 flex-1 flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex min-h-[18rem] items-center justify-center overflow-hidden rounded-[1.4rem] border border-black/5 bg-stone-950">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:overflow-hidden">
+        <div className="flex min-h-[14rem] items-center justify-center overflow-hidden rounded-[1.4rem] border border-black/5 bg-stone-950 sm:min-h-[18rem]">
           {captureResult?.previewUrl ? (
             <img
               alt={`Captured face for ${person.name}`}
-              className="max-h-[min(64vh,34rem)] w-full object-contain"
+              className="max-h-[min(44vh,34rem)] w-full object-contain sm:max-h-[min(64vh,34rem)]"
               src={captureResult.previewUrl}
             />
           ) : (
@@ -288,8 +288,8 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="relative min-h-[22rem] w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:min-h-[28rem]">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:overflow-hidden">
+      <div className="relative min-h-[18rem] w-full shrink-0 overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:min-h-[28rem] xl:shrink xl:flex-1">
         <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
 
         <div className="absolute inset-x-0 top-3 z-[5] flex justify-center px-3 sm:top-4 sm:px-4">

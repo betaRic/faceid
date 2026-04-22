@@ -18,9 +18,9 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 
 function ResultStat({ label, value, subtext = '' }) {
   return (
-    <div className="rounded-[1.25rem] border border-black/5 bg-white px-4 py-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-ink sm:text-xl">{value || '--'}</div>
+    <div className="rounded-[1.25rem] border border-black/5 bg-white px-3 py-3 sm:px-4 sm:py-4">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted sm:text-[11px]">{label}</div>
+      <div className="mt-1 text-base font-semibold text-ink sm:mt-2 sm:text-xl">{value || '--'}</div>
       {subtext ? <div className="mt-1 text-xs text-muted">{subtext}</div> : null}
     </div>
   )
@@ -58,7 +58,7 @@ function MonthlySummary({ employeeId, currentMatch }) {
 
   if (loading) {
     return (
-      <div className="mt-6 grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2 rounded-[1.5rem] border border-black/5 bg-stone-50 p-3 sm:mt-6 sm:gap-3 sm:p-4 xl:grid-cols-4">
         {[...Array(4)].map((_, index) => (
           <div key={index} className="h-16 animate-pulse rounded-xl bg-black/5" />
         ))}
@@ -73,14 +73,14 @@ function MonthlySummary({ employeeId, currentMatch }) {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="mt-6 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4"
+      className="mt-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-3 sm:mt-6 sm:p-4"
       initial={{ opacity: 0, y: 8 }}
       transition={{ delay: 0.15 }}
     >
       <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
         {monthName} {summary.year} Activity
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         <ResultStat label="Days" value={summary.totalDays} />
         <ResultStat label="Check-ins" value={summary.checkIns} />
         <ResultStat label="Check-outs" value={summary.checkOuts} />
@@ -132,17 +132,17 @@ export default function KioskSuccessScreen({
       >
         <div className={`h-1.5 w-full ${statusTone.edge}`} />
 
-        <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_360px]">
+        <div className="grid gap-4 p-4 sm:gap-6 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_360px]">
           <div className="min-w-0">
-            <div className="flex items-start gap-4">
-              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${statusTone.icon}`}>
+            <div className="flex items-start gap-3 sm:gap-4">
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full sm:h-14 sm:w-14 ${statusTone.icon}`}>
                 {isReviewOnly ? (
-                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg className="h-5 w-5 sm:h-7 sm:w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 8v4l3 3" />
                     <circle cx="12" cy="12" r="9" />
                   </svg>
                 ) : (
-                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg className="h-5 w-5 sm:h-7 sm:w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
                 )}
@@ -152,9 +152,9 @@ export default function KioskSuccessScreen({
                 <div className={`text-xs font-semibold uppercase tracking-[0.2em] ${statusTone.banner}`}>
                   {currentMatch?.detail || 'Attendance recorded'}
                 </div>
-                <h2 className="mt-2 font-display text-3xl text-ink sm:text-4xl">{successTitle}</h2>
-                <div className="mt-3 text-2xl font-semibold text-ink sm:text-3xl">{currentMatch?.name || 'Employee'}</div>
-                <div className="mt-2 text-sm text-muted sm:text-base">
+                <h2 className="mt-1 font-display text-2xl text-ink sm:mt-2 sm:text-4xl">{successTitle}</h2>
+                <div className="mt-2 text-xl font-semibold text-ink sm:mt-3 sm:text-3xl">{currentMatch?.name || 'Employee'}</div>
+                <div className="mt-1 text-sm text-muted sm:mt-2 sm:text-base">
                   {currentMatch?.officeName || 'Unassigned office'}
                 </div>
                 <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-stone-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-ink">
@@ -164,7 +164,7 @@ export default function KioskSuccessScreen({
               </div>
             </div>
 
-            <div className={`mt-6 grid gap-3 rounded-[1.5rem] border p-4 ${statusTone.summary} sm:grid-cols-2 xl:grid-cols-4`}>
+            <div className={`mt-4 grid grid-cols-2 gap-2 rounded-[1.5rem] border p-3 sm:mt-6 sm:gap-3 sm:p-4 ${statusTone.summary} xl:grid-cols-4`}>
               <ResultStat
                 label={isReviewOnly ? 'Latest recorded time' : 'Time'}
                 value={currentMatch?.time || formatTime(currentMatch?.timestamp || Date.now())}
@@ -177,7 +177,7 @@ export default function KioskSuccessScreen({
             <MonthlySummary currentMatch={currentMatch} employeeId={currentMatch?.employeeId} />
           </div>
 
-          <aside className="flex flex-col gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-5">
+          <aside className="flex flex-col gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 sm:gap-4 sm:p-5">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">Next actions</div>
               <h3 className="mt-2 text-lg font-semibold text-ink">What to do next</h3>

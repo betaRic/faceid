@@ -19,6 +19,7 @@ function resolveImportSpecifier(specifier, fileUrl) {
 
 function rewriteModuleSpecifiers(source, fileUrl) {
   return source
+    .replace(/^\s*import\s+['"]server-only['"]\s*;?\s*$/gm, '')
     .replace(/(from\s+['"])([^'"]+)(['"])/g, (_, prefix, specifier, suffix) => (
       `${prefix}${resolveImportSpecifier(specifier, fileUrl)}${suffix}`
     ))
@@ -54,6 +55,7 @@ const faceSizeGuidanceModule = await importLocalModule('../lib/biometrics/face-s
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
 const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
+const biometricIndexModule = await importLocalModule('../lib/biometric-index.js')
 const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/enrollment-policy.js')
 const duplicateFaceModule = await importLocalModule('../lib/persons/duplicate-face.js')
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
@@ -96,6 +98,7 @@ const {
   filterAttendanceDaysByRange,
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
+const { matchBiometricIndexMultiDescriptor } = biometricIndexModule
 const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
 const {
   buildDuplicateFaceSnapshot,
@@ -529,6 +532,72 @@ await run('match support snapshot blocks weak single-sample support on marginal 
   assert.equal(snapshot.requiresStrongSupport, true)
   assert.equal(snapshot.supportCount, 1)
   assert.equal(snapshot.weakSingleSample, true)
+})
+
+await run('multi-descriptor match blocks a single lucky descriptor without corroboration', () => {
+  const candidateSamples = [
+    {
+      personId: 'wrong-person',
+      employeeId: 'E-1',
+      name: 'Wrong Person',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [1, 0],
+    },
+    {
+      personId: 'actual-person',
+      employeeId: 'E-2',
+      name: 'Actual Person',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [-1, 0],
+    },
+  ]
+
+  const descriptors = [
+    [0.68, 0.733],
+    [0.6, -0.8],
+    [0.58, -0.81],
+  ]
+
+  const result = matchBiometricIndexMultiDescriptor(candidateSamples, descriptors, 0.85, 0.02)
+
+  assert.equal(result.ok, false)
+  assert.equal(result.decisionCode, 'blocked_no_reliable_match')
+  assert.equal(result.debug.supportGate, 'weak_query_descriptor_support')
+})
+
+await run('multi-descriptor match accepts corroborated uncertain support for the same person', () => {
+  const candidateSamples = [
+    {
+      personId: 'person-a',
+      employeeId: 'E-1',
+      name: 'Person A',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [1, 0],
+    },
+    {
+      personId: 'person-b',
+      employeeId: 'E-2',
+      name: 'Person B',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [0, 1],
+    },
+  ]
+
+  const descriptors = [
+    [0.75, 0.66],
+    [0.79, 0.61],
+    [0.77, 0.63],
+  ]
+
+  const result = matchBiometricIndexMultiDescriptor(candidateSamples, descriptors, 0.85, 0.02)
+
+  assert.equal(result.ok, true)
+  assert.equal(result.personId, 'person-a')
+  assert.equal(result.debug.supportCount >= 2, true)
 })
 
 await run('public enrollment cannot silently change identity fields on an existing pending record', () => {

@@ -12,7 +12,7 @@ const EmployeeReenrollPanel = dynamic(
 
 function LoadingState() {
   return (
-    <div className="flex min-h-[40rem] items-center justify-center">
+    <div className="flex min-h-0 flex-1 items-center justify-center">
       <div className="text-center">
         <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-navy border-t-transparent" />
         <p className="mt-4 text-sm font-medium text-ink">Loading re-enrollment...</p>
@@ -39,13 +39,12 @@ export default function EmployeeReenrollPage({ person }) {
   }
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-stone-50">
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-stone-50">
+      <header className="shrink-0 border-b border-black/5 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Link href="/admin" className="flex items-center gap-2 text-sm font-medium text-navy hover:text-navy-dark">
-              ← Back to Dashboard
+              ← Back
             </Link>
             <div className="hidden h-4 w-px bg-black/10 sm:block" />
           </div>
@@ -56,8 +55,7 @@ export default function EmployeeReenrollPage({ person }) {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 px-4 py-4 sm:px-6 sm:py-6">
+      <main className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 overflow-hidden px-4 py-4 sm:px-6 sm:py-6">
         <EmployeeReenrollPanel
           person={person}
           onBack={handleBack}

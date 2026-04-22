@@ -35,7 +35,7 @@ export default function BiometricWorkspaceGate({
       <div className="w-full rounded-[2rem] border border-black/5 bg-[linear-gradient(180deg,rgba(12,108,88,0.08),rgba(255,255,255,0.98))] p-6 shadow-glow backdrop-blur sm:p-8">
         <div className="mx-auto max-w-2xl text-center">
           <div className="text-xs font-semibold uppercase tracking-[0.24em] text-navy-dark">{statusLabel}</div>
-          <h1 className="mt-4 font-display text-4xl text-ink sm:text-5xl">{title}</h1>
+          <h1 className="mt-4 font-display text-2xl text-ink sm:text-4xl lg:text-5xl">{title}</h1>
           <p className="mt-4 text-sm leading-8 text-muted sm:text-base">
             {detail}
           </p>

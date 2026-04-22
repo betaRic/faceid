@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useShallow } from 'zustand/react/shallow'
 import AdminShell from './admin/AdminShell'
 import { useAdminStore } from '@/lib/admin/store'
 import { useOffices } from '@/lib/admin/hooks/useOffices'
@@ -22,12 +23,28 @@ import { ThresholdSettings } from './admin/ThresholdSettings'
 export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '', permissions = [] }) {
   const router = useRouter()
   const {
-    roleScope, setRoleScope,
-    activePanel, setActivePanel,
-    editingEmployee, setEditingEmployee,
-    deletingEmployee, setDeletingEmployee,
-    officesLoaded, setSelectedOfficeId,
-  } = useAdminStore()
+    roleScope,
+    setRoleScope,
+    activePanel,
+    setActivePanel,
+    editingEmployee,
+    setEditingEmployee,
+    deletingEmployee,
+    setDeletingEmployee,
+    officesLoaded,
+    setSelectedOfficeId,
+  } = useAdminStore(useShallow((state) => ({
+    roleScope: state.roleScope,
+    setRoleScope: state.setRoleScope,
+    activePanel: state.activePanel,
+    setActivePanel: state.setActivePanel,
+    editingEmployee: state.editingEmployee,
+    setEditingEmployee: state.setEditingEmployee,
+    deletingEmployee: state.deletingEmployee,
+    setDeletingEmployee: state.setDeletingEmployee,
+    officesLoaded: state.officesLoaded,
+    setSelectedOfficeId: state.setSelectedOfficeId,
+  })))
 
   const isHr = !permissions.includes('dashboard') && !permissions.includes('office')
 
@@ -53,7 +70,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   }, [pendingCount, permissions, roleScope])
 
   // Boot office subscription here so it isn't gated behind officesLoaded
-  useOffices()
+  useOffices(true)
 
   useEffect(() => {
     setRoleScope(initialRoleScope)
@@ -64,9 +81,16 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
     }
   }, [initialRoleScope, initialOfficeId, setRoleScope, setSelectedOfficeId, isHr, activePanel, setActivePanel])
 
+  useEffect(() => {
+    if (navItems.length === 0) return
+    if (!navItems.some((item) => item.id === activePanel && !item.disabled)) {
+      setActivePanel(navItems[0].id)
+    }
+  }, [activePanel, navItems, setActivePanel])
+
   const handleLogout = useCallback(async () => {
     await fetch('/api/admin/logout', { method: 'POST' })
-    router.push('/login')
+    router.push('/admin/login')
     router.refresh()
   }, [router])
 
@@ -87,7 +111,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
     <AdminShell
       activePanel={activePanel}
       actions={
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
             href="/scan"
@@ -107,7 +131,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       onPanelChange={setActivePanel}
       roleScope={roleScope}
     >
-      <div className="flex h-full min-h-0 flex-col p-3 sm:p-5">
+      <div className="flex h-full min-h-0 flex-col p-3 pb-24 sm:p-5 md:pb-5">
         {isHr ? (
           <>
             {activePanel === 'employees' && <HrEmployeesPanel />}

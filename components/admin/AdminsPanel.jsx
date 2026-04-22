@@ -7,9 +7,9 @@ import { StatusBadge } from '@/components/shared/ui'
 import { AddRoleModal } from './AddRoleModal'
 
 function AdminsPanelInner() {
-  const { roleScope } = useAdminStore()
+  const roleScope = useAdminStore((state) => state.roleScope)
   const { admins, adminsLoaded, handleCreateAdmin, handleUpdateAdmin, handleDeleteAdmin, isPending } = useAdmins()
-  const { hrUsers, hrUsersLoaded, createHrUser, updateHrUser, deleteHrUser } = useHrUsers()
+  const { hrUsers, hrUsersLoaded, createHrUser, updateHrUser, deleteHrUser, isPending: isHrPending } = useHrUsers()
   const [showAddModal, setShowAddModal] = useState(false)
   const [filterRole, setFilterRole] = useState('all')
 
@@ -71,7 +71,7 @@ function AdminsPanelInner() {
   }
 
   return (
-    <section className="flex h-full flex-col gap-5 rounded-[2rem] border border-black/5 bg-white p-4 shadow-sm sm:p-6">
+    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white p-4 shadow-sm sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Roles</div>
@@ -275,10 +275,11 @@ function AdminsPanelInner() {
       </div>
 
       <AddRoleModal
+        adminPending={isPending('admin-create')}
+        hrPending={isHrPending('hr-user-create')}
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onSubmit={handleAddRole}
-        isPending={isPending('admin-create')}
       />
     </section>
   )

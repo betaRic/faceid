@@ -116,12 +116,13 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
   const sorted = [...logs].sort((a, b) => a.timestamp - b.timestamp)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-xl rounded-3xl border border-black/5 bg-white p-6 shadow-2xl"
+        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-black/5 bg-white shadow-2xl sm:max-w-xl sm:rounded-3xl"
       >
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -251,6 +252,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
         <p className="mt-3 text-xs text-muted">
           Every manual addition and deletion is recorded in the audit log with your admin identity.
         </p>
+        </div>
       </motion.div>
     </div>
   )

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
 import { useAdminStore } from '@/lib/admin/store'
 import { updatePersonRecord } from '@/lib/data-store'
 import { Field } from '@/components/shared/ui'
@@ -15,8 +16,19 @@ import {
 
 export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   const router = useRouter()
-  const store = useAdminStore()
-  const offices = store.offices
+  const {
+    offices,
+    refreshEmployees,
+    addToast,
+    setPending,
+    isPending,
+  } = useAdminStore(useShallow((state) => ({
+    offices: state.offices,
+    refreshEmployees: state.refreshEmployees,
+    addToast: state.addToast,
+    setPending: state.setPending,
+    isPending: state.isPending,
+  })))
   const [officeId, setOfficeId] = useState('')
   const [active, setActive] = useState(true)
   const [approvalStatus, setApprovalStatus] = useState(PERSON_APPROVAL_PENDING)
@@ -35,63 +47,63 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   if (!person) return null
 
   const selectedOffice = offices.find((o) => o.id === officeId)
-  const isSaving = store.isPending(`employee-update-${person.id}`)
+  const isSaving = isPending(`employee-update-${person.id}`)
   const currentApproval = getEffectivePersonApprovalStatus(person)
 
   async function handleQuickApprove() {
-    store.setPending(`employee-approve-${person.id}`, true)
+    setPending(`employee-approve-${person.id}`, true)
     try {
       await updatePersonRecord(person, { approvalStatus: PERSON_APPROVAL_APPROVED })
-      store.refreshEmployees()
-      store.addToast(`${person.name} approved`, 'success')
+      refreshEmployees()
+      addToast(`${person.name} approved`, 'success')
       onSave(person, { approvalStatus: PERSON_APPROVAL_APPROVED })
     } catch (err) {
-      store.addToast(err?.message || 'Approval failed', 'error')
+      addToast(err?.message || 'Approval failed', 'error')
     }
-    store.setPending(`employee-approve-${person.id}`, false)
+    setPending(`employee-approve-${person.id}`, false)
   }
 
   async function handleQuickReject() {
-    store.setPending(`employee-reject-${person.id}`, true)
+    setPending(`employee-reject-${person.id}`, true)
     try {
       await updatePersonRecord(person, { approvalStatus: PERSON_APPROVAL_REJECTED })
-      store.refreshEmployees()
-      store.addToast(`${person.name} rejected`, 'success')
+      refreshEmployees()
+      addToast(`${person.name} rejected`, 'success')
       onSave(person, { approvalStatus: PERSON_APPROVAL_REJECTED })
     } catch (err) {
-      store.addToast(err?.message || 'Rejection failed', 'error')
+      addToast(err?.message || 'Rejection failed', 'error')
     }
-    store.setPending(`employee-reject-${person.id}`, false)
+    setPending(`employee-reject-${person.id}`, false)
   }
 
   async function handleQuickActivate() {
-    store.setPending(`employee-activate-${person.id}`, true)
+    setPending(`employee-activate-${person.id}`, true)
     try {
       await updatePersonRecord(person, { active: true })
-      store.refreshEmployees()
-      store.addToast(`${person.name} activated`, 'success')
+      refreshEmployees()
+      addToast(`${person.name} activated`, 'success')
       onSave(person, { active: true })
     } catch (err) {
-      store.addToast(err?.message || 'Activation failed', 'error')
+      addToast(err?.message || 'Activation failed', 'error')
     }
-    store.setPending(`employee-activate-${person.id}`, false)
+    setPending(`employee-activate-${person.id}`, false)
   }
 
   async function handleQuickDeactivate() {
-    store.setPending(`employee-deactivate-${person.id}`, true)
+    setPending(`employee-deactivate-${person.id}`, true)
     try {
       await updatePersonRecord(person, { active: false })
-      store.refreshEmployees()
-      store.addToast(`${person.name} deactivated`, 'success')
+      refreshEmployees()
+      addToast(`${person.name} deactivated`, 'success')
       onSave(person, { active: false })
     } catch (err) {
-      store.addToast(err?.message || 'Deactivation failed', 'error')
+      addToast(err?.message || 'Deactivation failed', 'error')
     }
-    store.setPending(`employee-deactivate-${person.id}`, false)
+    setPending(`employee-deactivate-${person.id}`, false)
   }
 
   async function handleBiometricReset() {
-    store.setPending(`biometric-reset-${person.id}`, true)
+    setPending(`biometric-reset-${person.id}`, true)
     setResetConfirmOpen(false)
     try {
       const res = await fetch(`/api/persons/${person.id}/biometric-reset`, {
@@ -100,21 +112,21 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
       })
       const data = await res.json()
       if (data.ok) {
-        store.refreshEmployees()
-        store.addToast(`Face data reset — ${person.name} must re-enroll in admin or registration`, 'success')
+        refreshEmployees()
+        addToast(`Face data reset — ${person.name} must re-enroll in admin or registration`, 'success')
         onSave(person, { sampleCount: 0, approvalStatus: PERSON_APPROVAL_PENDING })
       } else {
-        store.addToast(data.message || 'Reset failed', 'error')
+        addToast(data.message || 'Reset failed', 'error')
       }
     } catch {
-      store.addToast('Reset failed — try again', 'error')
+      addToast('Reset failed — try again', 'error')
     }
-    store.setPending(`biometric-reset-${person.id}`, false)
+    setPending(`biometric-reset-${person.id}`, false)
   }
 
   async function handleSave() {
     if (!officeId) return
-    store.setPending(`employee-update-${person.id}`, true)
+    setPending(`employee-update-${person.id}`, true)
     try {
       await updatePersonRecord(person, {
         officeId,
@@ -122,12 +134,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         active,
         approvalStatus,
       })
-      store.refreshEmployees()
+      refreshEmployees()
       onSave(person, { officeId, active, approvalStatus })
     } catch (err) {
-      store.addToast(err?.message || 'Update failed', 'error')
+      addToast(err?.message || 'Update failed', 'error')
     }
-    store.setPending(`employee-update-${person.id}`, false)
+    setPending(`employee-update-${person.id}`, false)
   }
 
   function handleOpenReenroll() {
@@ -168,13 +180,13 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   const submittedLabel = formatSubmittedDate()
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
       <motion.div
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-lg rounded-3xl border border-black/5 bg-white p-6 shadow-2xl"
+        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-black/5 bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl"
         initial={{ opacity: 0, scale: 0.95 }}
       >
-        <>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
         <div className="flex items-start gap-4">
           {person.photoUrl ? (
             <img
@@ -216,19 +228,19 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             <div className="mt-4 flex gap-3">
               <button
                 className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                disabled={store.isPending(`employee-approve-${person.id}`)}
+                disabled={isPending(`employee-approve-${person.id}`)}
                 onClick={handleQuickApprove}
                 type="button"
               >
-                {store.isPending(`employee-approve-${person.id}`) ? 'Approving...' : 'Approve'}
+                {isPending(`employee-approve-${person.id}`) ? 'Approving...' : 'Approve'}
               </button>
               <button
                 className="flex-1 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
-                disabled={store.isPending(`employee-reject-${person.id}`)}
+                disabled={isPending(`employee-reject-${person.id}`)}
                 onClick={handleQuickReject}
                 type="button"
               >
-                {store.isPending(`employee-reject-${person.id}`) ? 'Rejecting...' : 'Reject'}
+                {isPending(`employee-reject-${person.id}`) ? 'Rejecting...' : 'Reject'}
               </button>
             </div>
             <button
@@ -257,15 +269,15 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                     : 'border border-red-200 bg-white text-red-700 hover:bg-red-50'
                 }`}
                 disabled={
-                  store.isPending(`employee-activate-${person.id}`) ||
-                  store.isPending(`employee-deactivate-${person.id}`)
+                  isPending(`employee-activate-${person.id}`) ||
+                  isPending(`employee-deactivate-${person.id}`)
                 }
                 onClick={person.active === false ? handleQuickActivate : handleQuickDeactivate}
                 type="button"
               >
                 {person.active === false
-                  ? (store.isPending(`employee-activate-${person.id}`) ? 'Activating...' : 'Activate')
-                  : (store.isPending(`employee-deactivate-${person.id}`) ? 'Deactivating...' : 'Deactivate')
+                  ? (isPending(`employee-activate-${person.id}`) ? 'Activating...' : 'Activate')
+                  : (isPending(`employee-deactivate-${person.id}`) ? 'Deactivating...' : 'Deactivate')
                 }
               </button>
             </div>
@@ -302,11 +314,11 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                   <div className="mt-3 flex gap-2">
                     <button
                       className="flex-1 rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-                      disabled={store.isPending(`biometric-reset-${person.id}`)}
+                      disabled={isPending(`biometric-reset-${person.id}`)}
                       onClick={handleBiometricReset}
                       type="button"
                     >
-                      {store.isPending(`biometric-reset-${person.id}`) ? 'Resetting...' : 'Confirm reset'}
+                      {isPending(`biometric-reset-${person.id}`) ? 'Resetting...' : 'Confirm reset'}
                     </button>
                     <button
                       className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:bg-stone-50"
@@ -356,7 +368,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             </button>
           </div>
         )}
-        </>
+        </div>
       </motion.div>
     </div>
   )

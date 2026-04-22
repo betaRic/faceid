@@ -329,7 +329,7 @@ export default function RegisterView({
           statusMsg={statusMsg}
         />
       ) : (
-        <div className="page-frame flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+        <div className="page-frame flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}

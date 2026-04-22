@@ -8,3 +8,5 @@ dist/
 .env.local
 analysis.md
 .env.example
+AGENTS.md
+CLAUDE.md

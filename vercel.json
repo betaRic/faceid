@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/cron/rebuild-daily-summary",
-      "schedule": "59 15 * * *"
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/cron/warm-biometric-cache",
-      "schedule": "0 15 * * *"
+      "schedule": "5 15 * * *"
     }
   ]
 }

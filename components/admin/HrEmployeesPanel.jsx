@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { startTransition } from 'react'
 import { useHrEmployees } from '@/lib/hr/hooks'
 import { useAdminStore } from '@/lib/admin/store'
-import { ApprovalBadge, StatusBadge } from '@/components/shared/ui'
+import { ApprovalBadge, Badge, StatusBadge } from '@/components/shared/ui'
 
 function SkeletonRow() {
   return (
@@ -47,7 +47,7 @@ function HrEmployeesPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full flex-col gap-5 rounded-[2rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+      className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
@@ -124,7 +124,45 @@ function HrEmployeesPanelInner() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
-        <table className="w-full text-left text-sm">
+        <div className="divide-y divide-black/5 bg-white md:hidden">
+          {loading && !employeesLoaded ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="animate-pulse px-4 py-4">
+                <div className="h-4 w-32 rounded bg-stone-200" />
+                <div className="mt-3 h-3 w-24 rounded bg-stone-200" />
+              </div>
+            ))
+          ) : employees.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted">
+              No employees match the current filters.
+            </div>
+          ) : (
+            employees.map((person) => (
+              <div key={person.id} className="grid gap-3 px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-base font-semibold text-ink">{person.name}</div>
+                    <div className="mt-1 text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                  </div>
+                  <StatusBadge active={person.active !== false} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <ApprovalBadge status={person.approvalStatus} />
+                  <Badge>{person.officeName}</Badge>
+                </div>
+                <button
+                  className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                  onClick={() => setDeletingEmployee(person)}
+                  type="button"
+                >
+                  Delete employee
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <table className="hidden w-full text-left text-sm md:table">
           <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
             <tr>
               <th className="px-5 py-3">Employee</th>

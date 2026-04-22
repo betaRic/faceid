@@ -2,7 +2,14 @@ import { useCallback } from 'react'
 import { isProbablyMobileDevice } from '@/lib/biometrics/device-profile'
 import { extractFaceRotationAngles, getHumanVerification } from '@/lib/biometrics/human'
 import { euclideanDistance, normalizeDescriptor } from '@/lib/biometrics/descriptor-utils'
-import { PREVIEW_MAX_DIMENSION, VERIFICATION_BURST_FRAMES, VERIFICATION_BURST_INTERVAL_MS } from '@/lib/config'
+import {
+  PREVIEW_MAX_DIMENSION,
+  VERIFICATION_BURST_FRAMES,
+  VERIFICATION_BURST_INTERVAL_MS,
+  VERIFICATION_BURST_MOBILE_FRAMES,
+  VERIFICATION_BURST_MOBILE_INTERVAL_MS,
+  VERIFICATION_TOP_DESCRIPTORS,
+} from '@/lib/config'
 import { selectOvalReadyFace, buildOvalCaptureCanvas } from '@/lib/biometrics/oval-capture'
 import { analyzeBurstLiveness } from '@/lib/biometrics/liveness'
 
@@ -112,8 +119,8 @@ export function useVerificationBurst(camera) {
     const captures = []
     const landmarksBuffer = []
     const isMobile = isProbablyMobileDevice()
-    const targetFrames = isMobile ? Math.max(VERIFICATION_BURST_FRAMES, 6) : VERIFICATION_BURST_FRAMES
-    const frameInterval = isMobile ? Math.max(VERIFICATION_BURST_INTERVAL_MS, 140) : VERIFICATION_BURST_INTERVAL_MS
+    const targetFrames = isMobile ? VERIFICATION_BURST_MOBILE_FRAMES : VERIFICATION_BURST_FRAMES
+    const frameInterval = isMobile ? VERIFICATION_BURST_MOBILE_INTERVAL_MS : VERIFICATION_BURST_INTERVAL_MS
 
     for (let attempt = 0; attempt < targetFrames; attempt += 1) {
       const rawCanvas = camera.captureImageData({
@@ -168,12 +175,15 @@ export function useVerificationBurst(camera) {
     const livenessEvidence = analyzeBurstLiveness(livenessFrames)
 
     const rankedCaptures = [...captures].sort((left, right) => right.qualityScore - left.qualityScore)
-    const aggregationCount = Math.min(isMobile ? 4 : 3, rankedCaptures.length)
+    const aggregationCount = Math.min(isMobile ? 3 : 3, rankedCaptures.length)
     const selectedForAggregation = rankedCaptures.slice(0, aggregationCount)
     const descriptorSamples = selectedForAggregation
       .map(capture => capture?.primary?.detection?.descriptor)
       .filter(descriptor => Array.isArray(descriptor) && descriptor.length > 0)
 
+    const topDescriptors = descriptorSamples
+      .slice(0, VERIFICATION_TOP_DESCRIPTORS)
+      .map(d => Array.from(normalizeDescriptor(d)))
     const fusedDescriptor = aggregateDescriptors(descriptorSamples)
     const descriptorSpread = summarizeDescriptorSpread(descriptorSamples)
     const strictCount = captures.filter(capture => capture?.primary?.strictOval).length
@@ -200,6 +210,7 @@ export function useVerificationBurst(camera) {
       ...bestCapture,
       landmarks: landmarksBuffer,
       allCaptures: captures,
+      topDescriptors,
       fusedDescriptor,
       descriptorSpread,
       burstDiagnostics,

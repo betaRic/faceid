@@ -3,10 +3,16 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { deletePersonRecord } from '@/lib/data-store'
+import { useShallow } from 'zustand/react/shallow'
 import { useAdminStore } from '@/lib/admin/store'
 
 export default function EmployeeDeleteModal({ person, onCancel }) {
-  const store = useAdminStore()
+  const { refreshEmployees, addToast, setPending, isPending } = useAdminStore(useShallow((state) => ({
+    refreshEmployees: state.refreshEmployees,
+    addToast: state.addToast,
+    setPending: state.setPending,
+    isPending: state.isPending,
+  })))
   const [confirmName, setConfirmName] = useState('')
 
   useEffect(() => {
@@ -18,20 +24,20 @@ export default function EmployeeDeleteModal({ person, onCancel }) {
   const normalizedName = String(person.name || '').trim().toLowerCase()
   const canDelete = confirmName.trim().toLowerCase() === normalizedName
   const pendingKey = `employee-hard-delete-${person.id}`
-  const isDeleting = store.isPending(pendingKey)
+  const isDeleting = isPending(pendingKey)
 
   async function handleDelete() {
     if (!canDelete) return
-    store.setPending(pendingKey, true)
+    setPending(pendingKey, true)
     try {
       await deletePersonRecord([], person.id, { hard: true, confirmName })
-      store.refreshEmployees()
-      store.addToast(`${person.name} deleted`, 'success')
+      refreshEmployees()
+      addToast(`${person.name} deleted`, 'success')
       onCancel()
     } catch (err) {
-      store.addToast(err?.message || 'Delete failed', 'error')
+      addToast(err?.message || 'Delete failed', 'error')
     }
-    store.setPending(pendingKey, false)
+    setPending(pendingKey, false)
   }
 
   return (

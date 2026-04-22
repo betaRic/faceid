@@ -14,6 +14,7 @@ import { syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import { PERSON_APPROVAL_PENDING } from '@/lib/person-approval'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 
 /**
  * Biometric-only reset: clears all face descriptors and biometric index
@@ -24,6 +25,9 @@ import { createOriginGuard } from '@/lib/csrf'
  * GET  — preview (counts what will be affected)
  * POST — execute (requires { "confirm": true })
  */
+
+const PREVIEW_LIMIT = { limit: 6, windowMs: 60 * 60 * 1000 }
+const EXECUTE_LIMIT = { limit: 2, windowMs: 60 * 60 * 1000 }
 
 async function deleteCollection(db, collectionName, batchSize = 200) {
   const collectionRef = db.collection(collectionName)
@@ -52,6 +56,17 @@ export async function GET(request) {
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+    }
+
+    const previewLimit = await enforceRateLimit(db, {
+      key: `maint-biometric-reset-preview:${resolvedSession.email || resolvedSession.adminId || getRequestIp(request)}`,
+      ...PREVIEW_LIMIT,
+    })
+    if (!previewLimit.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many biometric reset previews. Wait before trying again.' },
+        { status: 429 },
+      )
     }
 
     const personsSnapshot = await db.collection('persons').get()
@@ -104,6 +119,17 @@ export async function POST(request) {
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+    }
+
+    const executeLimit = await enforceRateLimit(db, {
+      key: `maint-biometric-reset-execute:${resolvedSession.email || resolvedSession.adminId || getRequestIp(request)}`,
+      ...EXECUTE_LIMIT,
+    })
+    if (!executeLimit.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many biometric reset attempts. Wait before trying again.' },
+        { status: 429 },
+      )
     }
 
     const body = await request.json().catch(() => null)

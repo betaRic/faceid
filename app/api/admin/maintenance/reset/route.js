@@ -10,6 +10,7 @@ import {
 } from '@/lib/admin-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 
 // Collections that are NEVER deleted
 const PROTECTED_COLLECTIONS = new Set([
@@ -30,6 +31,9 @@ const RESET_COLLECTIONS = [
   'scan_events',
   'person_enrollment_locks',
 ]
+
+const PREVIEW_LIMIT = { limit: 6, windowMs: 60 * 60 * 1000 }
+const EXECUTE_LIMIT = { limit: 2, windowMs: 60 * 60 * 1000 }
 
 async function deleteCollection(db, collectionName, batchSize = 200) {
   const collectionRef = db.collection(collectionName)
@@ -66,6 +70,17 @@ export async function GET(request) {
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+    }
+
+    const previewLimit = await enforceRateLimit(db, {
+      key: `maint-reset-preview:${resolvedSession.email || resolvedSession.adminId || getRequestIp(request)}`,
+      ...PREVIEW_LIMIT,
+    })
+    if (!previewLimit.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many reset previews. Wait before trying again.' },
+        { status: 429 },
+      )
     }
 
     // Count documents in each collection
@@ -117,6 +132,17 @@ export async function POST(request) {
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+    }
+
+    const executeLimit = await enforceRateLimit(db, {
+      key: `maint-reset-execute:${resolvedSession.email || resolvedSession.adminId || getRequestIp(request)}`,
+      ...EXECUTE_LIMIT,
+    })
+    if (!executeLimit.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many reset attempts. Wait before trying again.' },
+        { status: 429 },
+      )
     }
 
     const body = await request.json().catch(() => null)

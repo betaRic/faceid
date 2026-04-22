@@ -31,7 +31,7 @@ export const maxDuration = 30
 export const dynamic = 'force-dynamic'
 
 export async function POST(request) {
-  const db = getDb()
+  const db = getAdminDb()
   const ip = getRequestIp(request)
 
   const rateCheck = await enforceRateLimit(db, {

@@ -62,7 +62,10 @@ function roundMetric(value, digits = 4) {
 
 function getBrowserLabel(userAgent = '') {
   const value = String(userAgent || '')
+  if (/FBAN|FBAV|Messenger/i.test(value)) return 'Facebook/Messenger'
   if (/edg/i.test(value)) return 'Edge'
+  if (/opr\/|opera/i.test(value)) return 'Opera'
+  if (/crios/i.test(value)) return 'Chrome iOS'
   if (/chrome|crios/i.test(value)) return 'Chrome'
   if (/safari/i.test(value) && !/chrome|crios|android/i.test(value)) return 'Safari'
   if (/firefox|fxios/i.test(value)) return 'Firefox'
@@ -239,6 +242,7 @@ export function useKioskLoop({
           allCaptures,
           canvas: bestCanvas,
           landmarks,
+          topDescriptors,
           fusedDescriptor,
           descriptorSpread,
           burstDiagnostics,
@@ -385,6 +389,9 @@ export function useKioskLoop({
           latitude: coordinates?.latitude ?? null,
           longitude: coordinates?.longitude ?? null,
           descriptor,
+          descriptors: Array.isArray(topDescriptors) && topDescriptors.length > 0
+            ? topDescriptors
+            : [],
         }
 
         const runActiveChallengeStep = async (challenge) => {

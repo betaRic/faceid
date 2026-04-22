@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
 import { useAdminStore } from '@/lib/admin/store'
 import { useOffices, useAttendance, useEmployees } from '@/lib/admin/hooks'
 import { BiometricBenchmarkPanel } from './BiometricBenchmarkPanel'
@@ -171,7 +172,13 @@ function DashboardPanelInner() {
   const { offices, visibleOffices } = useOffices()
   const { attendanceLoaded, todaysLogs } = useAttendance()
   const { employeeTotal, employeesLoaded } = useEmployees()
-  const { admins, adminsLoaded, roleScope, setActivePanel } = useAdminStore()
+  const { admins, adminsLoaded, roleScope, setActivePanel } = useAdminStore(useShallow((state) => ({
+    admins: state.admins,
+    adminsLoaded: state.adminsLoaded,
+    roleScope: state.roleScope,
+    setActivePanel: state.setActivePanel,
+  })))
+  const [showBenchmark, setShowBenchmark] = useState(false)
 
   const employeeMetric = employeesLoaded
     ? String(employeeTotal).padStart(2, '0')
@@ -180,28 +187,60 @@ function DashboardPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full min-h-0 flex-col gap-6 overflow-auto rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
+      className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
-      <div className="flex flex-col gap-2">
+      <div className="shrink-0">
         <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Dashboard</div>
         <h2 className="font-display text-3xl font-bold text-ink">Overview</h2>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
+          Executive snapshot first. Heavier biometric diagnostics stay collapsed until you actually need them.
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Offices" value={String(visibleOffices.length).padStart(2, '0')} />
-        <MetricCard label="Employees" value={employeeMetric} />
-        <MetricCard label="Today" value={attendanceLoaded ? String(todaysLogs.length).padStart(2, '0') : '--'} />
-        <MetricCard label="Admins" value={roleScope === 'regional' && adminsLoaded ? String(admins.length).padStart(2, '0') : '--'} />
-      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="grid gap-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Offices" value={String(visibleOffices.length).padStart(2, '0')} />
+            <MetricCard label="Employees" value={employeeMetric} />
+            <MetricCard label="Today" value={attendanceLoaded ? String(todaysLogs.length).padStart(2, '0') : '--'} />
+            <MetricCard label="Admins" value={roleScope === 'regional' && adminsLoaded ? String(admins.length).padStart(2, '0') : '--'} />
+          </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <ReenrollmentQueueCard onOpenEmployees={() => setActivePanel('employees')} />
-        <KioskDevicesCard />
-      </div>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <ReenrollmentQueueCard onOpenEmployees={() => setActivePanel('employees')} />
+            <KioskDevicesCard />
+          </div>
 
-      <BiometricBenchmarkPanel />
+          <section className="rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">
+                  System diagnostics
+                </div>
+                <h3 className="mt-1 text-lg font-semibold text-ink">Biometric benchmark details</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Keep this collapsed during normal admin work. Open it when you need scan quality and device breakdowns.
+                </p>
+              </div>
+              <button
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
+                onClick={() => setShowBenchmark((value) => !value)}
+                type="button"
+              >
+                {showBenchmark ? 'Hide benchmark' : 'Open benchmark'}
+              </button>
+            </div>
+
+            {showBenchmark ? (
+              <div className="mt-4">
+                <BiometricBenchmarkPanel />
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </div>
     </motion.section>
   )
 }

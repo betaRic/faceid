@@ -59,7 +59,7 @@ function HrUsersPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full flex-col gap-5 rounded-[2rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+      className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
@@ -93,75 +93,138 @@ function HrUsersPanelInner() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
-        <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
-            <tr>
-              <th className="px-5 py-3">HR User</th>
-              <th className="px-5 py-3">Scope</th>
-              <th className="px-5 py-3">Office</th>
-              <th className="px-5 py-3">Status</th>
-              <th className="px-5 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-black/5 bg-white">
-            {!hrUsersLoaded ? (
-              <tr><td className="px-5 py-8 text-center text-muted" colSpan={5}>Loading...</td></tr>
-            ) : hrUsers.length === 0 ? (
-              <tr><td className="px-5 py-8 text-center text-muted" colSpan={5}>No HR user records yet.</td></tr>
-            ) : (
-              hrUsers.map((hr) => (
-                <tr key={hr.id} className="bg-white">
-                  <td className="px-5 py-3">
-                    <div className="font-medium text-ink">{hr.displayName || hr.email}</div>
-                    <div className="text-xs text-muted">{hr.email}</div>
-                  </td>
-                  <td className="px-5 py-3">
-                    <select
-                      className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
-                      onChange={(e) => updateHrUser(hr, { scope: e.target.value, officeId: e.target.value === 'office' ? (hr.officeId || offices[0]?.id || '') : '' })}
-                      value={hr.scope}
-                    >
-                      <option value="office">Office</option>
-                      <option value="regional">Regional</option>
-                    </select>
-                  </td>
-                  <td className="px-5 py-3">
-                    <select
-                      className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
-                      disabled={hr.scope !== 'office'}
-                      onChange={(e) => updateHrUser(hr, { officeId: e.target.value })}
-                      value={hr.scope === 'office' ? hr.officeId : ''}
-                    >
-                      <option value="">Select</option>
-                      {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                    </select>
-                  </td>
-                  <td className="px-5 py-3"><StatusBadge active={hr.active} /></td>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${hr.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} ${isPending(`hr-user-update-${hr.id}`) ? 'opacity-50' : ''}`}
-                        disabled={isPending(`hr-user-update-${hr.id}`)}
-                        onClick={() => updateHrUser(hr, { active: !hr.active })}
-                        type="button"
-                      >
-                        {hr.active ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        className={`rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-ink hover:bg-stone-100 ${isPending(`hr-user-delete-${hr.id}`) ? 'opacity-50' : ''}`}
-                        disabled={isPending(`hr-user-delete-${hr.id}`)}
-                        onClick={() => deleteHrUser(hr)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
+        {!hrUsersLoaded ? (
+          <div className="px-4 py-8 text-center text-sm text-muted">Loading...</div>
+        ) : hrUsers.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted">No HR user records yet.</div>
+        ) : (
+          <>
+            <div className="divide-y divide-black/5 bg-white lg:hidden">
+              {hrUsers.map((hr) => (
+                <div key={hr.id} className="grid gap-3 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-base font-semibold text-ink">{hr.displayName || hr.email}</div>
+                      <div className="mt-1 text-xs text-muted">{hr.email}</div>
                     </div>
-                  </td>
+                    <StatusBadge active={hr.active} />
+                  </div>
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    <div className="rounded-xl bg-stone-50 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-widest text-muted">Scope</div>
+                      <div className="mt-1">
+                        <select
+                          className="w-full rounded-xl border border-black/10 bg-white px-2 py-2 text-xs outline-none transition focus:border-navy"
+                          onChange={(e) => updateHrUser(hr, { scope: e.target.value, officeId: e.target.value === 'office' ? (hr.officeId || offices[0]?.id || '') : '' })}
+                          value={hr.scope}
+                        >
+                          <option value="office">Office</option>
+                          <option value="regional">Regional</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-stone-50 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-widest text-muted">Office</div>
+                      <div className="mt-1">
+                        <select
+                          className="w-full rounded-xl border border-black/10 bg-white px-2 py-2 text-xs outline-none transition focus:border-navy"
+                          disabled={hr.scope !== 'office'}
+                          onChange={(e) => updateHrUser(hr, { officeId: e.target.value })}
+                          value={hr.scope === 'office' ? hr.officeId : ''}
+                        >
+                          <option value="">Select</option>
+                          {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      className={`rounded-full border px-4 py-2 text-sm font-semibold ${hr.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} ${isPending(`hr-user-update-${hr.id}`) ? 'opacity-50' : ''}`}
+                      disabled={isPending(`hr-user-update-${hr.id}`)}
+                      onClick={() => updateHrUser(hr, { active: !hr.active })}
+                      type="button"
+                    >
+                      {hr.active ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      className={`rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-stone-100 ${isPending(`hr-user-delete-${hr.id}`) ? 'opacity-50' : ''}`}
+                      disabled={isPending(`hr-user-delete-${hr.id}`)}
+                      onClick={() => deleteHrUser(hr)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <table className="hidden w-full text-left text-sm lg:table">
+              <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
+                <tr>
+                  <th className="px-5 py-3">HR User</th>
+                  <th className="px-5 py-3">Scope</th>
+                  <th className="px-5 py-3">Office</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Actions</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="divide-y divide-black/5 bg-white">
+                {hrUsers.map((hr) => (
+                  <tr key={hr.id} className="bg-white">
+                    <td className="px-5 py-3">
+                      <div className="font-medium text-ink">{hr.displayName || hr.email}</div>
+                      <div className="text-xs text-muted">{hr.email}</div>
+                    </td>
+                    <td className="px-5 py-3">
+                      <select
+                        className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
+                        onChange={(e) => updateHrUser(hr, { scope: e.target.value, officeId: e.target.value === 'office' ? (hr.officeId || offices[0]?.id || '') : '' })}
+                        value={hr.scope}
+                      >
+                        <option value="office">Office</option>
+                        <option value="regional">Regional</option>
+                      </select>
+                    </td>
+                    <td className="px-5 py-3">
+                      <select
+                        className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
+                        disabled={hr.scope !== 'office'}
+                        onChange={(e) => updateHrUser(hr, { officeId: e.target.value })}
+                        value={hr.scope === 'office' ? hr.officeId : ''}
+                      >
+                        <option value="">Select</option>
+                        {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-5 py-3"><StatusBadge active={hr.active} /></td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${hr.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} ${isPending(`hr-user-update-${hr.id}`) ? 'opacity-50' : ''}`}
+                          disabled={isPending(`hr-user-update-${hr.id}`)}
+                          onClick={() => updateHrUser(hr, { active: !hr.active })}
+                          type="button"
+                        >
+                          {hr.active ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          className={`rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-ink hover:bg-stone-100 ${isPending(`hr-user-delete-${hr.id}`) ? 'opacity-50' : ''}`}
+                          disabled={isPending(`hr-user-delete-${hr.id}`)}
+                          onClick={() => deleteHrUser(hr)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
       </div>
     </motion.section>
   )
