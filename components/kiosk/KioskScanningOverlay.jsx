@@ -25,6 +25,7 @@ export default function KioskScanningOverlay({
   const isScanning = kioskState === 'scanning'
   const isVerifying = kioskState === 'verifying'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
+  const showLiveVideo = isChallenge || !hasCapturedFrame
 
   const ringState = isVerifying
     ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
@@ -112,13 +113,7 @@ export default function KioskScanningOverlay({
             style={OVAL_STYLE}
           />
           <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_STYLE}>
-            {hasCapturedFrame ? (
-              <img
-                alt="Verification frame"
-                className="absolute inset-0 h-full w-full object-cover"
-                src={capturedFrameUrl}
-              />
-            ) : (
+            {showLiveVideo ? (
               <video
                 ref={camera.setVideoRef}
                 playsInline
@@ -126,6 +121,12 @@ export default function KioskScanningOverlay({
                 autoPlay
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
+              />
+            ) : (
+              <img
+                alt="Verification frame"
+                className="absolute inset-0 h-full w-full object-cover"
+                src={capturedFrameUrl}
               />
             )}
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />

@@ -31,6 +31,7 @@ import {
   KIOSK_MAX_CENTER_OFFSET_RATIO,
 } from '@/lib/config'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
+import { getMotionInstruction } from '@/lib/attendance/challenge-policy'
 import { selectPrimaryFace, getSafeDecisionMessage } from '@/lib/kiosk-utils'
 import { buildOvalCaptureCanvas, selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
 import {
@@ -38,6 +39,9 @@ import {
   getFaceSizeGuidance,
   isFaceSizeCaptureReady,
 } from '@/lib/biometrics/face-size-guidance'
+
+const ACTIVE_CHALLENGE_PREP_DELAY_DESKTOP_MS = 500
+const ACTIVE_CHALLENGE_PREP_DELAY_MOBILE_MS = 800
 
 function getClientCaptureContext() {
   let kioskId = ''
@@ -58,6 +62,23 @@ function roundMetric(value, digits = 4) {
   if (!Number.isFinite(value)) return null
   const factor = 10 ** digits
   return Math.round(Number(value) * factor) / factor
+}
+
+function waitForChallengePrompt(delayMs) {
+  return new Promise(resolve => {
+    if (typeof window === 'undefined') {
+      resolve()
+      return
+    }
+
+    const paint = typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : callback => window.setTimeout(callback, 16)
+
+    paint(() => {
+      window.setTimeout(resolve, Math.max(0, Number(delayMs || 0)))
+    })
+  })
 }
 
 function getBrowserLabel(userAgent = '') {
@@ -399,12 +420,21 @@ export function useKioskLoop({
             throw new Error('Active challenge metadata is missing.')
           }
 
+          const motionInstruction = getMotionInstruction(challenge.motionType || '')
+          const prepDelayMs = captureContext.mobile
+            ? ACTIVE_CHALLENGE_PREP_DELAY_MOBILE_MS
+            : ACTIVE_CHALLENGE_PREP_DELAY_DESKTOP_MS
+
+          setCapturedFrameUrl(null)
           setChallengeState({
             ...challenge,
+            title: motionInstruction.title,
+            prompt: motionInstruction.label,
             startedAt: Date.now(),
             sampleCount: 0,
           })
           setKioskState('challenge')
+          await waitForChallengePrompt(prepDelayMs)
 
           const activeTrace = await captureActiveChallenge(challenge.motionType || '')
 

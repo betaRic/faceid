@@ -222,7 +222,7 @@ export function useVerificationBurst(camera) {
     const human = await getHumanVerification()
     const samples = []
     const isMobile = isProbablyMobileDevice()
-    const targetFrames = isMobile ? 14 : 10
+    const targetFrames = isMobile ? 18 : 12
     const frameInterval = isMobile ? 140 : 110
     const startedAt = Date.now()
 
