@@ -31,7 +31,6 @@ import {
   KIOSK_MAX_CENTER_OFFSET_RATIO,
 } from '@/lib/config'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
-import { getMotionInstruction } from '@/lib/attendance/challenge-policy'
 import { selectPrimaryFace, getSafeDecisionMessage } from '@/lib/kiosk-utils'
 import { buildOvalCaptureCanvas, selectOvalReadyFace } from '@/lib/biometrics/oval-capture'
 import {
@@ -39,9 +38,6 @@ import {
   getFaceSizeGuidance,
   isFaceSizeCaptureReady,
 } from '@/lib/biometrics/face-size-guidance'
-
-const ACTIVE_CHALLENGE_PREP_DELAY_DESKTOP_MS = 500
-const ACTIVE_CHALLENGE_PREP_DELAY_MOBILE_MS = 800
 
 function getClientCaptureContext() {
   let kioskId = ''
@@ -62,23 +58,6 @@ function roundMetric(value, digits = 4) {
   if (!Number.isFinite(value)) return null
   const factor = 10 ** digits
   return Math.round(Number(value) * factor) / factor
-}
-
-function waitForChallengePrompt(delayMs) {
-  return new Promise(resolve => {
-    if (typeof window === 'undefined') {
-      resolve()
-      return
-    }
-
-    const paint = typeof window.requestAnimationFrame === 'function'
-      ? window.requestAnimationFrame.bind(window)
-      : callback => window.setTimeout(callback, 16)
-
-    paint(() => {
-      window.setTimeout(resolve, Math.max(0, Number(delayMs || 0)))
-    })
-  })
 }
 
 function getBrowserLabel(userAgent = '') {
@@ -126,7 +105,6 @@ export function useKioskLoop({
   setCapturedFrameUrl,
   setFlashKey,
   setAlertState,
-  setChallengeState,
   setFaceDistanceInfo,
   confirmRef,
   confirmedTimer,
@@ -144,7 +122,7 @@ export function useKioskLoop({
   const faceDetectedRef = useRef(false)
   const distanceSamplesRef = useRef([])
 
-  const runScan = useCallback(async (captureVerificationBurst, captureActiveChallenge) => {
+  const runScan = useCallback(async (captureVerificationBurst) => {
     if (busyRef.current || pausedRef.current || !camera.camOn || !modelsReady) return
 
     busyRef.current = true
@@ -415,42 +393,6 @@ export function useKioskLoop({
             : [],
         }
 
-        const runActiveChallengeStep = async (challenge) => {
-          if (!challenge) {
-            throw new Error('Active challenge metadata is missing.')
-          }
-
-          const motionInstruction = getMotionInstruction(challenge.motionType || '')
-          const prepDelayMs = captureContext.mobile
-            ? ACTIVE_CHALLENGE_PREP_DELAY_MOBILE_MS
-            : ACTIVE_CHALLENGE_PREP_DELAY_DESKTOP_MS
-
-          setCapturedFrameUrl(null)
-          setChallengeState({
-            ...challenge,
-            title: motionInstruction.title,
-            prompt: motionInstruction.label,
-            startedAt: Date.now(),
-            sampleCount: 0,
-          })
-          setKioskState('challenge')
-          await waitForChallengePrompt(prepDelayMs)
-
-          const activeTrace = await captureActiveChallenge(challenge.motionType || '')
-
-          setChallengeState(current => (
-            current
-              ? {
-                  ...current,
-                  completedAt: Date.now(),
-                  sampleCount: Array.isArray(activeTrace?.samples) ? activeTrace.samples.length : 0,
-                }
-              : current
-          ))
-          setKioskState('verifying')
-          return activeTrace
-        }
-
         try {
           const challengeResult = await requestAttendanceChallenge(baseAttendanceEntry)
           if (!challengeResult?.challenge?.token && !challengeResult?.challenge?.challengeId) {
@@ -462,35 +404,7 @@ export function useKioskLoop({
             challenge: challengeResult.challenge,
             riskFlags: Array.isArray(challengeResult.riskFlags) ? challengeResult.riskFlags : [],
           }
-
-          if (challengeResult.challenge?.mode === 'active') {
-            submissionEntry = {
-              ...submissionEntry,
-              verificationStage: 'active',
-              activeChallengeTrace: await runActiveChallengeStep(challengeResult.challenge),
-            }
-          }
-
-          let result
-
-          try {
-            result = await onLogAttendance(submissionEntry)
-          } catch (initialError) {
-            if (initialError?.decisionCode !== 'challenge_required' || !initialError?.challenge) {
-              throw initialError
-            }
-
-            submissionEntry = {
-              ...baseAttendanceEntry,
-              challenge: initialError.challenge,
-              riskFlags: Array.isArray(initialError?.riskFlags) ? initialError.riskFlags : submissionEntry.riskFlags,
-              verificationStage: 'active',
-              activeChallengeTrace: await runActiveChallengeStep(initialError.challenge),
-            }
-            result = await onLogAttendance(submissionEntry)
-          }
-
-          setChallengeState(null)
+          const result = await onLogAttendance(submissionEntry)
           recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, true)
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, true)
 
@@ -519,7 +433,6 @@ export function useKioskLoop({
             showAlertAndResume('No reliable face match was found. Ensure you are enrolled.', 3000)
           }
         } catch (error) {
-          setChallengeState(null)
           recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, false)
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           const decisionCode = error?.decisionCode || 'blocked_server_error'
@@ -617,7 +530,7 @@ export function useKioskLoop({
       recordScan?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - scanStartedAt)
       busyRef.current = false
     }
-  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, setChallengeState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork])
+  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork])
 
   const startLoop = useCallback((runScanFn) => {
     if (scanRef.current) return

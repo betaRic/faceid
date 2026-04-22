@@ -61,7 +61,7 @@ export default function KioskView({
     pauseScanning,
   } = useKioskState(camera)
 
-  const { captureVerificationBurst, captureActiveChallenge } = useVerificationBurst(camera)
+  const { captureVerificationBurst } = useVerificationBurst(camera)
 
   const { runScan, startLoop, stopLoop } = useKioskLoop({
     camera,
@@ -94,8 +94,8 @@ export default function KioskView({
   }, [])
 
   const handleRunScan = useCallback(() => {
-    return runScan(captureVerificationBurst, captureActiveChallenge)
-  }, [runScan, captureVerificationBurst, captureActiveChallenge])
+    return runScan(captureVerificationBurst)
+  }, [runScan, captureVerificationBurst])
 
   useEffect(() => {
     if (!workspaceReady || !modelsReady || !camera.camOn) return () => {}
