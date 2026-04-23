@@ -10,15 +10,6 @@ import {
   PERSON_APPROVAL_REJECTED,
 } from '@/lib/person-approval'
 
-function MetricCard({ label, value, subtle }) {
-  return (
-    <div className={`rounded-[1.5rem] border px-4 py-3 ${subtle ? 'border-black/5 bg-stone-50' : 'border-black/5 bg-white/80'}`}>
-      <div className="text-xs font-semibold uppercase tracking-widest text-muted">{label}</div>
-      <div className="mt-1 font-display text-2xl font-bold text-ink">{value}</div>
-    </div>
-  )
-}
-
 function ActionButton({ children, onClick, disabled, className = '', busy }) {
   return (
     <button
@@ -49,7 +40,6 @@ function SkeletonRow() {
 function EmployeesPanelInner() {
   const {
     employees, employeesLoaded, employeeTotal,
-    employeeApprovedCount, employeePendingCount, employeeRejectedCount,
     employeeHasMore, employeeHistoryLength,
     employeeQuery, setEmployeeQuery,
     employeeOfficeFilter, setEmployeeOfficeFilter,
@@ -174,13 +164,6 @@ function EmployeesPanelInner() {
             </select>
           </Field>
         </div>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <MetricCard label="Total" value={employeesLoaded ? String(employeeTotal).padStart(2, '0') : '--'} subtle />
-        <MetricCard label="Approved" value={employeesLoaded ? String(employeeApprovedCount).padStart(2, '0') : '--'} subtle />
-        <MetricCard label="Pending" value={employeesLoaded ? String(employeePendingCount).padStart(2, '0') : '--'} subtle />
-        <MetricCard label="Rejected" value={employeesLoaded ? String(employeeRejectedCount).padStart(2, '0') : '--'} subtle />
       </div>
 
       <div className="flex items-center justify-between rounded-xl border border-black/5 bg-stone-50 px-4 py-3 text-sm">
