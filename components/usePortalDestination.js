@@ -8,49 +8,33 @@ const DEFAULT_PORTAL = {
   role: null,
 }
 
+const ROLE_PORTAL = {
+  admin: { href: '/admin', label: 'Admin', role: 'admin' },
+  hr: { href: '/admin', label: 'HR', role: 'hr' },
+}
+
+let inFlight = null
+
+function fetchPortalStatus() {
+  if (inFlight) return inFlight
+  inFlight = fetch('/api/portal-status', { credentials: 'include', cache: 'no-store' })
+    .then(response => (response.ok ? response.json() : { role: null }))
+    .catch(() => ({ role: null }))
+    .finally(() => {
+      inFlight = null
+    })
+  return inFlight
+}
+
 export function usePortalDestination() {
   const [portal, setPortal] = useState(DEFAULT_PORTAL)
 
   useEffect(() => {
     let cancelled = false
-
-    async function resolvePortal() {
-      try {
-        const adminResponse = await fetch('/api/admin/session', { credentials: 'include', cache: 'no-store' })
-        if (adminResponse.ok) {
-          if (!cancelled) {
-            setPortal({
-              href: '/admin',
-              label: 'Admin',
-              role: 'admin',
-            })
-          }
-          return
-        }
-
-        const hrResponse = await fetch('/api/hr/session', { credentials: 'include', cache: 'no-store' })
-        if (hrResponse.ok) {
-          if (!cancelled) {
-            setPortal({
-              href: '/admin',
-              label: 'HR',
-              role: 'hr',
-            })
-          }
-          return
-        }
-
-        if (!cancelled) {
-          setPortal(DEFAULT_PORTAL)
-        }
-      } catch {
-        if (!cancelled) {
-          setPortal(DEFAULT_PORTAL)
-        }
-      }
-    }
-
-    resolvePortal()
+    fetchPortalStatus().then(data => {
+      if (cancelled) return
+      setPortal(ROLE_PORTAL[data?.role] || DEFAULT_PORTAL)
+    })
     return () => {
       cancelled = true
     }
