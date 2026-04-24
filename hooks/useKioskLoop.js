@@ -285,7 +285,10 @@ export function useKioskLoop({
         const antispoof = primaryVerification.detection.antispoof
         const liveness = primaryVerification.detection.liveness
 
-        if (antispoof !== undefined && antispoof <= 0.3) {
+        // Per-frame fast-fail on obvious spoofs. Real faces usually score >0.85;
+        // these thresholds catch clear printed/screen presentations without
+        // waiting for the burst-level analysis.
+        if (antispoof !== undefined && antispoof < 0.5) {
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
           pausedRef.current = true
@@ -294,7 +297,7 @@ export function useKioskLoop({
           return
         }
 
-        if (liveness !== undefined && liveness <= 0.3) {
+        if (liveness !== undefined && liveness < 0.4) {
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
           pausedRef.current = true
@@ -303,11 +306,25 @@ export function useKioskLoop({
           return
         }
 
-        if (livenessEvidence && !livenessEvidence.pass && livenessEvidence.reason === 'static_image_detected') {
+        // Burst-level anti-spoof + liveness gate. Uses temporal signals across
+        // all strict-oval frames (not just the primary), which is more robust
+        // than any single-frame score.
+        if (livenessEvidence && !livenessEvidence.pass) {
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
           pausedRef.current = true
-          showAlertAndResume('Static image detected. Please present your live face.', 3500)
+          const message = (
+            livenessEvidence.reason === 'antispoof_failed'
+              ? 'Anti-spoof check failed. Please present your live face.'
+              : livenessEvidence.reason === 'static_image_detected'
+                ? 'Static image detected. Please present your live face.'
+                : livenessEvidence.reason === 'missing_motion_signal'
+                  ? 'Please hold steady and look at the camera naturally.'
+                  : livenessEvidence.reason === 'missing_eye_signal'
+                    ? 'Please blink naturally and try again.'
+                    : 'Liveness check failed. Please scan again.'
+          )
+          showAlertAndResume(message, 3500)
           confirmRef.current = 0
           return
         }

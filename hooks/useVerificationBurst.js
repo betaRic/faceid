@@ -74,7 +74,20 @@ function scoreCaptureQuality(detection, metrics) {
   )
 }
 
+let irisWarningIssued = false
+function warnIfMissingIrisLandmarks(mesh) {
+  if (irisWarningIssued || process.env.NODE_ENV === 'production') return
+  if (Array.isArray(mesh) && mesh.length < 478) {
+    irisWarningIssued = true
+    console.warn(
+      `[liveness] Face mesh length ${mesh.length} — iris landmarks (indices 468-477) are missing. `
+      + 'Iris motion signal will always be null. Verify Human config has face.iris.enabled=true.',
+    )
+  }
+}
+
 function mapDetectedFace(face) {
+  warnIfMissingIrisLandmarks(face.mesh)
   return {
     detection: {
       box: {
@@ -163,7 +176,14 @@ export function useVerificationBurst(camera) {
 
     if (captures.length === 0) return null
 
-    const livenessFrames = captures.map(capture => ({
+    const strictCaptures = captures.filter(capture => capture?.primary?.strictOval)
+    // Strict-oval captures are used for both descriptor aggregation AND liveness
+    // analysis. Loose/fallback captures have jittery mesh coordinates that can
+    // inflate EAR variance and mesh delta signals from detection noise alone,
+    // producing false liveness positives on a held-still photo.
+    if (strictCaptures.length < 2) return null
+
+    const livenessFrames = strictCaptures.map(capture => ({
       primary: {
         detection: {
           landmarks: capture.primary?.detection?.landmarks || null,
@@ -174,8 +194,8 @@ export function useVerificationBurst(camera) {
     }))
     const livenessEvidence = analyzeBurstLiveness(livenessFrames)
 
-    const rankedCaptures = [...captures].sort((left, right) => right.qualityScore - left.qualityScore)
-    const aggregationCount = Math.min(isMobile ? 3 : 3, rankedCaptures.length)
+    const rankedCaptures = [...strictCaptures].sort((left, right) => right.qualityScore - left.qualityScore)
+    const aggregationCount = Math.min(3, rankedCaptures.length)
     const selectedForAggregation = rankedCaptures.slice(0, aggregationCount)
     const descriptorSamples = selectedForAggregation
       .map(capture => capture?.primary?.detection?.descriptor)
@@ -186,7 +206,7 @@ export function useVerificationBurst(camera) {
       .map(d => Array.from(normalizeDescriptor(d)))
     const fusedDescriptor = aggregateDescriptors(descriptorSamples)
     const descriptorSpread = summarizeDescriptorSpread(descriptorSamples)
-    const strictCount = captures.filter(capture => capture?.primary?.strictOval).length
+    const strictCount = strictCaptures.length
     const multiFaceFrames = captures.filter(capture => (capture?.detections?.length || 0) > 1).length
     const bestCapture = rankedCaptures[0]
 

@@ -5,7 +5,7 @@ import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { normalizeDescriptor, euclideanDistance } from '@/lib/biometrics/descriptor-utils'
 import { buildDescriptorBuckets } from '@/lib/biometric-index'
-import { DISTANCE_THRESHOLD_KIOSK, AMBIGUOUS_MATCH_MARGIN } from '@/lib/config'
+import { getActiveThresholds } from '@/lib/thresholds'
 
 /**
  * POST /api/debug/match-test
@@ -28,10 +28,13 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
     }
 
-    const snapshot = await db.collection('biometric_index')
-      .where('active', '==', true)
-      .where('approvalStatus', '==', 'approved')
-      .get()
+    const [snapshot, thresholds] = await Promise.all([
+      db.collection('biometric_index')
+        .where('active', '==', true)
+        .where('approvalStatus', '==', 'approved')
+        .get(),
+      getActiveThresholds(db),
+    ])
 
     const entries = snapshot.docs.map(doc => {
       const data = doc.data()
@@ -71,8 +74,8 @@ export async function GET(request) {
       biometricEnabledTrue,
       biometricEnabledFalse,
       byOffice,
-      threshold: DISTANCE_THRESHOLD_KIOSK,
-      ambiguousMargin: AMBIGUOUS_MATCH_MARGIN,
+      threshold: thresholds.kioskMatchDistance,
+      ambiguousMargin: thresholds.ambiguousMargin,
       entries,
     })
   } catch (err) {
@@ -105,10 +108,13 @@ export async function POST(request) {
     const queryMagnitude = Math.sqrt(rawDescriptor.reduce((s, v) => s + v * v, 0))
     const { bucketA: queryBucketA, bucketB: queryBucketB } = buildDescriptorBuckets(rawDescriptor)
 
-    const snapshot = await db.collection('biometric_index')
-      .where('active', '==', true)
-      .where('approvalStatus', '==', 'approved')
-      .get()
+    const [snapshot, thresholds] = await Promise.all([
+      db.collection('biometric_index')
+        .where('active', '==', true)
+        .where('approvalStatus', '==', 'approved')
+        .get(),
+      getActiveThresholds(db),
+    ])
 
     const results = []
     for (const doc of snapshot.docs) {
@@ -137,7 +143,7 @@ export async function POST(request) {
         personId: data.personId,
         name: data.name,
         distance: Math.round(distance * 10000) / 10000,
-        withinThreshold: distance <= DISTANCE_THRESHOLD_KIOSK,
+        withinThreshold: distance <= thresholds.kioskMatchDistance,
         storedMagnitude: Math.round(storedMagnitude * 10000) / 10000,
         bucketA: data.bucketA,
         bucketB: data.bucketB,
@@ -168,8 +174,8 @@ export async function POST(request) {
         sample: queryNormalized.slice(0, 5),
       },
       config: {
-        threshold: DISTANCE_THRESHOLD_KIOSK,
-        ambiguousMargin: AMBIGUOUS_MATCH_MARGIN,
+        threshold: thresholds.kioskMatchDistance,
+        ambiguousMargin: thresholds.ambiguousMargin,
       },
       totalCandidates: snapshot.docs.length,
       matchesWithinThreshold: ranked.filter(r => r.withinThreshold).length,
