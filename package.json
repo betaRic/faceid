@@ -10,6 +10,7 @@
     "check:env": "node scripts/check-env.mjs",
     "test": "node tests/run-tests.mjs",
     "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs",
+    "seed:dilg-r12": "node scripts/seed-dilg-r12-offices.mjs",
     "sync:firestore-indexes": "node scripts/sync-firestore-indexes.mjs",
     "warm:biometric-cache": "node scripts/warm-biometric-cache.mjs",
     "deploy:firestore": "firebase deploy --only firestore",

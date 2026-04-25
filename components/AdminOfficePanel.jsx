@@ -108,6 +108,9 @@ export default function AdminOfficePanel({
   officeDraftWarning,
   updateDraft = () => {},
   toggleDay = () => {},
+  addDivision = () => {},
+  updateDivision = () => {},
+  removeDivision = () => {},
   handleUseMyLocation,
   handleSaveOffice = () => {},
   handleCancel = () => {},
@@ -126,6 +129,8 @@ export default function AdminOfficePanel({
   }
 
   const wp = activeOffice.workPolicy || {}
+  const isRegional = String(activeOffice.officeType || '') === 'Regional Office'
+  const divisions = Array.isArray(activeOffice.divisions) ? activeOffice.divisions : []
 
   return (
     <div className="grid gap-4">
@@ -207,6 +212,111 @@ export default function AdminOfficePanel({
           />
         </Field>
       </div>
+
+      {/* ── Office head (signs DTRs unless overridden by a division head) ── */}
+      <div className="grid gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">
+          Office head{isRegional ? ' — Regional Director' : ''}
+        </div>
+        <p className="text-xs text-muted">
+          {isRegional
+            ? 'Signs DTRs only for staff under the ORD or any division/unit without a configured head. Per-division heads override this for their division\'s staff.'
+            : 'Name and position printed at the bottom of every DTR for this office.'}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Head name">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy uppercase"
+              onChange={e => updateDraft('headName', e.target.value.toUpperCase())}
+              placeholder="MARIA THERESA D. BAUTISTA"
+              value={activeOffice.headName || ''}
+            />
+          </Field>
+          <Field label="Head position">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+              onChange={e => updateDraft('headPosition', e.target.value)}
+              placeholder="City Director/LGOO VII"
+              value={activeOffice.headPosition || ''}
+            />
+          </Field>
+        </div>
+      </div>
+
+      {/* ── Divisions / Units (Regional Office only) ── */}
+      {isRegional ? (
+        <div className="grid gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Divisions / Units</div>
+              <p className="mt-1 text-xs text-muted">
+                Each division or unit chief signs the DTR for staff assigned to that division.
+              </p>
+            </div>
+            <button
+              className="rounded-full border border-navy/30 bg-white px-4 py-2 text-xs font-semibold text-navy transition hover:bg-navy/5"
+              onClick={addDivision}
+              type="button"
+            >
+              + Add division
+            </button>
+          </div>
+
+          {divisions.length === 0 ? (
+            <div className="rounded-[1rem] border border-dashed border-black/10 bg-white px-4 py-3 text-xs text-muted">
+              No divisions added yet. Click "Add division" to start.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {divisions.map((division, index) => (
+                <div
+                  key={index}
+                  className="grid gap-2 rounded-[1rem] border border-black/5 bg-white p-3 sm:grid-cols-[110px_minmax(0,1.5fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_auto]"
+                >
+                  <input
+                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy uppercase"
+                    onChange={e => updateDivision(index, 'shortName', e.target.value.toUpperCase())}
+                    placeholder="LGCDD"
+                    value={division.shortName || ''}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy"
+                    onChange={e => updateDivision(index, 'name', e.target.value)}
+                    placeholder="Local Government Capability and Development Division"
+                    value={division.name || ''}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy uppercase"
+                    onChange={e => updateDivision(index, 'headName', e.target.value.toUpperCase())}
+                    placeholder="MARY ANN T. TRASPE"
+                    value={division.headName || ''}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy"
+                    onChange={e => updateDivision(index, 'headPosition', e.target.value)}
+                    placeholder="Division Chief / LGOO VII"
+                    value={division.headPosition || ''}
+                  />
+                  <button
+                    className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                    onClick={() => removeDivision(index)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <div className="grid grid-cols-[110px_minmax(0,1.5fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_auto] gap-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+                <span>Short</span>
+                <span>Full name</span>
+                <span>Head name</span>
+                <span>Head position</span>
+                <span />
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {/* ── Main grid: Location | Schedule | Cooldowns ── */}
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">

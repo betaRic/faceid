@@ -15,6 +15,8 @@ export default function DtrSelectionView({
   filteredEmployees,
   search,
   selectedIds,
+  signatoryName = '',
+  signatoryPosition = '',
   uniqueEmployees,
   onCancel,
   onClose,
@@ -27,6 +29,8 @@ export default function DtrSelectionView({
   onSetDtrMonth,
   onSetDtrRange,
   onSetDtrYear,
+  onSetSignatoryName = () => {},
+  onSetSignatoryPosition = () => {},
   onToggleEmployee,
 }) {
   return (
@@ -99,6 +103,31 @@ export default function DtrSelectionView({
           </select>
         </Field>
       </div>
+
+      {downloadKind === 'dtr' ? (
+        <div className="grid gap-3 border-b border-black/5 px-4 py-3 sm:grid-cols-2 sm:px-6">
+          <Field label="Override signatory name (optional)">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm uppercase"
+              disabled={dtrLoading}
+              onChange={event => onSetSignatoryName(event.target.value.toUpperCase())}
+              placeholder="Leave blank to use the office head"
+              type="text"
+              value={signatoryName}
+            />
+          </Field>
+          <Field label="Override signatory position (optional)">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+              disabled={dtrLoading}
+              onChange={event => onSetSignatoryPosition(event.target.value)}
+              placeholder="e.g. OIC-City Director"
+              type="text"
+              value={signatoryPosition}
+            />
+          </Field>
+        </div>
+      ) : null}
 
       {dtrRange === 'custom' ? (
         <div className="grid gap-3 border-b border-black/5 px-4 py-4 sm:grid-cols-2 sm:px-6">

@@ -34,7 +34,9 @@ export default function RegisterView({
   const [name, setName] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [employeeIdError, setEmployeeIdError] = useState('')
+  const [position, setPosition] = useState('')
   const [officeId, setOfficeId] = useState(offices[0]?.id || '')
+  const [divisionId, setDivisionId] = useState('')
   const [previewUrl, setPreviewUrl] = useState(null)
   const [pendingDescriptors, setPendingDescriptors] = useState([])
   const [captureMetadata, setCaptureMetadata] = useState(null)
@@ -63,16 +65,32 @@ export default function RegisterView({
   } = useEnrollmentCapture(camera)
 
   const selectedOffice = offices.find(office => office.id === officeId) || null
+  const isRegionalOffice = String(selectedOffice?.officeType || '') === 'Regional Office'
   const pendingSampleCount = pendingDescriptors.length
   const stepIndex = STEPS.findIndex(item => item.id === step)
   const currentStep = STEPS[stepIndex] || STEPS[0]
-  const detailsReady = Boolean(name.trim() && employeeId.trim() && officeId)
+  const detailsReady = Boolean(
+    name.trim() && employeeId.trim() && position.trim() && officeId
+    && (!isRegionalOffice || divisionId),
+  )
 
   useEffect(() => {
     if (!officeId && offices[0]?.id) {
       setOfficeId(offices[0].id)
     }
   }, [officeId, offices])
+
+  useEffect(() => {
+    if (!selectedOffice) return
+    const divisions = Array.isArray(selectedOffice.divisions) ? selectedOffice.divisions : []
+    if (!isRegionalOffice && divisionId) {
+      setDivisionId('')
+      return
+    }
+    if (isRegionalOffice && divisionId && !divisions.some(d => d.id === divisionId)) {
+      setDivisionId('')
+    }
+  }, [selectedOffice, isRegionalOffice, divisionId])
 
   useEffect(() => {
     if (!manageOwnCamera) return () => {}
@@ -194,8 +212,16 @@ export default function RegisterView({
       showToast('Enter the employee ID')
       return
     }
+    if (!position.trim()) {
+      showToast('Enter the employee position')
+      return
+    }
     if (!officeId) {
       showToast('Select the assigned office')
+      return
+    }
+    if (isRegionalOffice && !divisionId) {
+      showToast('Select the division or unit for Regional Office staff')
       return
     }
 
@@ -205,7 +231,7 @@ export default function RegisterView({
     }
 
     setStep('capture')
-  }, [employeeId, name, officeId, pendingSampleCount, previewUrl])
+  }, [employeeId, name, officeId, position, isRegionalOffice, divisionId, pendingSampleCount, previewUrl])
 
   const handleRegister = useCallback(async () => {
     if (!name.trim()) {
@@ -219,6 +245,14 @@ export default function RegisterView({
     }
     if (!officeId) {
       showToast('Select the assigned office')
+      return
+    }
+    if (!position.trim()) {
+      showToast('Enter the employee position')
+      return
+    }
+    if (isRegionalOffice && !divisionId) {
+      showToast('Select the division or unit for Regional Office staff')
       return
     }
     if (pendingSampleCount === 0) {
@@ -235,8 +269,10 @@ export default function RegisterView({
         {
           name: name.trim(),
           employeeId: employeeId.trim(),
+          position: position.trim(),
           officeId,
           officeName: selectedOffice?.name || 'Unassigned',
+          divisionId: isRegionalOffice ? divisionId : '',
           captureMetadata,
           ...(storageBucket ? { photoDataUrl: previewUrl } : {}),
         },
@@ -267,12 +303,14 @@ export default function RegisterView({
     })
     setStep('complete')
     playAudioCue('success')
-  }, [captureMetadata, employeeId, name, officeId, onEnrollPerson, pendingDescriptors, pendingSampleCount, previewUrl, selectedOffice, playAudioCue])
+  }, [captureMetadata, employeeId, name, officeId, position, isRegionalOffice, divisionId, onEnrollPerson, pendingDescriptors, pendingSampleCount, previewUrl, selectedOffice, playAudioCue])
 
   const handleNewPerson = useCallback(() => {
     setName('')
     setEmployeeId('')
+    setPosition('')
     setOfficeId(offices[0]?.id || '')
+    setDivisionId('')
     clearPendingCapture()
     setLastSavedSummary(null)
     setStep('details')
@@ -365,17 +403,21 @@ export default function RegisterView({
             {step === 'details' ? (
               <DetailsStep
                 detailsReady={detailsReady}
+                divisionId={divisionId}
                 employeeId={employeeId}
                 employeeIdError={employeeIdError}
                 name={name}
                 nameRef={nameRef}
                 officeId={officeId}
                 offices={offices}
+                position={position}
                 onBack={onBack}
                 onContinue={handleContinueFromDetails}
+                onDivisionChange={setDivisionId}
                 onEmployeeIdChange={handleEmployeeIdChange}
                 onNameChange={setName}
                 onOfficeChange={setOfficeId}
+                onPositionChange={setPosition}
                 onRetake={handleRetake}
                 pendingSampleCount={pendingSampleCount}
                 previewUrl={previewUrl}

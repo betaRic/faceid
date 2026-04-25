@@ -60,7 +60,12 @@ const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/en
 const duplicateFaceModule = await importLocalModule('../lib/persons/duplicate-face.js')
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
 
-const { calculateDistanceMeters, isOfficeWfhDay } = officesModule
+const {
+  calculateDistanceMeters,
+  isOfficeWfhDay,
+  resolveOfficeSignatory,
+  normalizeDivisionList,
+} = officesModule
 const { deriveDailyAttendanceRecord } = dailyAttendanceModule
 const {
   buildAttendanceEntryTiming,
@@ -481,6 +486,120 @@ await run('buildDtrDocument shades inactive half-month rows and preserves active
   assert.equal(day16.isActive, true)
   assert.equal(day16.amIn, '08:01 AM')
   assert.equal(dtr.period.periodLabel, 'APRIL 16-30, 2026')
+})
+
+await run('resolveOfficeSignatory returns division head for regional office staff', () => {
+  const office = {
+    officeType: 'Regional Office',
+    headName: 'REGIONAL DIRECTOR',
+    headPosition: 'Regional Director',
+    divisions: normalizeDivisionList([
+      { shortName: 'LGCDD', name: 'Local Government Capability and Development Division',
+        headName: 'MARY ANN T. TRASPE', headPosition: 'Division Chief / LGOO VII' },
+    ]),
+  }
+  const signatory = resolveOfficeSignatory(office, 'lgcdd')
+  assert.equal(signatory.name, 'MARY ANN T. TRASPE')
+  assert.equal(signatory.position, 'Division Chief / LGOO VII')
+})
+
+await run('resolveOfficeSignatory falls back to office head when division is missing', () => {
+  const office = {
+    officeType: 'Regional Office',
+    headName: 'REGIONAL DIRECTOR',
+    headPosition: 'Regional Director',
+    divisions: normalizeDivisionList([
+      { shortName: 'LGCDD', name: 'LGCDD', headName: 'CHIEF', headPosition: 'Chief' },
+    ]),
+  }
+  const signatory = resolveOfficeSignatory(office, 'unknown-division')
+  assert.equal(signatory.name, 'REGIONAL DIRECTOR')
+  assert.equal(signatory.position, 'Regional Director')
+})
+
+await run('resolveOfficeSignatory uses office head for non-regional offices', () => {
+  const office = {
+    officeType: 'HUC Office',
+    headName: 'MARIA THERESA D. BAUTISTA',
+    headPosition: 'City Director / LGOO VII',
+    divisions: [],
+  }
+  const signatory = resolveOfficeSignatory(office, '')
+  assert.equal(signatory.name, 'MARIA THERESA D. BAUTISTA')
+  assert.equal(signatory.position, 'City Director / LGOO VII')
+})
+
+await run('buildDtrDocument resolves signatory from office for field office staff', () => {
+  const office = {
+    officeType: 'HUC Office',
+    headName: 'MARIA THERESA D. BAUTISTA',
+    headPosition: 'City Director / LGOO VII',
+    divisions: [],
+  }
+  const dtr = buildDtrDocument({
+    employee: { name: 'JANE DOE', employeeId: 'EMP-001', position: 'LGOO II', office: 'DILG GenSan' },
+    office,
+    month: 4,
+    year: 2026,
+    dayRecords: [],
+  })
+  assert.equal(dtr.signatory.name, 'MARIA THERESA D. BAUTISTA')
+  assert.equal(dtr.signatory.position, 'City Director / LGOO VII')
+  assert.equal(dtr.employee.position, 'LGOO II')
+})
+
+await run('buildDtrDocument resolves division head for regional office staff', () => {
+  const office = {
+    officeType: 'Regional Office',
+    headName: 'ATTY. ROCHELLE D. MAHINAY-SERO',
+    headPosition: 'Regional Director',
+    divisions: normalizeDivisionList([
+      { shortName: 'LGCDD', name: 'Local Government Capability and Development Division',
+        headName: 'MARY ANN T. TRASPE', headPosition: 'Division Chief / LGOO VII' },
+    ]),
+  }
+  const dtr = buildDtrDocument({
+    employee: { name: 'JOHN DOE', employeeId: 'EMP-002', position: 'LGOO I', office: 'DILG R12' },
+    office,
+    divisionId: 'lgcdd',
+    month: 4,
+    year: 2026,
+    dayRecords: [],
+  })
+  assert.equal(dtr.signatory.name, 'MARY ANN T. TRASPE')
+  assert.equal(dtr.signatory.position, 'Division Chief / LGOO VII')
+  assert.equal(dtr.employee.divisionName, 'Local Government Capability and Development Division')
+  assert.equal(dtr.employee.divisionShortName, 'LGCDD')
+})
+
+await run('buildDtrDocument signatoryOverride wins over auto-resolved head', () => {
+  const office = {
+    officeType: 'HUC Office',
+    headName: 'MARIA THERESA D. BAUTISTA',
+    headPosition: 'City Director / LGOO VII',
+    divisions: [],
+  }
+  const dtr = buildDtrDocument({
+    employee: { name: 'JANE DOE', employeeId: 'EMP-001' },
+    office,
+    signatoryOverride: { name: 'OIC NAME', position: 'OIC-City Director' },
+    month: 4,
+    year: 2026,
+    dayRecords: [],
+  })
+  assert.equal(dtr.signatory.name, 'OIC NAME')
+  assert.equal(dtr.signatory.position, 'OIC-City Director')
+})
+
+await run('buildDtrDocument emits empty signatory when no office is supplied', () => {
+  const dtr = buildDtrDocument({
+    employee: { name: 'JANE DOE', employeeId: 'EMP-001' },
+    month: 4,
+    year: 2026,
+    dayRecords: [],
+  })
+  assert.equal(dtr.signatory.name, '')
+  assert.equal(dtr.signatory.position, '')
 })
 
 await run('biometric benchmark report exposes operational gate and honest reality flags', () => {

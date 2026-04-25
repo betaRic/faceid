@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useState } from 'react'
 import { useThresholds } from '@/lib/admin/hooks/useThresholds'
+import { MaintenancePanel } from './MaintenancePanel'
 
 function SliderField({ fieldKey, meta, value, onChange }) {
   const isChanged = value !== meta.default
@@ -309,6 +310,8 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
               />
             )}
           </div>
+
+          <MaintenancePanel />
         </div>
       </div>
     </section>

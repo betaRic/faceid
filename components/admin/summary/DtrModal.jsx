@@ -15,6 +15,8 @@ export default function DtrModal({ summaryRows, onClose }) {
   const [customEndDay, setCustomEndDay] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate())
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [signatoryName, setSignatoryName] = useState('')
+  const [signatoryPosition, setSignatoryPosition] = useState('')
   const [dtrLoading, setDtrLoading] = useState(false)
   const [dtrProgress, setDtrProgress] = useState({ current: 0, total: 0 })
   const [dtrEmployees, setDtrEmployees] = useState([])
@@ -117,6 +119,9 @@ export default function DtrModal({ summaryRows, onClose }) {
           params.set('customEndDay', String(customEndDay))
         }
 
+        if (signatoryName.trim()) params.set('signatoryName', signatoryName.trim())
+        if (signatoryPosition.trim()) params.set('signatoryPosition', signatoryPosition.trim())
+
         const response = await fetch(`/api/hr/dtr?${params}`, { credentials: 'include' })
         const data = await response.json()
         if (data.ok && data.dtr) {
@@ -145,7 +150,7 @@ export default function DtrModal({ summaryRows, onClose }) {
     }
 
     setDtrLoading(false)
-  }, [customEndDay, customStartDay, downloadKind, dtrMonth, dtrRange, dtrYear, selectedIds, uniqueEmployees])
+  }, [customEndDay, customStartDay, downloadKind, dtrMonth, dtrRange, dtrYear, selectedIds, signatoryName, signatoryPosition, uniqueEmployees])
 
   const handleDownloadAgain = useCallback(async () => {
     setPdfDownloading(true)
@@ -226,9 +231,13 @@ export default function DtrModal({ summaryRows, onClose }) {
             onSetDtrMonth={setDtrMonth}
             onSetDtrRange={setDtrRange}
             onSetDtrYear={setDtrYear}
+            onSetSignatoryName={setSignatoryName}
+            onSetSignatoryPosition={setSignatoryPosition}
             onToggleEmployee={toggleEmployee}
             search={search}
             selectedIds={selectedIds}
+            signatoryName={signatoryName}
+            signatoryPosition={signatoryPosition}
             uniqueEmployees={uniqueEmployees}
           />
         )}

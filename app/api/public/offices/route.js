@@ -14,6 +14,13 @@ function toPublicOffice(office) {
     location: String(office?.location || ''),
     provinceOrCity: String(office?.provinceOrCity || ''),
     status: String(office?.status || 'active'),
+    divisions: Array.isArray(office?.divisions)
+      ? office.divisions.map(d => ({
+          id: String(d?.id || ''),
+          name: String(d?.name || ''),
+          shortName: String(d?.shortName || ''),
+        }))
+      : [],
   }
 }
 

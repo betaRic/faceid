@@ -22,6 +22,8 @@ export async function GET(request) {
   const range = searchParams.get('range') || 'full'
   const customStartDay = searchParams.get('customStartDay')
   const customEndDay = searchParams.get('customEndDay')
+  const signatoryName = String(searchParams.get('signatoryName') || '').trim()
+  const signatoryPosition = String(searchParams.get('signatoryPosition') || '').trim()
 
   if (!employeeId || !month || !year) {
     return NextResponse.json({ ok: false, message: 'employeeId, month, and year are required.' }, { status: 400 })
@@ -103,7 +105,14 @@ export async function GET(request) {
         employeeId: personData.employeeId || '',
         position: personData.position || '',
         office: office.name || personData.officeName || '',
+        divisionId: personData.divisionId || '',
+        divisionName: personData.divisionName || '',
       },
+      office,
+      divisionId: personData.divisionId || '',
+      signatoryOverride: (signatoryName || signatoryPosition)
+        ? { name: signatoryName, position: signatoryPosition }
+        : null,
       month: targetMonth,
       year: targetYear,
       range,

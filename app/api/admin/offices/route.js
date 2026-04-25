@@ -7,6 +7,7 @@ import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCoo
 import { writeAuditLog } from '@/lib/audit-log'
 import { clearOfficeRecordCache } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
+import { normalizeDivisionList, REGIONAL_OFFICE_TYPE } from '@/lib/offices'
 
 function slugify(value) {
   return String(value || '')
@@ -25,6 +26,9 @@ function normalizeOfficePayload(payload) {
     officeType: String(payload?.officeType || '').trim(),
     location: String(payload?.location || '').trim(),
     provinceOrCity: String(payload?.provinceOrCity || '').trim(),
+    headName: String(payload?.headName || '').trim(),
+    headPosition: String(payload?.headPosition || '').trim(),
+    divisions: normalizeDivisionList(payload?.divisions),
     wifiSsid: Array.isArray(payload?.wifiSsid)
       ? payload.wifiSsid.map(value => String(value || '').trim()).filter(Boolean)
       : String(payload?.wifiSsid || '').trim()
@@ -72,6 +76,22 @@ function validateOffice(office) {
   }
   if (!office.workPolicy.schedule) {
     return 'Schedule label is required.'
+  }
+  if (!office.headName || !office.headPosition) {
+    return 'Office head name and head position are required.'
+  }
+  if (office.officeType === REGIONAL_OFFICE_TYPE) {
+    if (!Array.isArray(office.divisions) || office.divisions.length === 0) {
+      return 'Regional offices must define at least one division or unit.'
+    }
+    for (const division of office.divisions) {
+      if (!division.name || !division.shortName) {
+        return 'Each division must have a name and short name.'
+      }
+      if (!division.headName || !division.headPosition) {
+        return `Division ${division.shortName || division.name} requires a head name and position.`
+      }
+    }
   }
   return null
 }

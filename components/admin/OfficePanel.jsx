@@ -56,6 +56,9 @@ export default function OfficePanel() {
     deletePending,
     updateDraft,
     toggleDay,
+    addDivision,
+    updateDivision,
+    removeDivision,
     handleSaveOffice,
     handleStartCreateOffice,
     handleStartEditOffice,
@@ -243,6 +246,7 @@ export default function OfficePanel() {
       {draftOffice ? (
         <OfficeEditorModal
           activeOffice={activeOffice}
+          addDivision={addDivision}
           handleCancel={handleCancelOfficeEditor}
           handleSaveOffice={handleSaveOffice}
           handleUseMyLocation={handleUseMyLocation}
@@ -250,9 +254,11 @@ export default function OfficePanel() {
           locationLoading={locationLoading}
           locationNotice={locationNotice}
           officeDraftWarning={officeDraftWarning}
+          removeDivision={removeDivision}
           saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}
           savePending={savePending}
           toggleDay={toggleDay}
+          updateDivision={updateDivision}
           updateDraft={updateDraft}
         />
       ) : null}

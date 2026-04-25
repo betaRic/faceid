@@ -28,8 +28,11 @@ import {
 function normalizeBody(body) {
   return {
     name: String(body?.name || '').trim(),
+    position: String(body?.position || '').trim(),
     officeId: String(body?.officeId || '').trim(),
     officeName: String(body?.officeName || '').trim(),
+    divisionId: String(body?.divisionId || '').trim(),
+    divisionName: String(body?.divisionName || '').trim(),
     active: body?.active !== false,
     approvalStatus: typeof body?.approvalStatus === 'string'
       ? normalizePersonApprovalStatus(body?.approvalStatus, '')
@@ -39,12 +42,25 @@ function normalizeBody(body) {
 
 function validateBody(body) {
   if (!body.name) return 'Employee name is required.'
+  if (!body.position) return 'Position is required.'
+  if (body.position.length < 2 || body.position.length > 80) return 'Position must be 2-80 characters.'
   if (!body.officeId) return 'Assigned office is required.'
   if (body.approvalStatus && ![
     PERSON_APPROVAL_PENDING,
     PERSON_APPROVAL_APPROVED,
     PERSON_APPROVAL_REJECTED,
   ].includes(body.approvalStatus)) return 'Approval status is not valid.'
+  return null
+}
+
+function validateDivisionAgainstOffice(body, office) {
+  const officeType = String(office?.officeType || '').trim()
+  const divisions = Array.isArray(office?.divisions) ? office.divisions : []
+  if (officeType === 'Regional Office') {
+    if (!body.divisionId) return 'Division or unit is required for Regional Office staff.'
+    const valid = divisions.some(d => d?.id === body.divisionId)
+    if (!valid) return 'Selected division or unit is not configured for this office.'
+  }
   return null
 }
 
@@ -113,6 +129,11 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 400 })
     }
 
+    const divisionError = validateDivisionAgainstOffice(body, office)
+    if (divisionError) {
+      return NextResponse.json({ ok: false, message: divisionError }, { status: 400 })
+    }
+
     const existingData = existing.data()
     if (!adminSessionAllowsOffice(resolvedSession, existingData.officeId) || !adminSessionAllowsOffice(resolvedSession, office.id)) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot update that employee.' }, { status: 403 })
@@ -132,11 +153,17 @@ export async function PUT(request, { params }) {
       : existingData.approvedAt
 
     const officeChanged = existingData.officeId !== office.id
+    const isRegional = String(office.officeType || '').trim() === 'Regional Office'
+    const division = isRegional
+      ? (Array.isArray(office.divisions) ? office.divisions : []).find(d => d?.id === body.divisionId) || null
+      : null
     const nextPerson = {
       ...existingData,
       ...body,
       officeId: office.id,
       officeName: office.name,
+      divisionId: isRegional ? (division?.id || '') : '',
+      divisionName: isRegional ? (division?.name || '') : '',
       nameLower: body.name.toLowerCase(),
       updatedAt: FieldValue.serverTimestamp(),
       approvalStatus: nextApprovalStatus,

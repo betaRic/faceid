@@ -270,6 +270,9 @@ function EmployeesPanelInner() {
                     <div className="min-w-0">
                       <div className="text-base font-semibold text-ink">{person.name}</div>
                       <div className="mt-1 text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                      {person.position ? (
+                        <div className="mt-0.5 text-xs text-muted">{person.position}</div>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -281,7 +284,7 @@ function EmployeesPanelInner() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <ApprovalBadge status={person.approvalStatus} />
-                  <Badge>{person.officeName}</Badge>
+                  <Badge>{person.officeName}{person.divisionName ? ` — ${person.divisionName}` : ''}</Badge>
                   <Badge>{`${person.sampleCount ?? 0} sample(s)`}</Badge>
                   {person.duplicateReviewRequired ? <Badge variant="warning">Duplicate review</Badge> : null}
                 </div>
@@ -349,6 +352,9 @@ function EmployeesPanelInner() {
                       <div>
                         <div className="font-medium text-ink">{person.name}</div>
                         <div className="text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                        {person.position ? (
+                          <div className="text-xs text-muted">{person.position}</div>
+                        ) : null}
                         {person.duplicateReviewRequired ? (
                           <div className="mt-1">
                             <Badge variant="warning">Duplicate review</Badge>
@@ -357,7 +363,12 @@ function EmployeesPanelInner() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-muted">{person.officeName}</td>
+                  <td className="px-5 py-3 text-muted">
+                    <div>{person.officeName}</div>
+                    {person.divisionName ? (
+                      <div className="text-xs text-muted">{person.divisionName}</div>
+                    ) : null}
+                  </td>
                   <td className="px-5 py-3 text-muted">{person.sampleCount ?? 0}</td>
                   <td className="px-5 py-3"><ApprovalBadge status={person.approvalStatus} /></td>
                   <td className="px-5 py-3"><StatusBadge active={person.active !== false} /></td>

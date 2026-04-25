@@ -8,6 +8,9 @@ export default function OfficeEditorModal({
   officeDraftWarning,
   updateDraft,
   toggleDay,
+  addDivision,
+  updateDivision,
+  removeDivision,
   handleUseMyLocation,
   handleSaveOffice,
   handleCancel,
@@ -47,6 +50,7 @@ export default function OfficeEditorModal({
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           <AdminOfficePanel
             activeOffice={activeOffice}
+            addDivision={addDivision}
             handleCancel={handleCancel}
             handleSaveOffice={handleSaveOffice}
             handleUseMyLocation={handleUseMyLocation}
@@ -54,9 +58,11 @@ export default function OfficeEditorModal({
             locationLoading={locationLoading}
             locationNotice={locationNotice}
             officeDraftWarning={officeDraftWarning}
+            removeDivision={removeDivision}
             saveLabel={saveLabel}
             savePending={savePending}
             toggleDay={toggleDay}
+            updateDivision={updateDivision}
             updateDraft={updateDraft}
           />
         </div>

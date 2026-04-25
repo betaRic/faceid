@@ -10,6 +10,7 @@ import { createOriginGuard } from '@/lib/csrf'
 import {
   normalizeBody,
   validateBody,
+  validateDivisionAgainstOffice,
   parseDirectoryParams,
   mapPersonRecord,
   countDirectoryRecords,
@@ -121,6 +122,11 @@ export async function POST(request) {
 
     if (!office) {
       return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 400 })
+    }
+
+    const divisionError = validateDivisionAgainstOffice(body, office)
+    if (divisionError) {
+      return NextResponse.json({ ok: false, message: divisionError }, { status: 400 })
     }
 
     if (resolvedSession && !adminAuth.adminSessionAllowsOffice(resolvedSession, office.id)) {

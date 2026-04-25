@@ -30,6 +30,8 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     isPending: state.isPending,
   })))
   const [officeId, setOfficeId] = useState('')
+  const [position, setPosition] = useState('')
+  const [divisionId, setDivisionId] = useState('')
   const [active, setActive] = useState(true)
   const [approvalStatus, setApprovalStatus] = useState(PERSON_APPROVAL_PENDING)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
@@ -38,6 +40,8 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   useEffect(() => {
     if (!person) return
     setOfficeId(person.officeId || '')
+    setPosition(person.position || '')
+    setDivisionId(person.divisionId || '')
     setActive(person.active !== false)
     setApprovalStatus(getEffectivePersonApprovalStatus(person))
     setResetConfirmOpen(false)
@@ -126,16 +130,32 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
 
   async function handleSave() {
     if (!officeId) return
+    const isRegional = String(selectedOffice?.officeType || '') === 'Regional Office'
+    if (isRegional && !divisionId) {
+      addToast('Select a division for Regional Office staff.', 'error')
+      return
+    }
+    const trimmedPosition = position.trim()
+    if (!trimmedPosition) {
+      addToast('Position is required.', 'error')
+      return
+    }
+    const division = isRegional
+      ? (Array.isArray(selectedOffice?.divisions) ? selectedOffice.divisions : []).find(d => d?.id === divisionId) || null
+      : null
     setPending(`employee-update-${person.id}`, true)
     try {
       await updatePersonRecord(person, {
         officeId,
         officeName: selectedOffice?.name || person.officeName,
+        position: trimmedPosition,
+        divisionId: isRegional ? divisionId : '',
+        divisionName: isRegional ? (division?.name || '') : '',
         active,
         approvalStatus,
       })
       refreshEmployees()
-      onSave(person, { officeId, active, approvalStatus })
+      onSave(person, { officeId, active, approvalStatus, position: trimmedPosition, divisionId: isRegional ? divisionId : '' })
     } catch (err) {
       addToast(err?.message || 'Update failed', 'error')
     }
@@ -283,12 +303,39 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             </div>
 
             <div className="grid gap-4">
+              <Field label="Position">
+                <input
+                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm uppercase outline-none transition focus:border-navy"
+                  onChange={(e) => setPosition(e.target.value.toUpperCase())}
+                  placeholder="e.g. LGOO II"
+                  type="text"
+                  value={position}
+                />
+              </Field>
+
               <Field label="Office">
-                <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setOfficeId(e.target.value)} value={officeId}>
+                <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => { setOfficeId(e.target.value); setDivisionId('') }} value={officeId}>
                   <option value="">Select office</option>
                   {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
               </Field>
+
+              {String(selectedOffice?.officeType || '') === 'Regional Office' ? (
+                <Field label="Division / Unit">
+                  <select
+                    className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                    onChange={(e) => setDivisionId(e.target.value)}
+                    value={divisionId}
+                  >
+                    <option value="">— Select division or unit —</option>
+                    {(Array.isArray(selectedOffice?.divisions) ? selectedOffice.divisions : []).map(division => (
+                      <option key={division.id} value={division.id}>
+                        {division.shortName ? `${division.shortName} — ${division.name}` : division.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
 
               <div className="rounded-xl border border-black/5 bg-stone-50 px-3 py-2 text-sm text-muted">
                 {(person.sampleCount ?? 0) > 0

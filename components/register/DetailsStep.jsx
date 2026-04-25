@@ -8,15 +8,22 @@ export default function DetailsStep({
   nameRef,
   officeId,
   offices,
+  position,
+  divisionId,
   onBack,
   onContinue,
   onEmployeeIdChange,
   onNameChange,
   onOfficeChange,
+  onPositionChange,
+  onDivisionChange,
   onRetake,
   pendingSampleCount,
   previewUrl,
 }) {
+  const selectedOffice = offices.find(office => office.id === officeId) || null
+  const isRegional = String(selectedOffice?.officeType || '') === 'Regional Office'
+  const divisions = Array.isArray(selectedOffice?.divisions) ? selectedOffice.divisions : []
   return (
     <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="grid content-start gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
@@ -55,6 +62,19 @@ export default function DetailsStep({
           {employeeIdError ? <p className="text-xs text-amber-600">{employeeIdError}</p> : null}
         </Field>
 
+        <Field label="Position">
+          <input
+            className="input uppercase"
+            onChange={event => onPositionChange(event.target.value.toUpperCase())}
+            onKeyDown={event => {
+              if (event.key === 'Enter') onContinue()
+            }}
+            placeholder="e.g. LGOO II, Administrative Aide IV"
+            type="text"
+            value={position}
+          />
+        </Field>
+
         <Field label="Assigned office">
           <select className="input" onChange={event => onOfficeChange(event.target.value)} value={officeId}>
             {offices.map(office => (
@@ -62,6 +82,28 @@ export default function DetailsStep({
             ))}
           </select>
         </Field>
+
+        {isRegional ? (
+          <Field label="Division / Unit">
+            <select
+              className="input"
+              onChange={event => onDivisionChange(event.target.value)}
+              value={divisionId}
+            >
+              <option value="">— Select division or unit —</option>
+              {divisions.map(division => (
+                <option key={division.id} value={division.id}>
+                  {division.shortName ? `${division.shortName} — ${division.name}` : division.name}
+                </option>
+              ))}
+            </select>
+            {divisions.length === 0 ? (
+              <p className="text-xs text-amber-600">
+                This regional office has no divisions configured. Ask an admin to add divisions before enrolling.
+              </p>
+            ) : null}
+          </Field>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
           {onBack ? (
