@@ -1,6 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  outputFileTracingIncludes: {
+    '/api/**/*': [
+      './public/models/human/**/*',
+      './node_modules/@vladmandic/human/dist/human.node-wasm.js',
+      './node_modules/@tensorflow/tfjs-core/dist/**/*',
+      './node_modules/@tensorflow/tfjs-converter/dist/**/*',
+      './node_modules/@tensorflow/tfjs-backend-cpu/dist/**/*',
+      './node_modules/@tensorflow/tfjs-backend-wasm/dist/**/*',
+    ],
+  },
   async headers() {
     return [
       {
