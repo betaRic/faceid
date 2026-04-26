@@ -61,6 +61,8 @@ const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/en
 const duplicateFaceModule = await importLocalModule('../lib/persons/duplicate-face.js')
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
 const attendanceStorageModule = await importLocalModule('../lib/attendance/storage.js')
+const attendanceNormalizeModule = await importLocalModule('../lib/attendance/normalize.js')
+const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 
 const {
   calculateDistanceMeters,
@@ -119,6 +121,8 @@ const {
 } = duplicateFaceModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
+const { normalizeEntry } = attendanceNormalizeModule
+const { validateLivenessEvidence } = livenessModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -740,6 +744,36 @@ await run('attendance storage sanitizer strips raw biometric evidence', () => {
   assert.equal(Object.hasOwn(stored, 'challenge'), false)
   assert.equal(Object.hasOwn(stored, 'scanFrames'), false)
   assert.equal(Object.hasOwn(stored, 'sampleFrames'), false)
+})
+
+await run('attendance normalization preserves iris liveness evidence for server validation', () => {
+  const entry = normalizeEntry({
+    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
+    livenessEvidence: {
+      earSamples: [0.25, 0.18, 0.25],
+      meshDeltas: [0.05, 0.05],
+      irisDeltas: [0.22, 0.24],
+      blinkCount: 0,
+      avgMeshDelta: 0.05,
+      avgIrisDelta: 0.23,
+      avgAntispoof: 0.92,
+      avgLiveness: 0.88,
+      hasEyeSignal: true,
+      hasMotionSignal: true,
+      frameCount: 3,
+      score: 0.75,
+      pass: true,
+    },
+  })
+
+  assert.deepEqual(entry.livenessEvidence.irisDeltas, [0.22, 0.24])
+  assert.equal(entry.livenessEvidence.avgIrisDelta, 0.23)
+  assert.equal(entry.livenessEvidence.hasEyeSignal, true)
+  assert.equal(entry.livenessEvidence.hasMotionSignal, true)
+
+  const validation = validateLivenessEvidence(entry.livenessEvidence)
+  assert.equal(validation.ok, true)
+  assert.ok(validation.avgIrisDelta >= 0.2)
 })
 
 await run('match support snapshot blocks weak single-sample support on marginal matches', () => {
