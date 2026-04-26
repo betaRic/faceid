@@ -84,7 +84,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
   }, [resetCapture, stopDetect])
 
   const handleSave = useCallback(async () => {
-    if (!captureResult?.descriptors?.length) return
+    if (!captureResult?.sampleFrames?.length) return
 
     setSaveError('')
     setWorkspaceState('saving')
@@ -93,7 +93,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          descriptors: captureResult.descriptors,
+          sampleFrames: captureResult.sampleFrames,
           captureMetadata: captureResult.captureMetadata || null,
           ...(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? { photoDataUrl: captureResult.previewUrl || null } : {}),
         }),
@@ -107,7 +107,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
       }
 
       onComplete({
-        sampleCount: Number(payload?.sampleCount || captureResult.descriptors.length),
+        sampleCount: Number(payload?.sampleCount || captureResult.sampleFrames.length),
         message: payload?.message || '',
       })
     } catch (error) {

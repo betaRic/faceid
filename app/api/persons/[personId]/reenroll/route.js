@@ -15,7 +15,7 @@ import {
 import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biometric-index'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
-import { DESCRIPTOR_LENGTH } from '@/lib/config'
+import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enrollment'
 import { syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import {
   getEffectivePersonApprovalStatus,
@@ -26,6 +26,11 @@ import { getBiometricReenrollmentAssessment } from '@/lib/biometrics/descriptor-
 import { checkDuplicateFace, deduplicateDescriptors, serializeDescriptorSample } from '@/lib/persons/enrollment'
 import { uploadEnrollmentPhoto } from '@/lib/storage'
 
+function toHttpStatus(value) {
+  const status = Number(value)
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
+}
+
 /**
  * Admin-initiated biometric re-enrollment.
  * Replaces all stored face descriptors with fresh captures.
@@ -33,7 +38,7 @@ import { uploadEnrollmentPhoto } from '@/lib/storage'
  * Employee kiosk sessions can only refresh their own profile immediately after a successful attendance scan.
  *
  * POST /api/persons/[personId]/reenroll
- * Body: { descriptors: number[][], captureMetadata?: object, photoDataUrl?: string }
+ * Body: { sampleFrames: { phaseId, frameDataUrl }[], captureMetadata?: object, photoDataUrl?: string }
  */
 export async function POST(request, { params }) {
   const guard = createOriginGuard()
@@ -89,20 +94,11 @@ export async function POST(request, { params }) {
     }
 
     const body = await request.json().catch(() => null)
-    const rawDescriptors = body?.descriptors
-    if (!Array.isArray(rawDescriptors) || rawDescriptors.length === 0) {
-      return NextResponse.json({ ok: false, message: 'Missing descriptors array.' }, { status: 400 })
-    }
-
-    const validDescriptors = rawDescriptors.filter(
-      d => Array.isArray(d) && d.length === DESCRIPTOR_LENGTH && d.every(v => Number.isFinite(Number(v))),
+    const authoritativePayload = await buildAuthoritativeEnrollmentPayload(
+      body?.sampleFrames,
+      body?.captureMetadata,
     )
-    if (validDescriptors.length < 4) {
-      return NextResponse.json(
-        { ok: false, message: `Need at least 4 valid descriptors, got ${validDescriptors.length}.` },
-        { status: 400 },
-      )
-    }
+    const validDescriptors = authoritativePayload.descriptors
 
     // Deduplicate within the new batch (no comparison to old — we're replacing everything)
     const { accepted, rejected } = deduplicateDescriptors(validDescriptors, [])
@@ -120,14 +116,8 @@ export async function POST(request, { params }) {
       : PERSON_APPROVAL_APPROVED
     const approvalChanged = previousApprovalStatus !== nextApprovalStatus
     const newDescriptors = accepted.map(serializeDescriptorSample)
-    const captureMetadata = body?.captureMetadata && typeof body.captureMetadata === 'object'
-      ? body.captureMetadata
-      : {}
-    const biometricModelVersion = String(
-      captureMetadata?.modelVersion
-      || person.biometricModelVersion
-      || 'human-faceres-browser-v1',
-    )
+    const captureMetadata = authoritativePayload.captureMetadata || {}
+    const biometricModelVersion = String(authoritativePayload.biometricModelVersion || person.biometricModelVersion || 'human-faceres-browser-v1')
     const biometricQualityScore = Number.isFinite(captureMetadata?.qualityScore)
       ? Number(captureMetadata.qualityScore)
       : (Number.isFinite(person.biometricQualityScore) ? Number(person.biometricQualityScore) : null)
@@ -256,7 +246,7 @@ export async function POST(request, { params }) {
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Re-enrollment failed.' },
-      { status: 500 },
+      { status: toHttpStatus(error?.status) },
     )
   }
 }

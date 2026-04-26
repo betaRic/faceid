@@ -4,33 +4,45 @@ import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { DESCRIPTOR_LENGTH } from '@/lib/config'
+import { createOriginGuard } from '@/lib/csrf'
+import { generateServerFaceEmbedding } from '@/lib/biometrics/server-embedding'
 
 /**
- * Server-side face embedding endpoint.
+ * Optional server-side face embedding diagnostic endpoint.
  *
  * Accepts a base64-encoded JPEG frame from the client, extracts a 1024-dim
  * FaceRes descriptor using the WASM backend on the server, and returns it.
  *
  * This ensures the descriptor is generated in a controlled environment —
- * no GPU variance, no client-side tampering. Both enrollment and kiosk scan
- * can use this endpoint for authoritative embeddings.
+ * no GPU variance, no client-side descriptor tampering. The production
+ * enrollment and attendance APIs call the embedding module directly; this
+ * endpoint stays disabled unless explicitly enabled for diagnostics.
  *
- * NOTE: This endpoint requires @vladmandic/human to work in Node.js with
- * the WASM backend. The current implementation validates the architecture
- * but delegates embedding to the client (WASM) for now. When full server-side
- * embedding is needed, this is where it plugs in.
- *
- * Vercel constraints:
- * - No tfjs-node (native binary too large for serverless)
- * - WASM backend works in Node.js serverless functions
- * - Cold start loads models (~2-5s), warm invocations ~200-500ms
- * - Pro plan: maxDuration 60s, 3GB RAM — sufficient for face embedding
+ * Browser descriptors are not accepted here. The server decodes the submitted
+ * still frame, runs Human with the Node WASM backend, and returns the descriptor
+ * generated inside the trusted server process.
  */
 
 export const maxDuration = 30
 export const dynamic = 'force-dynamic'
 
+function toHttpStatus(value) {
+  const status = Number(value)
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
+}
+
 export async function POST(request) {
+  if (process.env.ENABLE_PUBLIC_BIOMETRIC_EMBED_API !== 'true') {
+    return NextResponse.json(
+      { ok: false, message: 'Public biometric embedding endpoint is disabled.' },
+      { status: 404 },
+    )
+  }
+
+  const guard = createOriginGuard()
+  const originError = await guard(request)
+  if (originError) return originError
+
   const db = getAdminDb()
   const ip = getRequestIp(request)
 
@@ -56,7 +68,9 @@ export async function POST(request) {
     )
   }
 
-  const frameDataUrl = typeof body?.frame === 'string' ? body.frame : ''
+  const frameDataUrl = typeof body?.frameDataUrl === 'string'
+    ? body.frameDataUrl
+    : (typeof body?.frame === 'string' ? body.frame : '')
   if (!frameDataUrl || !frameDataUrl.startsWith('data:image/')) {
     return NextResponse.json(
       { ok: false, message: 'Frame must be a base64-encoded image data URL.' },
@@ -64,39 +78,29 @@ export async function POST(request) {
     )
   }
 
-  const maxFrameBytes = 2 * 1024 * 1024
-  if (frameDataUrl.length > maxFrameBytes) {
+  const maxFrameDataUrlLength = Math.ceil((2 * 1024 * 1024 * 4) / 3) + 128
+  if (frameDataUrl.length > maxFrameDataUrlLength) {
     return NextResponse.json(
       { ok: false, message: 'Frame exceeds maximum size (2MB).' },
       { status: 400 },
     )
   }
 
-  // -----------------------------------------------------------------------
-  // SERVER-SIDE EMBEDDING PLACEHOLDER
-  //
-  // Full implementation requires @vladmandic/human running in Node.js with
-  // WASM backend + sharp for image decoding. The pipeline:
-  //
-  //   1. Decode base64 JPEG → raw pixel buffer (sharp)
-  //   2. Create tf.tensor3d from pixels
-  //   3. Run human.detect(tensor) with WASM backend
-  //   4. Extract face.embedding (1024-dim)
-  //   5. Return normalized descriptor
-  //
-  // For now, the client generates the descriptor using the WASM backend
-  // (which is deterministic across devices). This endpoint validates the
-  // request format and returns a status indicating server embedding is
-  // not yet active, so the client knows to use its own descriptor.
-  //
-  // To activate: install sharp, configure Human for Node.js WASM, and
-  // replace the placeholder below with the actual embedding pipeline.
-  // -----------------------------------------------------------------------
-
-  return NextResponse.json({
-    ok: true,
-    serverEmbeddingAvailable: false,
-    message: 'Server-side embedding endpoint is configured but not yet active. Client should use WASM-generated descriptor.',
-    descriptorLength: DESCRIPTOR_LENGTH,
-  })
+  try {
+    const embedding = await generateServerFaceEmbedding(frameDataUrl)
+    return NextResponse.json({
+      serverEmbeddingAvailable: true,
+      descriptorLength: DESCRIPTOR_LENGTH,
+      ...embedding,
+    }, { status: embedding.ok ? 200 : 422 })
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        serverEmbeddingAvailable: true,
+        message: error?.message || 'Server-side embedding failed.',
+      },
+      { status: toHttpStatus(error?.status) },
+    )
+  }
 }

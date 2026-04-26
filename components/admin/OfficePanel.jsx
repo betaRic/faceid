@@ -49,6 +49,7 @@ export default function OfficePanel() {
     activeOffice,
     draftOffice,
     officeDraftWarning,
+    officeDraftDirty,
     locationLoading,
     locationNotice,
     highlightLocationPin,
@@ -253,6 +254,7 @@ export default function OfficePanel() {
           highlightLocationPin={highlightLocationPin}
           locationLoading={locationLoading}
           locationNotice={locationNotice}
+          officeDraftDirty={officeDraftDirty}
           officeDraftWarning={officeDraftWarning}
           removeDivision={removeDivision}
           saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}

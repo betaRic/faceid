@@ -17,6 +17,8 @@ const wait = duration => new Promise(resolve => {
   window.setTimeout(resolve, duration)
 })
 
+const SERVER_SCAN_FRAME_LIMIT = 2
+
 function descriptorDistance(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return Number.POSITIVE_INFINITY
   return euclideanDistance(a, b)
@@ -197,6 +199,9 @@ export function useVerificationBurst(camera) {
     const rankedCaptures = [...strictCaptures].sort((left, right) => right.qualityScore - left.qualityScore)
     const aggregationCount = Math.min(3, rankedCaptures.length)
     const selectedForAggregation = rankedCaptures.slice(0, aggregationCount)
+    const scanFrames = rankedCaptures.slice(0, SERVER_SCAN_FRAME_LIMIT).map(capture => ({
+      frameDataUrl: capture.canvas.toDataURL('image/jpeg', 0.82),
+    }))
     const descriptorSamples = selectedForAggregation
       .map(capture => capture?.primary?.detection?.descriptor)
       .filter(descriptor => Array.isArray(descriptor) && descriptor.length > 0)
@@ -231,6 +236,7 @@ export function useVerificationBurst(camera) {
       landmarks: landmarksBuffer,
       allCaptures: captures,
       topDescriptors,
+      scanFrames,
       fusedDescriptor,
       descriptorSpread,
       burstDiagnostics,
@@ -238,54 +244,5 @@ export function useVerificationBurst(camera) {
     }
   }, [camera])
 
-  const captureActiveChallenge = useCallback(async (motionType = '') => {
-    const human = await getHumanVerification()
-    const samples = []
-    const isMobile = isProbablyMobileDevice()
-    const targetFrames = isMobile ? 18 : 12
-    const frameInterval = isMobile ? 140 : 110
-    const startedAt = Date.now()
-
-    for (let attempt = 0; attempt < targetFrames; attempt += 1) {
-      const rawCanvas = camera.captureImageData({
-        maxWidth: PREVIEW_MAX_DIMENSION,
-        maxHeight: PREVIEW_MAX_DIMENSION,
-      })
-      const canvas = buildOvalCaptureCanvas(rawCanvas)
-      if (!canvas) {
-        if (attempt < targetFrames - 1) await wait(frameInterval)
-        continue
-      }
-      if (!camera.camOn) break
-
-      const result = await human.detect(canvas)
-      const detections = result.face.map(mapDetectedFace)
-      const strictPrimary = selectOvalReadyFace(detections, canvas.width, canvas.height)
-      const primary = strictPrimary?.detection || selectBestFallbackFace(detections)
-
-      if (primary?.detection?.box) {
-        const box = primary.detection.box
-        const metrics = measureFrameMetrics(canvas, box)
-        samples.push({
-          timestamp: Date.now(),
-          yaw: Number(primary.rotation?.yaw || 0),
-          pitch: Number(primary.rotation?.pitch || 0),
-          roll: Number(primary.rotation?.roll || 0),
-          faceAreaRatio: Number(metrics.faceAreaRatio || 0),
-          centeredness: Number(metrics.centeredness || 0),
-        })
-      }
-
-      if (attempt < targetFrames - 1) await wait(frameInterval)
-    }
-
-    return {
-      motionType: String(motionType || '').trim(),
-      startedAt,
-      completedAt: Date.now(),
-      samples,
-    }
-  }, [camera])
-
-  return { captureVerificationBurst, captureActiveChallenge }
+  return { captureVerificationBurst }
 }

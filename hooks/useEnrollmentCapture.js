@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { detectFaceBoxes, detectSingleDescriptor, detectPoseOnly } from '@/lib/biometrics/human'
+import { detectFaceBoxes, detectWithDescriptors, detectPoseOnly } from '@/lib/biometrics/human'
 import { getNavigatorDeviceProfile } from '@/lib/biometrics/device-profile'
 import {
   getFaceAreaRatioFromBox,
@@ -183,6 +183,21 @@ function isPoseMatchingPhase(phaseType, yaw, sideAYaw, pitch) {
   }
 }
 
+function getReadyFaceFromDetections(detections, width, height) {
+  const ready = selectOvalReadyFace(detections, width, height)
+  if (!ready) {
+    return { ok: false, reason: 'oval', face: null, faceAreaRatio: null }
+  }
+
+  const faceAreaRatio = ready.faceAreaRatio ?? getFaceAreaRatioFromBox(ready.box, width, height)
+  const guidance = getFaceSizeGuidance(faceAreaRatio)
+  if (!guidance.isCaptureReady) {
+    return { ok: false, reason: 'distance', face: ready.detection, faceAreaRatio, guidance }
+  }
+
+  return { ok: true, reason: '', face: ready.detection, faceAreaRatio, guidance }
+}
+
 export function getPoseGuidanceMessage(phaseType, yaw, sideAYw, pitch) {
   if (yaw === null && phaseType !== 'chin_down') return 'Position your face in the oval'
   switch (phaseType) {
@@ -334,8 +349,18 @@ export function useEnrollmentCapture(camera) {
       try {
         const result = await detectPoseOnly(cropped)
         pose = resolveFacePose(result)
-        const faceAreaRatio = getFaceAreaRatioFromBox(result?.detection?.box || result?.box, cropped.width, cropped.height)
-        setFaceSizeGuidance(getFaceSizeGuidance(faceAreaRatio))
+        const readyFace = getReadyFaceFromDetections(result ? [result] : [], cropped.width, cropped.height)
+        setFaceSizeGuidance(readyFace.guidance || getFaceSizeGuidance(readyFace.faceAreaRatio))
+        if (!readyFace.ok) {
+          setCurrentYaw(pose.yaw)
+          setPoseOk(false)
+          updateStatus(readyFace.reason === 'distance'
+            ? readyFace.guidance.detail
+            : 'Center your face inside the oval')
+          poseAchievedAt = null
+          await wait(timingProfile.posePollIntervalMs)
+          continue
+        }
       } catch {}
 
       setCurrentYaw(pose.yaw)
@@ -384,16 +409,19 @@ export function useEnrollmentCapture(camera) {
         if (!cropped) { await wait(timingProfile.frameIntervalMs); continue }
 
         let faceResult = null
+        let readyFace = null
         try {
-          faceResult = await detectSingleDescriptor(cropped)
+          const detections = await detectWithDescriptors(cropped)
+          readyFace = getReadyFaceFromDetections(detections, cropped.width, cropped.height)
+          faceResult = readyFace.ok ? readyFace.face : null
         } catch {}
 
         if (faceResult && faceResult.descriptor?.length > 0) {
-          const faceAreaRatio = getFaceAreaRatioFromBox(faceResult?.detection?.box, cropped.width, cropped.height)
-          setFaceSizeGuidance(getFaceSizeGuidance(faceAreaRatio))
+          const faceAreaRatio = readyFace?.faceAreaRatio ?? getFaceAreaRatioFromBox(faceResult?.detection?.box, cropped.width, cropped.height)
+          setFaceSizeGuidance(readyFace?.guidance || getFaceSizeGuidance(faceAreaRatio))
           const pose = resolveFacePose(faceResult)
 
-          // Verify pose is still correct DURING capture, not just before the burst.
+          // Verify position and pose DURING capture, not just before the burst.
           const poseStillOk = isPoseMatchingPhase(phaseType, pose.yaw, sideAYw, pose.pitch)
 
           if (poseStillOk) {
@@ -403,6 +431,11 @@ export function useEnrollmentCapture(camera) {
             setPhaseProgress(frameSlot)
           }
           // If pose slipped, retry this frame slot without incrementing frameSlot
+        } else if (readyFace?.guidance) {
+          setFaceSizeGuidance(readyFace.guidance)
+          setStatusMsg(readyFace.reason === 'distance'
+            ? readyFace.guidance.detail
+            : 'Center your face inside the oval')
         }
 
         if (!captured) {
@@ -476,10 +509,11 @@ export function useEnrollmentCapture(camera) {
       const selected = selectEnrollmentBurstSamples(allCaptures, {
         maxSamples: ENROLLMENT_TARGET_BURST_SAMPLES,
         minFrameGap: 1,
+        requiredPhaseIds: CAPTURE_PHASES.map(phase => phase.id),
       })
 
       const selectedPhases = new Set(selected.map(c => c.phaseIndex))
-      const genuinelyDiverse = selectedPhases.size >= 2
+      const genuinelyDiverse = selectedPhases.size === CAPTURE_PHASES.length
 
       // ✅ Warn if diversity is still low despite per-frame enforcement
       if (!genuinelyDiverse) {
@@ -508,6 +542,10 @@ export function useEnrollmentCapture(camera) {
 
       return {
         descriptors: selected.map(c => c.descriptor),
+        sampleFrames: selected.map(c => ({
+          phaseId: String(c.phaseId || ''),
+          frameDataUrl: c.previewUrl,
+        })),
         previewUrl: primary.previewUrl,
         qualitySummary: quality,
         captureMetadata,

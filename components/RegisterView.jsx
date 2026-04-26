@@ -39,6 +39,7 @@ export default function RegisterView({
   const [divisionId, setDivisionId] = useState('')
   const [previewUrl, setPreviewUrl] = useState(null)
   const [pendingDescriptors, setPendingDescriptors] = useState([])
+  const [pendingSampleFrames, setPendingSampleFrames] = useState([])
   const [captureMetadata, setCaptureMetadata] = useState(null)
   const [step, setStep] = useState('details')
   const [captureFeedback, setCaptureFeedback] = useState(null)
@@ -126,6 +127,7 @@ export default function RegisterView({
   const clearPendingCapture = useCallback(() => {
     setPreviewUrl(null)
     setPendingDescriptors([])
+    setPendingSampleFrames([])
     setCaptureMetadata(null)
     setCaptureFeedback(null)
     setBurstSummary(null)
@@ -146,6 +148,7 @@ export default function RegisterView({
       if (duplicateCheck.duplicate) {
         setDuplicateReviewHint(null)
         setPendingDescriptors([])
+        setPendingSampleFrames([])
         setCaptureMetadata(null)
         setPreviewUrl(null)
         setCaptureFeedback(null)
@@ -172,6 +175,7 @@ export default function RegisterView({
       }
 
       setPendingDescriptors(result.descriptors)
+      setPendingSampleFrames(Array.isArray(result.sampleFrames) ? result.sampleFrames : [])
       setCaptureMetadata(result.captureMetadata || null)
       setPreviewUrl(result.previewUrl)
       setCaptureFeedback(result.qualitySummary)
@@ -182,6 +186,7 @@ export default function RegisterView({
       setDuplicateReviewHint(null)
       showToast(error?.message || 'Failed to verify duplicate enrollment', 5000)
       setPendingDescriptors([])
+      setPendingSampleFrames([])
       setCaptureMetadata(null)
       setPreviewUrl(null)
       setCaptureFeedback(null)
@@ -273,6 +278,7 @@ export default function RegisterView({
           officeId,
           officeName: selectedOffice?.name || 'Unassigned',
           divisionId: isRegionalOffice ? divisionId : '',
+          sampleFrames: pendingSampleFrames,
           captureMetadata,
           ...(storageBucket ? { photoDataUrl: previewUrl } : {}),
         },
@@ -303,7 +309,7 @@ export default function RegisterView({
     })
     setStep('complete')
     playAudioCue('success')
-  }, [captureMetadata, employeeId, name, officeId, position, isRegionalOffice, divisionId, onEnrollPerson, pendingDescriptors, pendingSampleCount, previewUrl, selectedOffice, playAudioCue])
+  }, [captureMetadata, employeeId, name, officeId, position, isRegionalOffice, divisionId, onEnrollPerson, pendingDescriptors, pendingSampleCount, pendingSampleFrames, previewUrl, selectedOffice, playAudioCue])
 
   const handleNewPerson = useCallback(() => {
     setName('')

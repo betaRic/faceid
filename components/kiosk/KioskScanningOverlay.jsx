@@ -15,23 +15,19 @@ export default function KioskScanningOverlay({
   flashKey,
   clock,
   dateStr,
-  challengeState,
   locationState,
   faceDistanceInfo,
 }) {
   const locationBadgeLabel = locationState?.ready ? 'Location ready' : 'Location required'
 
-  const isChallenge = kioskState === 'challenge'
   const isScanning = kioskState === 'scanning'
   const isVerifying = kioskState === 'verifying'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
-  const showLiveVideo = isChallenge || !hasCapturedFrame
+  const showLiveVideo = !hasCapturedFrame
 
   const ringState = isVerifying
     ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
-    : isChallenge
-      ? 'ring-2 ring-amber-400/80 shadow-[0_0_28px_rgba(251,191,36,0.28)]'
-      : isConfirmed
+    : isConfirmed
         ? 'ring-2 ring-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
         : isBlocked || isUnknown
           ? 'ring-2 ring-red-400/80'
@@ -41,9 +37,7 @@ export default function KioskScanningOverlay({
 
   const statusMessage = isVerifying
     ? 'Verifying...'
-    : isChallenge
-      ? 'Complete the active liveness check'
-      : isConfirmed
+    : isConfirmed
         ? 'Verified'
         : isBlocked
           ? 'Try again'
@@ -55,17 +49,13 @@ export default function KioskScanningOverlay({
                 ? 'Ready — look at camera'
                 : 'Camera off'
 
-  const guideTitle = isChallenge
-    ? toCompactGuideLabel(challengeState?.prompt || 'Follow the liveness prompt', 'Follow prompt')
-    : isVerifying
+  const guideTitle = isVerifying
       ? 'Verifying'
       : isScanning
         ? toCompactGuideLabel(faceDistanceInfo?.isCaptureReady ? 'Hold steady' : faceDistanceInfo?.label, 'Adjust distance')
         : toCompactGuideLabel(faceDistanceInfo?.label, 'Center face')
 
-  const guideTone = isChallenge
-    ? 'warn'
-    : isVerifying
+  const guideTone = isVerifying
       ? 'active'
       : isScanning
         ? (faceDistanceInfo?.isCaptureReady ? 'ready' : 'warn')

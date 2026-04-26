@@ -44,9 +44,9 @@ Compatibility alias: `/kiosk`
 
 Phone-first anonymous attendance mode with:
 - one-time biometric runtime boot before camera is shown
-- client-side burst capture and descriptor generation
+- client-side burst capture with server-generated attendance descriptors
 - challenge-protected submission to the server
-- active liveness escalation for risky scans
+- passive liveness and anti-spoof checks from the verification burst
 - server-side identity decision
 - server-side GPS / WFH / employee status validation
 - office-first candidate narrowing before global fallback
@@ -65,6 +65,7 @@ Features:
 - employee ID required
 - duplicate employee ID blocking
 - duplicate face blocking
+- guided still frames are re-embedded on the server before biometrics are stored
 - pending approval status for public submissions
 
 ### 4. Admin
@@ -119,10 +120,16 @@ The server is responsible for:
 Current attendance flow:
 1. the client detects a face locally
 2. the client requests a short-lived attendance challenge
-3. the client sends the descriptor, capture telemetry, PAD scores, and optional active motion trace
-4. the server matches identity and decides whether attendance is accepted
+3. the client sends two strict still frames, capture telemetry, PAD scores, and passive burst liveness evidence
+4. the server regenerates descriptors from those still frames
+5. the server matches identity and decides whether attendance is accepted
 
-This is operationally simpler, but it is not a hardened biometric trust model because descriptors still come from the client.
+This is stronger than trusting browser-generated descriptors. It is still not court-grade assurance because the camera frames, GPS, and passive liveness evidence originate from the employee device.
+
+Current enrollment flow:
+1. the client captures guided still frames locally
+2. the client submits those frames with capture metadata
+3. the server regenerates descriptors from the submitted frames before biometric storage
 
 ## Biometric Status
 
@@ -138,13 +145,13 @@ What is already improved:
 - ambiguous matches are blocked
 - weak captures are rejected
 - public scans require verified GPS
-- risky scans escalate to active liveness
+- risky scans fail closed through passive liveness, capture quality, and match ambiguity gates
 - final attendance identity is now decided by the server
 
 What is still true:
 - live detection still happens on the client
-- attendance still relies on client-generated descriptors
-- approval and policy controls mitigate risk, but they do not cryptographically prove descriptor authenticity
+- attendance still relies on browser-originated frames, GPS, and passive liveness evidence
+- approval and policy controls mitigate risk, but they do not cryptographically prove camera or location authenticity
 
 ## Public Enrollment Control
 
@@ -429,7 +436,7 @@ Before calling the system trusted, test:
 - `@vladmandic/face-api` still emits a Next.js build warning about dynamic `require`
 - biometric accuracy still depends heavily on enrollment quality and real device conditions
 - descriptors are still stored server-side in reusable form
-- attendance still trusts the client-submitted descriptor and GPS input
+- attendance no longer trusts client-submitted descriptors, but it still trusts browser-originated frames and GPS input
 
 ## Design Direction
 

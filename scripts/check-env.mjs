@@ -120,7 +120,7 @@ function getRuntimeReadiness() {
   }
   if (!redisConfigured) warnings.push('REDIS_URL is not configured; cache misses and rate limits will fall back to Firestore.')
   if (publicAttendanceEnabled) warnings.push('Public attendance browsing is enabled. Disable it unless broad visibility is intentional.')
-  warnings.push('Attendance still relies on client-generated biometric descriptors; higher trust requires a trusted capture agent.')
+  warnings.push('Attendance descriptors are server-generated from submitted still frames, but frames, GPS, and liveness evidence still originate from the browser.')
 
   return {
     firebaseClientConfigured,

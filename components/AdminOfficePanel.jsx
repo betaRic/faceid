@@ -112,10 +112,6 @@ export default function AdminOfficePanel({
   updateDivision = () => {},
   removeDivision = () => {},
   handleUseMyLocation,
-  handleSaveOffice = () => {},
-  handleCancel = () => {},
-  saveLabel = 'Save settings',
-  savePending = false,
   locationLoading = false,
   locationNotice = '',
   highlightLocationPin = false,
@@ -134,67 +130,42 @@ export default function AdminOfficePanel({
 
   return (
     <div className="grid gap-4">
-      {/* ── Header: office name, type, save ── */}
-      <div className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 xl:grid-cols-[1.1fr_1.2fr_auto]">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Office name">
-            <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={e => updateDraft('name', e.target.value)}
-              value={activeOffice.name || ''}
-            />
-          </Field>
-          <Field label="Code">
-            <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={e => updateDraft('code', e.target.value)}
-              value={activeOffice.code || ''}
-            />
-          </Field>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Short name">
-            <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={e => updateDraft('shortName', e.target.value)}
-              value={activeOffice.shortName || ''}
-            />
-          </Field>
-          <Field label="Office type">
-            <select
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
-              onChange={e => updateDraft('officeType', e.target.value)}
-              value={activeOffice.officeType || ''}
-            >
-              {OFFICE_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="flex flex-col justify-end gap-2">
-          {officeDraftWarning && (
-            <p className="text-xs text-amber-600">{officeDraftWarning}</p>
-          )}
-          <div className="flex flex-wrap justify-end gap-2">
-            <button
-              className="inline-flex min-h-10 items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-100"
-              onClick={handleCancel}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-navy px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-60"
-              disabled={savePending}
-              onClick={handleSaveOffice}
-              type="button"
-            >
-              {savePending
-                ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving…</>
-                : saveLabel}
-            </button>
-          </div>
-        </div>
+      {/* ── Identity: name, code, short name, type ── */}
+      <div className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Field label="Office name">
+          <input
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            onChange={e => updateDraft('name', e.target.value)}
+            value={activeOffice.name || ''}
+          />
+        </Field>
+        <Field label="Code">
+          <input
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            onChange={e => updateDraft('code', e.target.value)}
+            value={activeOffice.code || ''}
+          />
+        </Field>
+        <Field label="Short name">
+          <input
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            onChange={e => updateDraft('shortName', e.target.value)}
+            value={activeOffice.shortName || ''}
+          />
+        </Field>
+        <Field label="Office type">
+          <select
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            onChange={e => updateDraft('officeType', e.target.value)}
+            value={activeOffice.officeType || ''}
+          >
+            {OFFICE_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </Field>
       </div>
+      {officeDraftWarning ? (
+        <p className="-mt-2 px-1 text-xs text-amber-600">{officeDraftWarning}</p>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Province / city">

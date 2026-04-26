@@ -7,6 +7,7 @@ import { writeAuditLog } from '@/lib/audit-log'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
+import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enrollment'
 import {
   normalizeBody,
   validateBody,
@@ -20,6 +21,11 @@ import {
   writeEnrollmentAuditLog,
 } from '@/lib/persons'
 import { encodePersonDirectoryCursor } from '@/lib/person-directory'
+
+function toHttpStatus(value) {
+  const status = Number(value)
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
+}
 
 export async function GET(request) {
   const session = adminAuth.parseAdminSessionCookieValue(
@@ -104,7 +110,7 @@ export async function POST(request) {
   const originError = await guard(request)
   if (originError) return originError
 
-  const body = normalizeBody(await request.json().catch(() => null))
+  let body = normalizeBody(await request.json().catch(() => null))
   const validationError = validateBody(body)
   if (validationError) {
     return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
@@ -163,6 +169,17 @@ export async function POST(request) {
       }
     }
 
+    const authoritativePayload = await buildAuthoritativeEnrollmentPayload(
+      body.sampleFrames,
+      body.captureMetadata,
+    )
+    body = {
+      ...body,
+      descriptors: authoritativePayload.descriptors,
+      captureMetadata: authoritativePayload.captureMetadata,
+      biometricModelVersion: authoritativePayload.biometricModelVersion,
+    }
+
     const { transactionResult, sampleCount, indexSyncWarning, duplicateReviewRequired } = await enrollPerson(db, body, office, resolvedSession)
 
     await uploadEnrollmentPhotoIfPending(
@@ -209,7 +226,7 @@ export async function POST(request) {
 
     return NextResponse.json(
       { ok: false, message },
-      { status: message.startsWith('Employee ID already exists.') ? 409 : 500 },
+      { status: duplicateFace?.duplicate ? 409 : (message.startsWith('Employee ID already exists.') ? 409 : toHttpStatus(error?.status)) },
     )
   }
 }

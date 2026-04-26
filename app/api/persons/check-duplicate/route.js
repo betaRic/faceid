@@ -7,6 +7,11 @@ import { createOriginGuard } from '@/lib/csrf'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { checkDuplicateFace } from '@/lib/persons/enrollment'
 
+function toHttpStatus(value) {
+  const status = Number(value)
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
+}
+
 export async function POST(request) {
   const guard = createOriginGuard()
   const originError = await guard(request)
@@ -26,10 +31,12 @@ export async function POST(request) {
     }
 
     const body = await request.json().catch(() => null)
-    if (!body?.descriptors?.length || !Array.isArray(body.descriptors)) {
+    const descriptors = body?.descriptors
+
+    if (!descriptors?.length || !Array.isArray(descriptors)) {
       return NextResponse.json({ ok: false, message: 'Descriptors are required.' }, { status: 400 })
     }
-    for (const d of body.descriptors) {
+    for (const d of descriptors) {
       if (!Array.isArray(d) || d.length !== DESCRIPTOR_LENGTH) {
         return NextResponse.json({ ok: false, message: `Invalid descriptor length.` }, { status: 400 })
       }
@@ -37,7 +44,7 @@ export async function POST(request) {
 
     const duplicateFace = await checkDuplicateFace(
       db,
-      body.descriptors,
+      descriptors,
       String(body.personId || '').trim(),
     )
 
@@ -65,7 +72,7 @@ export async function POST(request) {
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to check duplicate.' },
-      { status: 500 },
+      { status: toHttpStatus(error?.status) },
     )
   }
 }

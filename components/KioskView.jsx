@@ -45,8 +45,6 @@ export default function KioskView({
     setFlashKey,
     alertState,
     setAlertState,
-    challengeState,
-    setChallengeState,
     resumeKey,
     faceDistanceInfo,
     setFaceDistanceInfo,
@@ -73,7 +71,6 @@ export default function KioskView({
     setCapturedFrameUrl,
     setFlashKey,
     setAlertState,
-    setChallengeState,
     setFaceDistanceInfo,
     confirmRef,
     confirmedTimer,
@@ -255,7 +252,6 @@ export default function KioskView({
               flashKey={flashKey}
               clock={clock}
               dateStr={dateStr}
-              challengeState={challengeState}
               locationState={locationState}
               faceDistanceInfo={faceDistanceInfo}
               modelsReady={modelsReady}

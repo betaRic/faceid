@@ -164,12 +164,12 @@ export function BiometricBenchmarkPanel() {
         <MetricTile label="Success rate" value={formatPercent(deployment.successRate)} detail="Accepted scans across the full report window" />
         <MetricTile label="No-match rate" value={formatPercent(deployment.noMatchRate)} detail="Hard false-reject proxy" />
         <MetricTile label="Spoof blocks" value={formatPercent(deployment.spoofBlockRate)} detail="Anti-spoof and liveness hard blocks" />
-        <MetricTile label="WFH challenge pass" value={formatPercent(deployment.wfhChallengePassRate)} detail="Accepted WFH scans after active challenge" />
+        <MetricTile label="WFH accepted" value={formatPercent(deployment.wfhAcceptedRate)} detail="Accepted WFH scans in the report window" />
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Challenge coverage" value={formatPercent(report.summary?.challengeCoverageRate)} detail="Requests using the challenge-protected path" />
-        <MetricTile label="Active challenge rate" value={formatPercent(deployment.activeChallengeRate)} detail="Scans escalated into the motion challenge flow" />
+        <MetricTile label="Passive token rate" value={formatPercent(report.summary?.challengeCoverageRate)} detail="Scans using the replay-protected passive challenge path" />
         <MetricTile label="Mobile no-match" value={formatPercent(mobile.noReliableMatchRate)} detail={`${mobile.total || 0} mobile events`} />
         <MetricTile label="Desktop no-match" value={formatPercent(desktop.noReliableMatchRate)} detail={`${desktop.total || 0} desktop events`} />
       </div>

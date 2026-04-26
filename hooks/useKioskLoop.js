@@ -242,6 +242,7 @@ export function useKioskLoop({
           canvas: bestCanvas,
           landmarks,
           topDescriptors,
+          scanFrames,
           fusedDescriptor,
           descriptorSpread,
           burstDiagnostics,
@@ -418,6 +419,7 @@ export function useKioskLoop({
 
           let submissionEntry = {
             ...baseAttendanceEntry,
+            scanFrames: Array.isArray(scanFrames) ? scanFrames : [],
             challenge: challengeResult.challenge,
             riskFlags: Array.isArray(challengeResult.riskFlags) ? challengeResult.riskFlags : [],
           }

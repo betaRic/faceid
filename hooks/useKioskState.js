@@ -10,7 +10,6 @@ export function useKioskState(camera) {
   const [alertState, setAlertState] = useState(null)
   const [resumeKey, setResumeKey] = useState(0)
   const [faceDistanceInfo, setFaceDistanceInfo] = useState(null)
-  const [challengeState, setChallengeState] = useState(null)
 
   const confirmRef = useRef(0)
   const confirmedTimer = useRef(null)
@@ -56,7 +55,6 @@ export function useKioskState(camera) {
       setCapturedFrameUrl(null)
       setCurrentMatch(null)
       setAlertState(null)
-      setChallengeState(null)
       setKioskState('idle')
       if (camera?.clearOverlay) camera.clearOverlay()
       setResumeKey(k => k + 1)
@@ -89,8 +87,6 @@ export function useKioskState(camera) {
     setResumeKey,
     faceDistanceInfo,
     setFaceDistanceInfo,
-    challengeState,
-    setChallengeState,
     confirmRef,
     confirmedTimer,
     unknownTimer,

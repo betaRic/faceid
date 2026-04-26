@@ -51,6 +51,7 @@ const attendanceTimeModule = await importLocalModule('../lib/attendance-time.js'
 const personDirectoryModule = await importLocalModule('../lib/person-directory.js')
 const personApprovalModule = await importLocalModule('../lib/person-approval.js')
 const enrollmentBurstModule = await importLocalModule('../lib/biometrics/enrollment-burst.js')
+const guidedCaptureValidationModule = await importLocalModule('../lib/biometrics/guided-capture-validation.js')
 const faceSizeGuidanceModule = await importLocalModule('../lib/biometrics/face-size-guidance.js')
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
@@ -59,6 +60,7 @@ const biometricIndexModule = await importLocalModule('../lib/biometric-index.js'
 const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/enrollment-policy.js')
 const duplicateFaceModule = await importLocalModule('../lib/persons/duplicate-face.js')
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
+const attendanceStorageModule = await importLocalModule('../lib/attendance/storage.js')
 
 const {
   calculateDistanceMeters,
@@ -87,10 +89,14 @@ const {
 } = personApprovalModule
 const {
   normalizeEnrollmentDescriptorBatch,
+  normalizeEnrollmentSampleFrames,
+  validateEnrollmentCaptureMetadata,
+  validateEnrollmentSampleFrames,
   selectEnrollmentBurstSamples,
   summarizeEnrollmentCaptureQuality,
   validateEnrollmentDescriptorBatch,
 } = enrollmentBurstModule
+const { verifyGuidedCapturePoseCoverage } = guidedCaptureValidationModule
 const { getFaceSizeGuidance } = faceSizeGuidanceModule
 const {
   getOvalCaptureRegion,
@@ -112,6 +118,7 @@ const {
   DUPLICATE_STATUS_REVIEW_REQUIRED,
 } = duplicateFaceModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
+const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -342,6 +349,22 @@ await run('enrollment descriptor batch wraps a single descriptor and validates m
   )
 })
 
+await run('guided enrollment sample frames normalize and validate required pose coverage', () => {
+  const sampleFrames = normalizeEnrollmentSampleFrames([
+    { phaseId: 'center', frameDataUrl: 'data:image/jpeg;base64,AAAA' },
+    { phaseId: 'side_a', frameDataUrl: 'data:image/jpeg;base64,BBBB' },
+    { phaseId: 'side_b', frameDataUrl: 'data:image/jpeg;base64,CCCC' },
+    { phaseId: 'chin_down', frameDataUrl: 'data:image/jpeg;base64,DDDD' },
+  ])
+
+  assert.equal(sampleFrames.length, 4)
+  assert.equal(validateEnrollmentSampleFrames(sampleFrames), null)
+  assert.match(
+    validateEnrollmentSampleFrames(sampleFrames.slice(0, 3)),
+    /incomplete/i,
+  )
+})
+
 await run('burst sample selector keeps distinct top-ranked captures', () => {
   const captures = [
     {
@@ -374,6 +397,67 @@ await run('burst sample selector keeps distinct top-ranked captures', () => {
 
   assert.equal(selected.length, 3)
   assert.deepEqual(selected.map(item => item.attempt), [0, 3, 5])
+})
+
+await run('burst sample selector preserves required guided pose coverage', () => {
+  const baseMetrics = { detectionScore: 0.95, faceAreaRatio: 0.3, centeredness: 0.9, brightness: 130, contrast: 35, sharpness: 25 }
+  const captures = [
+    { attempt: 0, phaseId: 'center', descriptor: [0, 0, 0], metrics: baseMetrics, score: 9.8 },
+    { attempt: 1, phaseId: 'center', descriptor: [0.1, 0.1, 0.1], metrics: baseMetrics, score: 9.7 },
+    { attempt: 2, phaseId: 'center', descriptor: [0.2, 0.2, 0.2], metrics: baseMetrics, score: 9.6 },
+    { attempt: 3, phaseId: 'side_a', descriptor: [1, 0, 0], metrics: baseMetrics, score: 7 },
+    { attempt: 6, phaseId: 'side_b', descriptor: [0, 1, 0], metrics: baseMetrics, score: 6.9 },
+    { attempt: 9, phaseId: 'chin_down', descriptor: [0, 0, 1], metrics: baseMetrics, score: 6.8 },
+  ]
+
+  const selected = selectEnrollmentBurstSamples(captures, {
+    maxSamples: 5,
+    requiredPhaseIds: ['center', 'side_a', 'side_b', 'chin_down'],
+  })
+
+  assert.deepEqual(
+    Array.from(new Set(selected.map(item => item.phaseId))).sort(),
+    ['center', 'chin_down', 'side_a', 'side_b'].sort(),
+  )
+})
+
+await run('enrollment capture metadata requires all guided poses', () => {
+  assert.equal(validateEnrollmentCaptureMetadata({
+    phasesCaptured: ['center', 'side_a', 'side_b', 'chin_down'],
+    genuinelyDiverse: true,
+    keptCount: 5,
+  }, [[1], [2], [3], [4], [5]]), null)
+
+  assert.match(validateEnrollmentCaptureMetadata({
+    phasesCaptured: ['center', 'side_a'],
+    genuinelyDiverse: true,
+    keptCount: 3,
+  }, [[1], [2], [3]]), /incomplete/i)
+
+  assert.match(validateEnrollmentCaptureMetadata({
+    phasesCaptured: ['center', 'side_a', 'side_b', 'chin_down'],
+    genuinelyDiverse: false,
+    keptCount: 4,
+  }, [[1], [2], [3], [4]]), /diversity/i)
+})
+
+await run('server guided pose verification rejects mislabeled or incomplete pose coverage', () => {
+  const goodCoverage = verifyGuidedCapturePoseCoverage([
+    { phaseId: 'center', rotation: { yaw: 0.02, pitch: 0.02 } },
+    { phaseId: 'side_a', rotation: { yaw: 0.22, pitch: 0.01 } },
+    { phaseId: 'side_b', rotation: { yaw: -0.20, pitch: 0.01 } },
+    { phaseId: 'chin_down', rotation: { yaw: 0.01, pitch: 0.19 } },
+  ])
+  assert.equal(goodCoverage.ok, true)
+
+  const badCoverage = verifyGuidedCapturePoseCoverage([
+    { phaseId: 'center', rotation: { yaw: 0.02, pitch: 0.02 } },
+    { phaseId: 'side_a', rotation: { yaw: 0.22, pitch: 0.01 } },
+    { phaseId: 'side_b', rotation: { yaw: 0.18, pitch: 0.01 } },
+    { phaseId: 'chin_down', rotation: { yaw: 0.01, pitch: 0.09 } },
+  ])
+  assert.equal(badCoverage.ok, false)
+  assert.match(badCoverage.message, /opposite side pose/i)
 })
 
 await run('capture quality summary flags dim low-contrast frames', () => {
@@ -628,12 +712,34 @@ await run('biometric benchmark report exposes operational gate and honest realit
 
   const report = buildBiometricBenchmarkReport(events, { days: 14, now })
 
-  assert.equal(report.reality.serverAuthoritativeBiometrics, false)
+  assert.equal(report.reality.serverAuthoritativeBiometrics, true)
   assert.equal(report.reality.challengeProtectedTransport, true)
   assert.equal(report.sampleSize, 200)
   assert.equal(report.byDevice.mobile.total, 120)
   assert.equal(report.byDevice.desktop.total, 80)
   assert.equal(report.operationalGate.status, 'pass')
+})
+
+await run('attendance storage sanitizer strips raw biometric evidence', () => {
+  const stored = sanitizeAttendanceEntryForStorage({
+    employeeId: 'EMP-1',
+    descriptor: [1, 2, 3],
+    descriptors: [[1, 2, 3]],
+    landmarks: [{ x: 1 }],
+    challenge: { token: 'secret' },
+    scanFrames: [{ frameDataUrl: 'data:image/jpeg;base64,abc' }],
+    sampleFrames: [{ frameDataUrl: 'data:image/jpeg;base64,def' }],
+    captureContext: { serverEmbeddingFrames: 2 },
+  })
+
+  assert.equal(stored.employeeId, 'EMP-1')
+  assert.deepEqual(stored.captureContext, { serverEmbeddingFrames: 2 })
+  assert.equal(Object.hasOwn(stored, 'descriptor'), false)
+  assert.equal(Object.hasOwn(stored, 'descriptors'), false)
+  assert.equal(Object.hasOwn(stored, 'landmarks'), false)
+  assert.equal(Object.hasOwn(stored, 'challenge'), false)
+  assert.equal(Object.hasOwn(stored, 'scanFrames'), false)
+  assert.equal(Object.hasOwn(stored, 'sampleFrames'), false)
 })
 
 await run('match support snapshot blocks weak single-sample support on marginal matches', () => {

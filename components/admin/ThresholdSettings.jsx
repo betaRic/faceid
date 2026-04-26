@@ -150,10 +150,10 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
     ? 'Balanced — good for most lighting'
     : 'Lenient — more false positives possible'
   const marginNote = effectiveMargin === 0
-    ? 'Ambiguity blocking DISABLED'
+    ? 'Unsafe value — server clamps to 0.02'
     : effectiveMargin <= 0.02
-    ? 'Minimal blocking — strong matches never blocked'
-    : 'Aggressive blocking — similar faces may be rejected'
+      ? 'Minimal blocking — strong matches never blocked'
+      : 'Aggressive blocking — similar faces may be rejected'
 
   const handleSave = async () => {
     const values = Object.fromEntries(pending)
