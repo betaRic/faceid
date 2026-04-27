@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,6 +13,9 @@
     "check:env": "node scripts/check-env.mjs",
     "test": "node tests/run-tests.mjs",
     "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs",
+    "biometric:shadow-benchmark": "node scripts/biometric-shadow-benchmark.mjs",
+    "openvino:download-models": "node scripts/download-openvino-models.mjs",
+    "openvino:smoke": "node scripts/openvino-smoke.mjs",
     "seed:dilg-r12": "node scripts/seed-dilg-r12-offices.mjs",
     "cleanup:offices": "node scripts/cleanup-stale-offices.mjs",
     "sync:firestore-indexes": "node scripts/sync-firestore-indexes.mjs",
@@ -43,5 +49,8 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.17",
     "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "openvino-node": "^2026.1.0"
   }
 }

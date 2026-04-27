@@ -56,9 +56,11 @@ const faceSizeGuidanceModule = await importLocalModule('../lib/biometrics/face-s
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
 const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
+const shadowBenchmarkModule = await importLocalModule('../lib/biometrics/shadow-benchmark.js')
 const biometricIndexModule = await importLocalModule('../lib/biometric-index.js')
 const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/enrollment-policy.js')
 const duplicateFaceModule = await importLocalModule('../lib/persons/duplicate-face.js')
+const personsDirectoryListModule = await importLocalModule('../lib/persons/directory.js')
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
 const attendanceStorageModule = await importLocalModule('../lib/attendance/storage.js')
 const attendanceNormalizeModule = await importLocalModule('../lib/attendance/normalize.js')
@@ -111,6 +113,7 @@ const {
   filterAttendanceDaysByRange,
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
+const { buildEngineShadowBenchmark, buildShadowBenchmarkReport } = shadowBenchmarkModule
 const { matchBiometricIndexMultiDescriptor } = biometricIndexModule
 const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
 const {
@@ -119,6 +122,7 @@ const {
   DUPLICATE_STATUS_HARD_DUPLICATE,
   DUPLICATE_STATUS_REVIEW_REQUIRED,
 } = duplicateFaceModule
+const { mapPersonRecord } = personsDirectoryListModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const { normalizeEntry } = attendanceNormalizeModule
@@ -351,6 +355,24 @@ await run('enrollment descriptor batch wraps a single descriptor and validates m
     validateEnrollmentDescriptorBatch([[0.1, 0.2], [0.1]]),
     /1024 dimensions/i,
   )
+})
+
+await run('person directory summary uses sampleCount without requiring descriptors', () => {
+  const record = {
+    id: 'person-1',
+    data: () => ({
+      name: 'JANE DOE',
+      employeeId: 'EMP-001',
+      officeName: 'DILG R12',
+      approvalStatus: 'approved',
+      sampleCount: 4,
+    }),
+  }
+
+  const person = mapPersonRecord(record)
+
+  assert.equal(person.sampleCount, 4)
+  assert.equal(Object.hasOwn(person, 'descriptors'), false)
 })
 
 await run('guided enrollment sample frames normalize and validate required pose coverage', () => {
@@ -722,6 +744,38 @@ await run('biometric benchmark report exposes operational gate and honest realit
   assert.equal(report.byDevice.mobile.total, 120)
   assert.equal(report.byDevice.desktop.total, 80)
   assert.equal(report.operationalGate.status, 'pass')
+})
+
+await run('shadow benchmark ranks 1:N candidates without storing descriptor vectors in report', () => {
+  const samples = [
+    { engine: 'human', sampleId: 'a-enroll', personId: 'a', employeeId: 'A', split: 'enroll', descriptor: [1, 0] },
+    { engine: 'human', sampleId: 'b-enroll', personId: 'b', employeeId: 'B', split: 'enroll', descriptor: [-1, 0] },
+    { engine: 'human', sampleId: 'a-query', personId: 'a', employeeId: 'A', split: 'query', descriptor: [0.99, 0.01] },
+    { engine: 'human', sampleId: 'b-query', personId: 'b', employeeId: 'B', split: 'query', descriptor: [-0.99, -0.01] },
+  ]
+
+  const report = buildEngineShadowBenchmark(samples, { engine: 'human', metric: 'l2' })
+  assert.equal(report.identification.top1Correct, 2)
+  assert.equal(report.identification.top1Mismatch, 0)
+  assert.equal(report.distributions.separationStatus, 'separated')
+  assert.equal(Array.isArray(report.thresholdSearch.candidates), true)
+  assert.equal('descriptor' in report, false)
+})
+
+await run('shadow benchmark flags nearest-neighbor mismatches for false-accept review', () => {
+  const report = buildShadowBenchmarkReport({
+    human: [
+      { engine: 'human', sampleId: 'a-enroll', personId: 'a', employeeId: 'A', split: 'enroll', descriptor: [1, 0] },
+      { engine: 'human', sampleId: 'b-enroll', personId: 'b', employeeId: 'B', split: 'enroll', descriptor: [-1, 0] },
+      { engine: 'human', sampleId: 'a-query', personId: 'a', employeeId: 'A', split: 'query', descriptor: [-0.98, 0.02] },
+    ],
+  }, { now: new Date('2026-04-20T08:00:00+08:00').getTime() })
+
+  const human = report.engines.human
+  assert.equal(human.identification.top1Mismatch, 1)
+  assert.equal(human.identification.mismatchExamples[0].expected, 'A')
+  assert.equal(human.identification.mismatchExamples[0].nearest, 'B')
+  assert.equal(report.dataset.note.includes('must not contain raw frames'), true)
 })
 
 await run('attendance storage sanitizer strips raw biometric evidence', () => {

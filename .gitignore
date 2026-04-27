@@ -3,6 +3,8 @@ node_modules/
 .claude/
 .next/
 dist/
+datasets/
+reports/biometric-shadow/
 
 .env
 .env.local

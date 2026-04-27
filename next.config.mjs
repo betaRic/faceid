@@ -16,6 +16,12 @@ const nextConfig = {
       './node_modules/@tensorflow/tfjs-backend-wasm/dist/**/*',
     ],
   },
+  outputFileTracingExcludes: {
+    '/api/**/*': [
+      './node_modules/openvino-node/**/*',
+      './public/models/openvino/**/*',
+    ],
+  },
   async headers() {
     return [
       {

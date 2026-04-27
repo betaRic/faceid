@@ -16,6 +16,7 @@ import {
   mapPersonRecord,
   countDirectoryRecords,
   loadDirectoryPage,
+  selectPersonDirectoryFields,
   enrollPerson,
   uploadEnrollmentPhotoIfPending,
   writeEnrollmentAuditLog,
@@ -27,7 +28,23 @@ function toHttpStatus(value) {
   return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
 }
 
+function createRouteTimer(operation) {
+  const startedAt = Date.now()
+  const marks = []
+  return {
+    mark(label) {
+      marks.push({ label, elapsedMs: Date.now() - startedAt })
+    },
+    warnIfSlow(thresholdMs = 3000) {
+      const elapsedMs = Date.now() - startedAt
+      if (elapsedMs < thresholdMs) return
+      console.warn(`[PersonsAPI] Slow ${operation}`, { elapsedMs, marks })
+    },
+  }
+}
+
 export async function GET(request) {
+  const timer = createRouteTimer('GET /api/persons')
   const session = adminAuth.parseAdminSessionCookieValue(
     request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
   )
@@ -38,24 +55,35 @@ export async function GET(request) {
   try {
     const db = getAdminDb()
     const resolvedSession = await adminAuth.resolveAdminSession(db, session)
+    timer.mark('session')
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
     if (new URL(request.url).searchParams.get('mode') === 'directory') {
-      return handleDirectoryGet(request, db, resolvedSession)
+      const response = await handleDirectoryGet(request, db, resolvedSession)
+      timer.mark('directory')
+      timer.warnIfSlow()
+      return response
     }
 
     const snapshot = resolvedSession.scope === 'office'
-      ? await db.collection('persons').where('officeId', '==', resolvedSession.officeId).get()
-      : await db.collection('persons').orderBy('nameLower').get()
+      ? await selectPersonDirectoryFields(
+          db.collection('persons').where('officeId', '==', resolvedSession.officeId),
+        ).get()
+      : await selectPersonDirectoryFields(
+          db.collection('persons').orderBy('nameLower'),
+        ).get()
 
     const persons = snapshot.docs.map(mapPersonRecord)
       .filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
       .sort((left, right) => left.name.localeCompare(right.name))
 
+    timer.mark('legacy-list')
+    timer.warnIfSlow()
     return NextResponse.json({ ok: true, persons })
   } catch (error) {
+    timer.warnIfSlow(1000)
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to load employees.' },
       { status: 500 },
@@ -106,6 +134,7 @@ async function handleDirectoryGet(request, db, resolvedSession) {
 }
 
 export async function POST(request) {
+  const timer = createRouteTimer('POST /api/persons')
   const guard = createOriginGuard()
   const originError = await guard(request)
   if (originError) return originError
@@ -125,6 +154,7 @@ export async function POST(request) {
     const resolvedSession = session ? await adminAuth.resolveAdminSession(db, session) : null
     publicSubmission = !resolvedSession
     const office = await getOfficeRecord(db, body.officeId)
+    timer.mark('session-office')
 
     if (!office) {
       return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 400 })
@@ -148,6 +178,7 @@ export async function POST(request) {
       limit: 30,
       windowMs: 60 * 1000,
     })
+    timer.mark('rate-limit-ip')
     if (!ipLimit.ok) {
       return NextResponse.json(
         { ok: false, message: 'Too many enrollment attempts from this device or network. Slow down and try again.' },
@@ -161,6 +192,7 @@ export async function POST(request) {
         limit: 6,
         windowMs: 60 * 60 * 1000,
       })
+      timer.mark('rate-limit-employee')
       if (!employeeLimit.ok) {
         return NextResponse.json(
           { ok: false, message: 'Too many enrollment attempts for this employee ID. Wait before trying again.' },
@@ -173,6 +205,7 @@ export async function POST(request) {
       body.sampleFrames,
       body.captureMetadata,
     )
+    timer.mark('server-enrollment')
     body = {
       ...body,
       descriptors: authoritativePayload.descriptors,
@@ -181,6 +214,7 @@ export async function POST(request) {
     }
 
     const { transactionResult, sampleCount, indexSyncWarning, duplicateReviewRequired } = await enrollPerson(db, body, office, resolvedSession)
+    timer.mark('enroll-write')
 
     await uploadEnrollmentPhotoIfPending(
       db,
@@ -188,8 +222,10 @@ export async function POST(request) {
       body.photoDataUrl,
       transactionResult.nextPerson.approvalStatus,
     )
+    timer.mark('photo')
 
     await writeEnrollmentAuditLog(db, transactionResult, body, office, resolvedSession)
+    timer.mark('audit')
 
     const baseMessage = transactionResult.nextPerson.approvalStatus === 'pending'
       ? 'Enrollment submitted for admin approval. The employee record and biometric samples are not active on the kiosk until approved.'
@@ -198,6 +234,7 @@ export async function POST(request) {
       ? `${baseMessage} Similarity review required: an existing employee profile is close enough that an admin should verify this submission before approval.`
       : baseMessage
 
+    timer.warnIfSlow()
     return NextResponse.json({
       ok: true,
       personId: transactionResult.personId,
@@ -209,6 +246,7 @@ export async function POST(request) {
       message: indexSyncWarning ? `${message} Warning: ${indexSyncWarning}` : message,
     })
   } catch (error) {
+    timer.warnIfSlow(1000)
     const message = error instanceof Error ? error.message : 'Failed to save enrollment.'
     const duplicateFace = error.duplicateFace
 
