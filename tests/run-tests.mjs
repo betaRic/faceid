@@ -131,9 +131,29 @@ const {
   getEmployeeDailyAttendanceRecord,
   listEmployeeDailyAttendanceRecordsForMonth,
 } = attendanceDailyStoreModule
-const { validateLivenessEvidence } = livenessModule
+const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
+
+function createMinimalFaceMesh({
+  leftEye = { x: 100, y: 100 },
+  rightEye = { x: 200, y: 100 },
+  rightIris = { x: 125, y: 100 },
+  leftIris = { x: 175, y: 100 },
+} = {}) {
+  const mesh = []
+  mesh[33] = leftEye
+  mesh[263] = rightEye
+  mesh[468] = rightIris
+  mesh[473] = leftIris
+  return mesh
+}
+
+function translateMesh(mesh, dx, dy) {
+  return mesh.map(point => (
+    point ? { x: point.x + dx, y: point.y + dy } : point
+  ))
+}
 
 await run('calculateDistanceMeters returns zero for same coordinates', () => {
   const point = { latitude: 6.4971, longitude: 124.8466 }
@@ -903,6 +923,39 @@ await run('attendance normalization preserves iris liveness evidence for server 
   const validation = validateLivenessEvidence(entry.livenessEvidence)
   assert.equal(validation.ok, true)
   assert.ok(validation.avgIrisDelta >= 0.2)
+})
+
+await run('iris motion ignores rigid photo movement across the frame', () => {
+  const stillPhotoFrame = createMinimalFaceMesh()
+  const movedPhotoFrame = translateMesh(stillPhotoFrame, 18, 7)
+  const relativeIrisMotion = computeIrisDelta(stillPhotoFrame, movedPhotoFrame)
+
+  assert.ok(relativeIrisMotion < 0.001)
+})
+
+await run('iris motion detects movement relative to the face', () => {
+  const frameA = createMinimalFaceMesh()
+  const frameB = translateMesh(frameA, 18, 7)
+  frameB[468] = { x: frameB[468].x + 2, y: frameB[468].y }
+  frameB[473] = { x: frameB[473].x - 2, y: frameB[473].y }
+
+  const relativeIrisMotion = computeIrisDelta(frameA, frameB)
+
+  assert.ok(relativeIrisMotion > 1)
+})
+
+await run('liveness blocks photo-like rigid motion without eye evidence', () => {
+  const validation = validateLivenessEvidence({
+    earSamples: [0.25, 0.25, 0.25, 0.25],
+    meshDeltas: [0.34, 0.39, 0.36],
+    irisDeltas: [0.02, 0.03, 0.02],
+    avgAntispoof: 0.82,
+    avgLiveness: 0.74,
+    frameCount: 4,
+  })
+
+  assert.equal(validation.ok, false)
+  assert.equal(validation.reason, 'photo_like_rigid_motion')
 })
 
 await run('liveness keeps gray-zone antispoof as risk instead of blocking real scans', () => {

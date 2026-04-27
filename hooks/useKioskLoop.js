@@ -319,11 +319,13 @@ export function useKioskLoop({
               ? 'Anti-spoof check failed. Please present your live face.'
               : livenessEvidence.reason === 'static_image_detected'
                 ? 'Static image detected. Please present your live face.'
-                : livenessEvidence.reason === 'missing_motion_signal'
-                  ? 'Please hold steady and look at the camera naturally.'
-                  : livenessEvidence.reason === 'missing_eye_signal'
-                    ? 'Please blink naturally and try again.'
-                    : 'Liveness check failed. Please scan again.'
+                : livenessEvidence.reason === 'photo_like_rigid_motion'
+                  ? 'Photo-like scan detected. Please blink naturally and scan your live face.'
+                  : livenessEvidence.reason === 'missing_motion_signal'
+                    ? 'Please hold steady and look at the camera naturally.'
+                    : livenessEvidence.reason === 'missing_eye_signal'
+                      ? 'Please blink naturally and try again.'
+                      : 'Liveness check failed. Please scan again.'
           )
           showAlertAndResume(message, 3500)
           confirmRef.current = 0
