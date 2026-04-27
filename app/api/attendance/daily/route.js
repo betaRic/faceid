@@ -5,6 +5,7 @@ import { getAdminDb } from '@/lib/firebase-admin'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
+import { recalculateDailyAttendanceMetrics } from '@/lib/daily-attendance'
 import { toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
 
@@ -29,17 +30,19 @@ export async function GET(request) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
+    const offices = await listOfficeRecords(db)
+    const officesById = new Map(offices.map(office => [office.id, office]))
     const cachedRecords = await listDailyAttendanceRecordsForDate(db, date)
     if (cachedRecords.length > 0) {
       const records = cachedRecords
         .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
         .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
+        .map(entry => recalculateDailyAttendanceMetrics(entry, officesById.get(entry.officeId) || null))
         .sort((left, right) => left.name.localeCompare(right.name))
 
       return NextResponse.json({ ok: true, records })
     }
 
-    const offices = await listOfficeRecords(db)
     const legacyDateLabel = toLegacyAttendanceDate(date)
 
     const snapshot = await db

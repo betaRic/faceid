@@ -224,6 +224,43 @@ export function useKioskLoop({
         setKioskState('verifying')
         camera.clearOverlay()
 
+        const coordinates = locationState?.coords || null
+        const timing = buildAttendanceEntryTiming(now)
+        const trackSettings = camera.getTrackSettings?.() || {}
+        const captureContext = {
+          ...getClientCaptureContext(),
+          trackWidth: trackSettings.width ?? null,
+          trackHeight: trackSettings.height ?? null,
+          trackAspectRatio: trackSettings.aspectRatio ?? null,
+          trackFrameRate: trackSettings.frameRate ?? null,
+          trackFacingMode: trackSettings.facingMode || '',
+          trackResizeMode: trackSettings.resizeMode || '',
+        }
+        const challengePromise = requestAttendanceChallenge({
+          kioskContext: {
+            kioskId: captureContext.kioskId || '',
+            clientKey: captureContext.kioskId || '',
+            source: 'web-scan',
+          },
+          captureContext: {
+            ...captureContext,
+            capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
+            clientKey: captureContext.kioskId || '',
+          },
+          verificationMode: 'challenge_v2',
+          verificationStage: 'passive',
+          timestamp: timing.timestamp,
+          dateKey: timing.dateKey,
+          dateLabel: timing.dateLabel,
+          date: timing.date,
+          time: timing.time,
+          latitude: coordinates?.latitude ?? null,
+          longitude: coordinates?.longitude ?? null,
+        }).then(
+          result => ({ ok: true, result }),
+          error => ({ ok: false, error }),
+        )
+
         const verificationStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
         const burstResult = await captureVerificationBurst()
 
@@ -333,18 +370,6 @@ export function useKioskLoop({
         }
 
         setCapturedFrameUrl(bestCanvas.toDataURL('image/jpeg', 0.82))
-        const coordinates = locationState?.coords || null
-        const timing = buildAttendanceEntryTiming(now)
-        const trackSettings = camera.getTrackSettings?.() || {}
-        const captureContext = {
-          ...getClientCaptureContext(),
-          trackWidth: trackSettings.width ?? null,
-          trackHeight: trackSettings.height ?? null,
-          trackAspectRatio: trackSettings.aspectRatio ?? null,
-          trackFrameRate: trackSettings.frameRate ?? null,
-          trackFacingMode: trackSettings.facingMode || '',
-          trackResizeMode: trackSettings.resizeMode || '',
-        }
         const networkStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
         const baseAttendanceEntry = {
           id: `${now}`,
@@ -414,7 +439,10 @@ export function useKioskLoop({
         }
 
         try {
-          const challengeResult = await requestAttendanceChallenge(baseAttendanceEntry)
+          const challengeState = await challengePromise
+          if (!challengeState.ok) throw challengeState.error
+
+          const challengeResult = challengeState.result
           if (!challengeResult?.challenge?.token && !challengeResult?.challenge?.challengeId) {
             throw new Error('Attendance challenge was not issued.')
           }

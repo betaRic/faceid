@@ -66,6 +66,7 @@ const attendanceStorageModule = await importLocalModule('../lib/attendance/stora
 const attendanceNormalizeModule = await importLocalModule('../lib/attendance/normalize.js')
 const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-daily-store.js')
 const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
+const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
 
 const {
   calculateDistanceMeters,
@@ -132,6 +133,7 @@ const {
   listEmployeeDailyAttendanceRecordsForMonth,
 } = attendanceDailyStoreModule
 const { computeIrisDelta, validateLivenessEvidence } = livenessModule
+const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -176,7 +178,7 @@ await run('isOfficeWfhDay respects configured work-from-home days', () => {
   assert.equal(isOfficeWfhDay(office, thursday), false)
 })
 
-await run('deriveDailyAttendanceRecord computes complete day totals', () => {
+await run('deriveDailyAttendanceRecord computes late and undertime from actual worked minutes', () => {
   const office = {
     id: 'office-1',
     name: 'Test Office',
@@ -243,12 +245,50 @@ await run('deriveDailyAttendanceRecord computes complete day totals', () => {
   assert.equal(record.dateKey, '2026-04-09')
   assert.equal(record.dateLabel, '4/9/2026')
   assert.equal(record.date, '2026-04-09')
-  assert.equal(record.status, 'Complete')
-  assert.equal(record.lateMinutes, 0)
-  assert.equal(record.undertimeMinutes, 0)
+  assert.equal(record.status, 'Late / Undertime')
+  assert.equal(record.lateMinutes, 5)
+  assert.equal(record.undertimeMinutes, 6)
   assert.equal(record.logCount, 4)
   assert.deepEqual(record.decisionCodes, ['accepted_onsite'])
   assert.equal(record.workingHours, '7h 54m')
+})
+
+await run('deriveDailyAttendanceRecord treats exact 8 worked hours as no undertime', () => {
+  const office = {
+    id: 'office-1b',
+    name: 'Test Office 1B',
+    workPolicy: {
+      morningIn: '08:00',
+      morningOut: '12:00',
+      afternoonIn: '13:00',
+      afternoonOut: '17:00',
+      gracePeriodMinutes: 15,
+    },
+  }
+  const person = {
+    employeeId: 'EMP-001B',
+    name: 'Eight Hour Employee',
+    officeId: office.id,
+    officeName: office.name,
+  }
+  const logs = [
+    { timestamp: new Date('2026-04-09T08:00:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+    { timestamp: new Date('2026-04-09T12:00:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+    { timestamp: new Date('2026-04-09T13:00:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+    { timestamp: new Date('2026-04-09T17:00:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+  ]
+
+  const record = deriveDailyAttendanceRecord({
+    logs,
+    person,
+    office,
+    targetDateKey: '2026-04-09',
+  })
+
+  assert.equal(record.status, 'Complete')
+  assert.equal(record.lateMinutes, 0)
+  assert.equal(record.undertimeMinutes, 0)
+  assert.equal(record.workingMinutes, 480)
 })
 
 await run('deriveDailyAttendanceRecord does not invent pmIn from extra morning scans', () => {
@@ -893,6 +933,62 @@ await run('employee daily attendance reads one cached daily doc by id', async ()
   assert.equal(requestedId, 'EMP-001_2026-04-09')
   assert.equal(record.employeeId, 'EMP-001')
   assert.equal(record.dateKey, '2026-04-09')
+})
+
+await run('raw attendance workbook creates one worksheet per employee', () => {
+  const rows = [
+    {
+      name: 'Alpha Employee',
+      employeeId: 'EMP-001',
+      officeName: 'Office A',
+      dateKey: '2026-04-09',
+      amIn: '8:00 AM',
+      amOut: '12:00 PM',
+      pmIn: '1:00 PM',
+      pmOut: '5:00 PM',
+      lateMinutes: 0,
+      undertimeMinutes: 0,
+      workingMinutes: 480,
+      workingHours: '8h 00m',
+      status: 'Complete',
+    },
+    {
+      name: 'Beta Employee',
+      employeeId: 'EMP-002',
+      officeName: 'Office B',
+      dateKey: '2026-04-09',
+      amIn: '8:10 AM',
+      amOut: '12:00 PM',
+      pmIn: '1:00 PM',
+      pmOut: '4:50 PM',
+      lateMinutes: 10,
+      undertimeMinutes: 20,
+      workingMinutes: 460,
+      workingHours: '7h 40m',
+      status: 'Late / Undertime',
+    },
+  ]
+
+  const worksheets = buildRawAttendanceWorksheets(rows)
+
+  assert.equal(worksheets.length, 2)
+  assert.equal(worksheets[0].rows[0][0], 'Name')
+  assert.equal(worksheets[0].rows[1][3], '2026-04-09')
+  assert.equal(worksheets[1].rows[1][8], 10)
+  assert.equal(worksheets[1].rows[1][9], 20)
+})
+
+await run('raw attendance workbook files contain worksheet XML for each employee', () => {
+  const { worksheets, files } = buildRawAttendanceWorkbookFiles([
+    { name: 'Alpha Employee', employeeId: 'EMP-001', officeName: 'Office A', dateKey: '2026-04-09' },
+    { name: 'Beta Employee', employeeId: 'EMP-002', officeName: 'Office B', dateKey: '2026-04-09' },
+  ])
+
+  assert.equal(worksheets.length, 2)
+  assert.equal(files.some(file => file.name === 'xl/worksheets/sheet1.xml'), true)
+  assert.equal(files.some(file => file.name === 'xl/worksheets/sheet2.xml'), true)
+  assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /EMP-001 Alpha Employee/)
+  assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /EMP-002 Beta Employee/)
 })
 
 await run('attendance normalization preserves iris liveness evidence for server validation', () => {

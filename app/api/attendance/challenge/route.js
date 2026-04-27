@@ -16,10 +16,10 @@ export async function POST(request) {
     const body = await request.json().catch(() => ({}))
     const kioskContext = body?.kioskContext && typeof body.kioskContext === 'object' ? body.kioskContext : {}
     const db = getAdminDb()
-    await touchKioskDevice(db, {
+    touchKioskDevice(db, {
       ...kioskContext,
       userAgent: request.headers.get('user-agent') || '',
-    })
+    }).catch(() => {})
     const { challenge, riskFlags } = await prepareAttendanceChallenge({
       db,
       request,
