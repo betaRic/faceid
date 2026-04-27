@@ -64,6 +64,7 @@ const personsDirectoryListModule = await importLocalModule('../lib/persons/direc
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
 const attendanceStorageModule = await importLocalModule('../lib/attendance/storage.js')
 const attendanceNormalizeModule = await importLocalModule('../lib/attendance/normalize.js')
+const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-daily-store.js')
 const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 
 const {
@@ -126,6 +127,10 @@ const { mapPersonRecord } = personsDirectoryListModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const { normalizeEntry } = attendanceNormalizeModule
+const {
+  getEmployeeDailyAttendanceRecord,
+  listEmployeeDailyAttendanceRecordsForMonth,
+} = attendanceDailyStoreModule
 const { validateLivenessEvidence } = livenessModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
@@ -798,6 +803,76 @@ await run('attendance storage sanitizer strips raw biometric evidence', () => {
   assert.equal(Object.hasOwn(stored, 'challenge'), false)
   assert.equal(Object.hasOwn(stored, 'scanFrames'), false)
   assert.equal(Object.hasOwn(stored, 'sampleFrames'), false)
+})
+
+await run('employee monthly attendance reads exact daily docs for the month', async () => {
+  const requestedIds = []
+  const db = {
+    collection(name) {
+      assert.equal(name, 'attendance_daily')
+      return {
+        doc(id) {
+          requestedIds.push(id)
+          return { id }
+        },
+      }
+    },
+    async getAll(...refs) {
+      return refs.map(ref => ({
+        id: ref.id,
+        exists: ref.id.endsWith('_2026-04-09'),
+        data: () => ({
+          employeeId: 'EMP-001',
+          dateKey: '2026-04-09',
+          logCount: 2,
+          amInTimestamp: 1,
+          pmOutTimestamp: 2,
+        }),
+      }))
+    },
+  }
+
+  const records = await listEmployeeDailyAttendanceRecordsForMonth(db, 'EMP-001', 2026, 4)
+
+  assert.equal(requestedIds.length, 30)
+  assert.equal(requestedIds[0], 'EMP-001_2026-04-01')
+  assert.equal(requestedIds[29], 'EMP-001_2026-04-30')
+  assert.equal(records.length, 1)
+  assert.equal(records[0].dateKey, '2026-04-09')
+})
+
+await run('employee daily attendance reads one cached daily doc by id', async () => {
+  let requestedId = ''
+  const db = {
+    collection(name) {
+      assert.equal(name, 'attendance_daily')
+      return {
+        doc(id) {
+          requestedId = id
+          return {
+            async get() {
+              return {
+                id,
+                exists: true,
+                data: () => ({
+                  employeeId: 'EMP-001',
+                  dateKey: '2026-04-09',
+                  logCount: 1,
+                  amInTimestamp: 1,
+                }),
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+
+  const record = await getEmployeeDailyAttendanceRecord(db, 'EMP-001', '2026-04-09')
+
+  assert.equal(requestedId, 'EMP-001_2026-04-09')
+  assert.equal(record.employeeId, 'EMP-001')
+  assert.equal(record.dateKey, '2026-04-09')
 })
 
 await run('attendance normalization preserves iris liveness evidence for server validation', () => {

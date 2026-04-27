@@ -1,5 +1,5 @@
 import { getAdminDb } from '@/lib/firebase-admin'
-import { listEmployeeDailyAttendanceRecords, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
+import { listEmployeeDailyAttendanceRecordsForMonth, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 
@@ -28,13 +28,10 @@ export async function GET(request) {
     const [currentYear, currentMonth] = String(dateKey).split('-').map(Number)
     const { attendanceStartOfMonth, attendanceEndOfMonth } = getMonthRange(currentYear, currentMonth)
 
-    const dailyRecords = await listEmployeeDailyAttendanceRecords(db, employeeId)
+    const dailyRecords = await listEmployeeDailyAttendanceRecordsForMonth(db, employeeId, currentYear, currentMonth)
     if (dailyRecords.length > 0) {
       const records = dailyRecords
-        .filter(record => {
-          const [recordYear, recordMonth] = String(record.dateKey || '').split('-').map(Number)
-          return recordYear === currentYear && recordMonth === currentMonth && hasDailyAttendanceLogs(record)
-        })
+        .filter(record => hasDailyAttendanceLogs(record))
         .map(record => ({
           id: record.id,
           dateKey: record.dateKey,

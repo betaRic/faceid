@@ -44,18 +44,21 @@ function SummaryContent() {
     async function fetchData() {
       try {
         const authHeaders = buildEmployeeViewHeaders(employeeViewAccess)
-        const monthlyRes = await fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`, {
-          headers: authHeaders,
-          cache: 'no-store',
-        })
-        const monthlyJson = await monthlyRes.json()
-        
         const date = formatAttendanceDateKey(Date.now())
-        const dailyRes = await fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`, {
-          headers: authHeaders,
-          cache: 'no-store',
-        })
-        const dailyJson = await dailyRes.json()
+        const [monthlyRes, dailyRes] = await Promise.all([
+          fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`, {
+            headers: authHeaders,
+            cache: 'no-store',
+          }),
+          fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`, {
+            headers: authHeaders,
+            cache: 'no-store',
+          }),
+        ])
+        const [monthlyJson, dailyJson] = await Promise.all([
+          monthlyRes.json(),
+          dailyRes.json(),
+        ])
         
         if (monthlyJson.ok) {
           setMonthlyData(monthlyJson)

@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
-import { listEmployeeDailyAttendanceRecords } from '@/lib/attendance-daily-store'
+import { getEmployeeDailyAttendanceRecord } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { formatAttendanceDateKey, getAttendanceHour, toLegacyAttendanceDate } from '@/lib/attendance-time'
 
@@ -23,10 +23,9 @@ export async function GET(request) {
     }
 
     const legacyDateLabel = toLegacyAttendanceDate(date)
-    const cachedRecords = await listEmployeeDailyAttendanceRecords(db, employeeId)
-    const cachedRecord = cachedRecords.find(record => record.dateKey === date && Number(record.logCount || 0) > 0)
+    const cachedRecord = await getEmployeeDailyAttendanceRecord(db, employeeId, date)
 
-    if (cachedRecord) {
+    if (cachedRecord && Number(cachedRecord.logCount || 0) > 0) {
       const attendanceMode = cachedRecord.decisionCodes.some(code => String(code).toLowerCase() === 'accepted_wfh')
         ? 'wfh'
         : 'onsite'
