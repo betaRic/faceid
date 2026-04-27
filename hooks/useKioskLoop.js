@@ -286,10 +286,10 @@ export function useKioskLoop({
         const antispoof = primaryVerification.detection.antispoof
         const liveness = primaryVerification.detection.liveness
 
-        // Per-frame fast-fail on obvious spoofs. Real faces usually score >0.85;
-        // these thresholds catch clear printed/screen presentations without
-        // waiting for the burst-level analysis.
-        if (antispoof !== undefined && antispoof < 0.5) {
+        // Per-frame fast-fail only on obvious spoofs. Human's RGB PAD score is
+        // noisy on real phones/webcams, so gray-zone scores are handled by the
+        // burst/server policy instead of blocking employees locally.
+        if (antispoof !== undefined && antispoof < 0.25) {
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
           pausedRef.current = true
@@ -298,7 +298,7 @@ export function useKioskLoop({
           return
         }
 
-        if (liveness !== undefined && liveness < 0.4) {
+        if (liveness !== undefined && liveness < 0.15) {
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')
           pausedRef.current = true

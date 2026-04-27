@@ -830,6 +830,35 @@ await run('attendance normalization preserves iris liveness evidence for server 
   assert.ok(validation.avgIrisDelta >= 0.2)
 })
 
+await run('liveness keeps gray-zone antispoof as risk instead of blocking real scans', () => {
+  const validation = validateLivenessEvidence({
+    earSamples: [0.24, 0.17, 0.25],
+    meshDeltas: [0.31, 0.29],
+    irisDeltas: [0.22, 0.24],
+    avgAntispoof: 0.53,
+    avgLiveness: 0.42,
+    frameCount: 3,
+  })
+
+  assert.equal(validation.ok, true)
+  assert.equal(validation.riskFlags.includes('pad_gray_zone'), true)
+  assert.equal(validation.riskFlags.includes('weak_human_liveness_score'), true)
+})
+
+await run('liveness still hard-blocks clear anti-spoof failures', () => {
+  const validation = validateLivenessEvidence({
+    earSamples: [0.24, 0.17, 0.25],
+    meshDeltas: [0.31, 0.29],
+    irisDeltas: [0.22, 0.24],
+    avgAntispoof: 0.2,
+    avgLiveness: 0.9,
+    frameCount: 3,
+  })
+
+  assert.equal(validation.ok, false)
+  assert.equal(validation.reason, 'antispoof_hard_fail')
+})
+
 await run('match support snapshot blocks weak single-sample support on marginal matches', () => {
   const descriptors = [
     [1, 0],
