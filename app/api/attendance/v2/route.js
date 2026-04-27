@@ -6,6 +6,7 @@ import { getAdminDb } from '@/lib/firebase-admin'
 import { createOriginGuard } from '@/lib/csrf'
 import { consumeAttendanceChallenge } from '@/lib/attendance-challenge'
 import { processAttendanceSubmission } from '@/lib/attendance/process'
+import { warmServerAttendanceEmbedding } from '@/lib/biometrics/server-embedding'
 import { getRequestIp } from '@/lib/rate-limit'
 
 export async function POST(request) {
@@ -20,6 +21,7 @@ export async function POST(request) {
     }
 
     const db = getAdminDb()
+    warmServerAttendanceEmbedding().catch(() => {})
     const challengeResult = await consumeAttendanceChallenge(db, body.challenge, {
       kioskId: body?.kioskContext?.kioskId,
       source: body?.kioskContext?.source || 'web-scan',
