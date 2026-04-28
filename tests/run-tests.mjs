@@ -64,6 +64,7 @@ const personsDirectoryListModule = await importLocalModule('../lib/persons/direc
 const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/match-policy.js')
 const attendanceStorageModule = await importLocalModule('../lib/attendance/storage.js')
 const attendanceNormalizeModule = await importLocalModule('../lib/attendance/normalize.js')
+const attendanceCapturePolicyModule = await importLocalModule('../lib/attendance/capture-policy.js')
 const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-daily-store.js')
 const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
@@ -129,6 +130,7 @@ const { mapPersonRecord } = personsDirectoryListModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const { normalizeEntry } = attendanceNormalizeModule
+const { getScanCapturePolicyAssessment, SCAN_CAPTURE_POLICY_VERSION } = attendanceCapturePolicyModule
 const {
   getEmployeeDailyAttendanceRecord,
   listEmployeeDailyAttendanceRecordsForMonth,
@@ -1100,6 +1102,71 @@ await run('liveness keeps gray-zone antispoof as risk instead of blocking real s
   assert.equal(validation.ok, true)
   assert.equal(validation.riskFlags.includes('pad_gray_zone'), true)
   assert.equal(validation.riskFlags.includes('weak_human_liveness_score'), true)
+})
+
+await run('scan capture policy treats one low PAD frame as risk when temporal liveness is strong', () => {
+  const assessment = getScanCapturePolicyAssessment({
+    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
+    antispoof: 0.29,
+    liveness: 0.82,
+    captureContext: {
+      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
+      verificationFrames: 4,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      screenOrientation: 'portrait-primary',
+      mobile: true,
+    },
+    scanDiagnostics: {
+      strictFrames: 3,
+      descriptorSpread: 0.09,
+    },
+    livenessEvidence: {
+      earSamples: [0.25, 0.17, 0.25],
+      meshDeltas: [0.31, 0.29],
+      irisDeltas: [0.22, 0.24],
+      avgAntispoof: 0.42,
+      avgLiveness: 0.82,
+      frameCount: 3,
+    },
+  })
+
+  assert.equal(assessment.ok, true)
+  assert.equal(assessment.riskFlags.includes('single_frame_pad_low'), true)
+  assert.equal(assessment.riskFlags.includes('pad_gray_zone'), true)
+})
+
+await run('scan capture policy still blocks low PAD when temporal liveness is weak', () => {
+  const assessment = getScanCapturePolicyAssessment({
+    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
+    antispoof: 0.29,
+    liveness: 0.82,
+    captureContext: {
+      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
+      verificationFrames: 4,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      screenOrientation: 'portrait-primary',
+      mobile: true,
+    },
+    scanDiagnostics: {
+      strictFrames: 3,
+      descriptorSpread: 0.09,
+    },
+    livenessEvidence: {
+      earSamples: [0.25, 0.18, 0.25],
+      meshDeltas: [0.17, 0.18],
+      irisDeltas: [0.08, 0.09],
+      avgAntispoof: 0.42,
+      avgLiveness: 0.82,
+      frameCount: 3,
+    },
+  })
+
+  assert.equal(assessment.ok, false)
+  assert.equal(assessment.decisionCode, 'blocked_antispoof')
 })
 
 await run('liveness still hard-blocks clear anti-spoof failures', () => {
