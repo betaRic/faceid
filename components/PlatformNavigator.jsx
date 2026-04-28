@@ -54,7 +54,7 @@ const howItWorks = [
 ]
 
 const trustPoints = [
-  { label: 'Server-side attendance decisions', desc: 'Attendance approval, policy checks, and audit logging happen on the server. The current browser still generates biometric descriptors, but the v2 challenge flow adds replay protection while full trusted server-side embedding remains a separate milestone.' },
+  { label: 'Server-side attendance decisions', desc: 'Attendance approval, policy checks, audit logging, and descriptor generation happen on the server. The browser still submits still frames, GPS, and passive liveness evidence, so suspicious scans fail closed.' },
   { label: 'Approval-gated biometrics', desc: 'Public enrollments cannot access attendance until an admin explicitly approves the record. Admins can also reset face data and require re-enrollment.' },
   { label: 'Rate limiting & scan telemetry', desc: 'Logins, approvals, and attendance scans are rate-limited. Structured scan telemetry records why a scan passed or failed by device, pose, and match quality.' },
   { label: 'Geofence + liveness enforcement', desc: 'On-site attendance requires GPS within the configured office radius. Anti-spoofing rejects printed photos and screen replays, while Wi-Fi is treated as advisory context instead of a fake security boundary.' },

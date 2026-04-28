@@ -46,8 +46,8 @@
   --radius-2xl: 2rem;
 
   /* Typography */
-  --font-sans: var(--font-poppins), 'Poppins', sans-serif;
-  --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  --font-sans: 'Segoe UI', 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', Menlo, Monaco, monospace;
 }
 
 /* =========================================================

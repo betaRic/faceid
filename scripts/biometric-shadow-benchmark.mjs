@@ -13,6 +13,7 @@ const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 function usage() {
   console.log('Usage:')
   console.log('  npm run biometric:shadow-benchmark -- --dataset <manifest.json|dataset-dir> [--out <report.json>]')
+  console.log('  OPENVINO_REMOTE_URL=https://service.up.railway.app OPENVINO_BENCHMARK_SECRET=... npm run biometric:shadow-benchmark -- --dataset <manifest.json|url> --engines human,openvino-remote')
   console.log('')
   console.log('Manifest samples:')
   console.log('  { "samples": [{ "personId": "E001", "split": "enroll", "imagePath": "E001/enroll/center.jpg" }] }')
@@ -52,12 +53,27 @@ function normalizeSplit(value) {
   return 'enroll'
 }
 
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || ''))
+}
+
 async function loadManifestSamples(datasetPath) {
-  const manifest = JSON.parse(await readFile(datasetPath, 'utf8'))
-  const root = path.dirname(datasetPath)
+  const remote = isHttpUrl(datasetPath)
+  const manifest = remote
+    ? await fetch(datasetPath).then(response => {
+        if (!response.ok) throw new Error(`Failed to fetch manifest: ${response.status} ${response.statusText}`)
+        return response.json()
+      })
+    : JSON.parse(await readFile(datasetPath, 'utf8'))
+  const root = remote ? new URL('.', datasetPath) : path.dirname(datasetPath)
   const samples = Array.isArray(manifest?.samples) ? manifest.samples : []
   return samples.map((sample, index) => {
-    const imagePath = sample.imagePath ? path.resolve(root, sample.imagePath) : ''
+    const imagePath = !remote && sample.imagePath ? path.resolve(root, sample.imagePath) : ''
+    const url = typeof sample.url === 'string'
+      ? sample.url
+      : remote && sample.imagePath
+        ? new URL(sample.imagePath, root).href
+        : ''
     return {
       sampleId: String(sample.sampleId || `${sample.personId || sample.employeeId || sample.label || 'sample'}-${index}`),
       personId: String(sample.personId || sample.employeeId || sample.label || '').trim(),
@@ -67,7 +83,7 @@ async function loadManifestSamples(datasetPath) {
       phaseId: String(sample.phaseId || '').trim(),
       frameDataUrl: typeof sample.frameDataUrl === 'string' ? sample.frameDataUrl : '',
       imagePath,
-      url: typeof sample.url === 'string' ? sample.url : '',
+      url,
     }
   })
 }
@@ -117,6 +133,7 @@ async function loadDirectorySamples(datasetPath) {
 }
 
 async function loadDataset(datasetPath) {
+  if (isHttpUrl(datasetPath)) return loadManifestSamples(datasetPath)
   const absolute = path.resolve(datasetPath)
   const info = await stat(absolute)
   return info.isDirectory() ? loadDirectorySamples(absolute) : loadManifestSamples(absolute)
@@ -171,9 +188,51 @@ async function runEngine(engine, sample, image) {
   }
 
   try {
-    const result = engine === 'openvino'
-      ? await generateOpenVinoRetailEmbedding(image.buffer)
-      : await generateServerFaceEmbedding(image.dataUrl)
+    let result = null
+    if (engine === 'openvino') {
+      result = await generateOpenVinoRetailEmbedding(image.buffer)
+    } else if (engine === 'openvino-remote') {
+      const baseUrl = String(process.env.OPENVINO_REMOTE_URL || '').replace(/\/+$/, '')
+      const secret = String(process.env.OPENVINO_BENCHMARK_SECRET || '')
+      if (!baseUrl || !secret) {
+        throw new Error('OPENVINO_REMOTE_URL and OPENVINO_BENCHMARK_SECRET are required for openvino-remote.')
+      }
+      const startedAt = Date.now()
+      const response = await fetch(`${baseUrl}/api/openvino/smoke`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${secret}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ frameDataUrl: image.dataUrl }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload?.ok) {
+        result = {
+          ok: false,
+          decisionCode: payload?.decisionCode || 'blocked_remote_embedding_failed',
+          message: payload?.message || `Remote OpenVINO request failed with ${response.status}.`,
+          performanceMs: payload?.performanceMs ?? Date.now() - startedAt,
+        }
+      } else if (!Array.isArray(payload.descriptor)) {
+        result = {
+          ok: false,
+          decisionCode: 'blocked_remote_descriptor_missing',
+          message: 'Remote OpenVINO descriptor was not returned. Set OPENVINO_BENCHMARK_RETURN_DESCRIPTOR=true on Railway for benchmark runs.',
+          performanceMs: payload.performanceMs ?? Date.now() - startedAt,
+        }
+      } else {
+        result = {
+          ok: true,
+          descriptor: payload.descriptor,
+          descriptorLength: payload.descriptorLength,
+          performanceMs: payload.performanceMs ?? Date.now() - startedAt,
+          face: { score: payload.faceScore ?? null },
+        }
+      }
+    } else {
+      result = await generateServerFaceEmbedding(image.dataUrl)
+    }
 
     if (!result.ok) {
       return {
@@ -231,7 +290,7 @@ for (let index = 0; index < samples.length; index += 1) {
 }
 
 const report = buildShadowBenchmarkReport(samplesByEngine, {
-  datasetSource: path.resolve(args.dataset),
+  datasetSource: isHttpUrl(args.dataset) ? args.dataset : path.resolve(args.dataset),
 })
 
 summarizeConsole(report)

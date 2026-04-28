@@ -10,6 +10,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "build:railway": "npm run openvino:download-models && npm run build",
+    "start:railway": "node scripts/railway-start.mjs",
     "check:env": "node scripts/check-env.mjs",
     "test": "node tests/run-tests.mjs",
     "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs",
@@ -48,9 +50,7 @@
     "semver": "^7.7.4",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.17",
-    "zustand": "^5.0.12"
-  },
-  "devDependencies": {
+    "zustand": "^5.0.12",
     "openvino-node": "^2026.1.0"
   }
 }

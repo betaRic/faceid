@@ -67,6 +67,7 @@ const attendanceNormalizeModule = await importLocalModule('../lib/attendance/nor
 const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-daily-store.js')
 const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
+const csrfModule = await importLocalModule('../lib/csrf.js')
 
 const {
   calculateDistanceMeters,
@@ -116,7 +117,7 @@ const {
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
 const { buildEngineShadowBenchmark, buildShadowBenchmarkReport } = shadowBenchmarkModule
-const { matchBiometricIndexMultiDescriptor } = biometricIndexModule
+const { matchBiometricIndexCandidates, matchBiometricIndexMultiDescriptor } = biometricIndexModule
 const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
 const {
   buildDuplicateFaceSnapshot,
@@ -134,6 +135,7 @@ const {
 } = attendanceDailyStoreModule
 const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
+const { validateOrigin } = csrfModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -784,8 +786,9 @@ await run('biometric benchmark report exposes operational gate and honest realit
     challengeUsed: true,
     decisionCode: 'accepted_onsite',
     matchDebug: { bestDistance: 0.52, threshold: 0.78 },
-    scanDiagnostics: { deviceClass: 'mobile', bestFaceAreaRatio: 0.2 },
+    scanDiagnostics: { deviceClass: 'mobile', bestFaceAreaRatio: 0.2, serverMatchMode: 'single_frame_fast', serverEmbeddingAverageMs: 720 },
     captureContext: { userAgent: 'Mozilla/5.0 Chrome/124.0', burstQualityScore: 4.1, mobile: true },
+    performance: { totalMeasuredMs: 1600, serverEmbeddingMs: 820, matchingMs: 90, firestoreReadMs: 120, firestoreWriteMs: 180 },
   }
 
   const events = [
@@ -796,8 +799,9 @@ await run('biometric benchmark report exposes operational gate and honest realit
     ...Array.from({ length: 80 }, (_, index) => ({
       ...baseEvent,
       timestamp: now - (index * 1000),
-      scanDiagnostics: { deviceClass: 'desktop', bestFaceAreaRatio: 0.19 },
+      scanDiagnostics: { deviceClass: 'desktop', bestFaceAreaRatio: 0.19, serverMatchMode: 'two_frame_fallback', serverEmbeddingAverageMs: 950 },
       captureContext: { userAgent: 'Mozilla/5.0 Safari/605.1.15', burstQualityScore: 4.0, mobile: false },
+      performance: { totalMeasuredMs: 2600, serverEmbeddingMs: 1900, matchingMs: 110, firestoreReadMs: 150, firestoreWriteMs: 220 },
     })),
   ]
 
@@ -809,6 +813,9 @@ await run('biometric benchmark report exposes operational gate and honest realit
   assert.equal(report.byDevice.mobile.total, 120)
   assert.equal(report.byDevice.desktop.total, 80)
   assert.equal(report.operationalGate.status, 'pass')
+  assert.equal(report.summary.serverTimingCoverageRate, 1)
+  assert.equal(report.summary.twoFrameFallbackRate, 0.4)
+  assert.equal(report.deploymentHealth.p95ServerEmbeddingMs, 1900)
 })
 
 await run('shadow benchmark ranks 1:N candidates without storing descriptor vectors in report', () => {
@@ -991,6 +998,32 @@ await run('raw attendance workbook files contain worksheet XML for each employee
   assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /EMP-002 Beta Employee/)
 })
 
+await run('origin guard accepts Railway public domain when site URL is not set', () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+  const previousRailwayHost = process.env.RAILWAY_PUBLIC_DOMAIN
+
+  process.env.NODE_ENV = 'production'
+  delete process.env.NEXT_PUBLIC_SITE_URL
+  process.env.RAILWAY_PUBLIC_DOMAIN = 'faceattend-one-month-bridge.up.railway.app'
+
+  try {
+    assert.equal(validateOrigin(new Request('https://faceattend-one-month-bridge.up.railway.app/api/attendance/v2', {
+      headers: { origin: 'https://faceattend-one-month-bridge.up.railway.app' },
+    })), true)
+    assert.equal(validateOrigin(new Request('https://faceattend-one-month-bridge.up.railway.app/api/attendance/v2', {
+      headers: { origin: 'https://example.com' },
+    })), false)
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl
+    if (previousRailwayHost === undefined) delete process.env.RAILWAY_PUBLIC_DOMAIN
+    else process.env.RAILWAY_PUBLIC_DOMAIN = previousRailwayHost
+  }
+})
+
 await run('attendance normalization preserves iris liveness evidence for server validation', () => {
   const entry = normalizeEntry({
     descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
@@ -1131,6 +1164,67 @@ await run('multi-descriptor match blocks a single lucky descriptor without corro
   assert.equal(result.ok, false)
   assert.equal(result.decisionCode, 'blocked_no_reliable_match')
   assert.equal(result.debug.supportGate, 'weak_query_descriptor_support')
+})
+
+await run('multi-descriptor match blocks a close raw challenger even when not viable', () => {
+  const candidateSamples = [
+    {
+      personId: 'person-a',
+      employeeId: 'E-1',
+      name: 'Person A',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [1, 0],
+    },
+    {
+      personId: 'person-b',
+      employeeId: 'E-2',
+      name: 'Person B',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [0.9995, 0.0316],
+    },
+  ]
+
+  const descriptors = [
+    [1, 0],
+    [0.999, 0.02],
+    [0.999, -0.02],
+  ]
+
+  const result = matchBiometricIndexMultiDescriptor(candidateSamples, descriptors, 0.85, 0.02)
+
+  assert.equal(result.ok, false)
+  assert.equal(result.decisionCode, 'blocked_ambiguous_match')
+  assert.equal(result.debug.supportGate, 'raw_competitor_too_close')
+  assert.ok(result.debug.secondDistance < result.debug.ambiguousMargin)
+})
+
+await run('single-descriptor match enforces a safer ambiguity floor', () => {
+  const candidateSamples = [
+    {
+      personId: 'person-a',
+      employeeId: 'E-1',
+      name: 'Person A',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [1, 0],
+    },
+    {
+      personId: 'person-b',
+      employeeId: 'E-2',
+      name: 'Person B',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [0.9995, 0.0316],
+    },
+  ]
+
+  const result = matchBiometricIndexCandidates(candidateSamples, [1, 0], 0.85, 0.02)
+
+  assert.equal(result.ok, false)
+  assert.equal(result.decisionCode, 'blocked_ambiguous_match')
+  assert.equal(result.debug.ambiguousMargin, 0.04)
 })
 
 await run('multi-descriptor match accepts corroborated uncertain support for the same person', () => {

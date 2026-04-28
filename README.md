@@ -391,6 +391,15 @@ Office admin example:
 Primary deployment target:
 - Vercel
 
+Temporary one-month bridge target:
+- Railway web service using `railway.json`
+- Use only while the NAS migration and OpenVINO benchmark are being tested
+- Build command downloads OpenVINO retail face models before `next build`
+- Keep Firestore as the database during this bridge; do not move data into Railway's ephemeral filesystem
+- Set `NEXT_PUBLIC_SITE_URL` to the final Railway URL before testing CSRF-protected writes
+- Set `OPENVINO_BENCHMARK_SECRET` before using `/api/openvino/smoke`
+- Keep `OPENVINO_BENCHMARK_RETURN_DESCRIPTOR=false` unless you are running a controlled descriptor benchmark
+
 Before deploying:
 1. set all required environment variables in Vercel
 2. deploy the Firestore rules from `firestore.rules`
@@ -403,6 +412,26 @@ Before deploying:
 9. test `/registration`
 10. test `/scan`
 11. test `/api/system/status`
+
+Railway OpenVINO smoke check:
+
+```bash
+curl -H "Authorization: Bearer <OPENVINO_BENCHMARK_SECRET>" https://<railway-domain>/api/openvino/smoke
+```
+
+OpenVINO shadow benchmark with a private manifest URL:
+
+```bash
+npm run biometric:shadow-benchmark -- --dataset https://example.com/private-manifest.json --engines human,openvino --out /tmp/openvino-shadow-report.json
+```
+
+Railway-generated OpenVINO descriptor benchmark:
+
+```bash
+OPENVINO_REMOTE_URL=https://<railway-domain> OPENVINO_BENCHMARK_SECRET=<secret> npm run biometric:shadow-benchmark -- --dataset https://example.com/private-manifest.json --engines human,openvino-remote --out /tmp/openvino-railway-report.json
+```
+
+For this benchmark only, set `OPENVINO_BENCHMARK_RETURN_DESCRIPTOR=true` on Railway, run the benchmark, then set it back to `false`.
 
 Production note:
 - this app must not silently fall back to browser local storage in production

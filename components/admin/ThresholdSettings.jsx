@@ -149,11 +149,11 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
     : effectiveDist <= 0.85
     ? 'Balanced — good for most lighting'
     : 'Lenient — more false positives possible'
-  const marginNote = effectiveMargin === 0
-    ? 'Unsafe value — server clamps to 0.02'
-    : effectiveMargin <= 0.02
-      ? 'Minimal blocking — strong matches never blocked'
-      : 'Aggressive blocking — similar faces may be rejected'
+  const marginNote = effectiveMargin < 0.04
+    ? 'Unsafe value - server clamps to 0.04'
+    : effectiveMargin < 0.06
+      ? 'Minimal blocking - monitor close matches'
+      : 'Safer blocking - similar faces may be rejected'
 
   const handleSave = async () => {
     const values = Object.fromEntries(pending)
@@ -176,7 +176,7 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
           <div className="mt-1 font-display text-xl font-bold text-ink">{effectiveDist?.toFixed(2)}</div>
           <div className="mt-0.5 text-[10px] text-muted">{distNote}</div>
         </div>
-        <div className={`rounded-xl px-4 py-3 text-center ${effectiveMargin === 0 ? 'bg-red-50' : effectiveMargin <= 0.02 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+        <div className={`rounded-xl px-4 py-3 text-center ${effectiveMargin < 0.04 ? 'bg-red-50' : effectiveMargin < 0.06 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Ambiguity margin</div>
           <div className="mt-1 font-display text-xl font-bold text-ink">{effectiveMargin?.toFixed(2)}</div>
           <div className="mt-0.5 text-[10px] text-muted">{marginNote}</div>

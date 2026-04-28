@@ -1,6 +1,12 @@
+const includeOpenVinoRuntime = (
+  process.env.INCLUDE_OPENVINO_RUNTIME === 'true'
+  || Boolean(process.env.RAILWAY_SERVICE_ID)
+)
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  serverExternalPackages: ['openvino-node'],
   outputFileTracingIncludes: {
     '/api/**/*': [
       './public/models/human/**/*',
@@ -16,12 +22,14 @@ const nextConfig = {
       './node_modules/@tensorflow/tfjs-backend-wasm/dist/**/*',
     ],
   },
-  outputFileTracingExcludes: {
-    '/api/**/*': [
-      './node_modules/openvino-node/**/*',
-      './public/models/openvino/**/*',
-    ],
-  },
+  outputFileTracingExcludes: includeOpenVinoRuntime
+    ? {}
+    : {
+        '/api/**/*': [
+          './node_modules/openvino-node/**/*',
+          './public/models/openvino/**/*',
+        ],
+      },
   async headers() {
     return [
       {

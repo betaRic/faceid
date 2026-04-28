@@ -13,6 +13,12 @@ function formatMetric(value, digits = 3) {
   return Number(value).toFixed(digits)
 }
 
+function formatMs(value) {
+  if (!Number.isFinite(value)) return '--'
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)}s`
+  return `${Math.round(value)}ms`
+}
+
 function statusClasses(status) {
   switch (status) {
     case 'pass': return 'bg-emerald-100 text-emerald-800'
@@ -172,6 +178,13 @@ export function BiometricBenchmarkPanel() {
         <MetricTile label="Passive token rate" value={formatPercent(report.summary?.challengeCoverageRate)} detail="Scans using the replay-protected passive challenge path" />
         <MetricTile label="Mobile no-match" value={formatPercent(mobile.noReliableMatchRate)} detail={`${mobile.total || 0} mobile events`} />
         <MetricTile label="Desktop no-match" value={formatPercent(desktop.noReliableMatchRate)} detail={`${desktop.total || 0} desktop events`} />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Server p95" value={formatMs(report.summary?.p95TotalServerMs)} detail={`timing coverage ${formatPercent(report.summary?.serverTimingCoverageRate)}`} />
+        <MetricTile label="Embedding p95" value={formatMs(report.summary?.p95ServerEmbeddingMs)} detail={`per-frame median ${formatMs(report.summary?.medianServerEmbeddingAverageMs)}`} />
+        <MetricTile label="Matching p95" value={formatMs(report.summary?.p95MatchingMs)} detail="Index lookup and candidate scoring" />
+        <MetricTile label="2-frame fallback" value={formatPercent(report.summary?.twoFrameFallbackRate)} detail="Higher values mean slower but safer verification" />
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
