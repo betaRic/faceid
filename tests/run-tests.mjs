@@ -65,6 +65,7 @@ const attendanceMatchPolicyModule = await importLocalModule('../lib/attendance/m
 const attendanceStorageModule = await importLocalModule('../lib/attendance/storage.js')
 const attendanceNormalizeModule = await importLocalModule('../lib/attendance/normalize.js')
 const attendanceCapturePolicyModule = await importLocalModule('../lib/attendance/capture-policy.js')
+const openVinoShadowProfileModule = await importLocalModule('../lib/biometrics/openvino-shadow-profile.js')
 const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-daily-store.js')
 const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
@@ -131,6 +132,10 @@ const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const { normalizeEntry } = attendanceNormalizeModule
 const { getScanCapturePolicyAssessment, SCAN_CAPTURE_POLICY_VERSION } = attendanceCapturePolicyModule
+const {
+  normalizeOpenVinoProfileSamples,
+  shouldCollectOpenVinoProfileSample,
+} = openVinoShadowProfileModule
 const {
   getEmployeeDailyAttendanceRecord,
   listEmployeeDailyAttendanceRecordsForMonth,
@@ -872,6 +877,62 @@ await run('attendance storage sanitizer strips raw biometric evidence', () => {
   assert.equal(Object.hasOwn(stored, 'challenge'), false)
   assert.equal(Object.hasOwn(stored, 'scanFrames'), false)
   assert.equal(Object.hasOwn(stored, 'sampleFrames'), false)
+})
+
+await run('OpenVINO shadow enrollment only collects from strong accepted Human matches', () => {
+  const config = {
+    enabled: true,
+    maxSamples: 6,
+    maxHumanDistance: 0.68,
+    minHumanMargin: 0.08,
+    minSupport: 2,
+  }
+  const entry = {
+    scanFrames: [{ frameDataUrl: 'data:image/jpeg;base64,abc' }],
+  }
+  const personMatch = {
+    ok: true,
+    debug: {
+      bestDistance: 0.52,
+      secondDistance: 0.67,
+      supportCount: 3,
+      supportDescriptorCount: 3,
+    },
+  }
+
+  assert.equal(shouldCollectOpenVinoProfileSample({ personMatch, entry }, config).ok, true)
+
+  const weakMargin = {
+    ...personMatch,
+    debug: { ...personMatch.debug, secondDistance: 0.57 },
+  }
+  const weakDistance = {
+    ...personMatch,
+    debug: { ...personMatch.debug, bestDistance: 0.72 },
+  }
+  const noFrames = { scanFrames: [] }
+
+  assert.equal(shouldCollectOpenVinoProfileSample({ personMatch: weakMargin, entry }, config).reason, 'human_match_margin_too_small')
+  assert.equal(shouldCollectOpenVinoProfileSample({ personMatch: weakDistance, entry }, config).reason, 'human_match_distance_too_weak')
+  assert.equal(shouldCollectOpenVinoProfileSample({ personMatch, entry: noFrames }, config).reason, 'missing_scan_frames')
+})
+
+await run('OpenVINO shadow profile samples strip invalid vectors and cap metadata', () => {
+  const samples = normalizeOpenVinoProfileSamples([
+    {
+      vector: Array.from({ length: 256 }, (_, index) => index / 256),
+      modelVersion: 'openvino-retail-reid-0095-v1',
+      distanceMetric: 'cosine',
+      source: 'accepted_human_scan_shadow',
+      browser: 'Chrome'.repeat(30),
+    },
+    { vector: [1, 2, 3] },
+  ])
+
+  assert.equal(samples.length, 1)
+  assert.equal(samples[0].vector.length, 256)
+  assert.equal(samples[0].distanceMetric, 'cosine')
+  assert.equal(samples[0].browser.length, 80)
 })
 
 await run('employee monthly attendance reads exact daily docs for the month', async () => {

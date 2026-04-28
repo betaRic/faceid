@@ -16,6 +16,7 @@
     "test": "node tests/run-tests.mjs",
     "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs",
     "biometric:shadow-benchmark": "node scripts/biometric-shadow-benchmark.mjs",
+    "openvino:profile-report": "node scripts/openvino-profile-report.mjs",
     "openvino:download-models": "node scripts/download-openvino-models.mjs",
     "openvino:smoke": "node scripts/openvino-smoke.mjs",
     "seed:dilg-r12": "node scripts/seed-dilg-r12-offices.mjs",

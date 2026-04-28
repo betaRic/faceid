@@ -403,6 +403,7 @@ Temporary one-month bridge target:
 - If Redis Cloud free will not let you delete the database, set a new `CACHE_KEY_PREFIX` value to abandon old keys without changing Redis databases.
 - Set `OPENVINO_BENCHMARK_SECRET` before using `/api/openvino/smoke`
 - Keep `OPENVINO_BENCHMARK_RETURN_DESCRIPTOR=false` unless you are running a controlled descriptor benchmark
+- To start a safe OpenVINO migration, set `OPENVINO_SHADOW_ENABLED=true` only on the Railway/NAS service that has OpenVINO runtime enabled. Accepted high-confidence Human scans will build parallel OpenVINO profiles in `person_biometrics`; live matching still stays on Human until the shadow data proves zero false accepts.
 - If Railway still selects Node 18, set `NIXPACKS_NODE_VERSION=22` in Railway Variables and redeploy
 
 Before deploying:
@@ -437,6 +438,14 @@ OPENVINO_REMOTE_URL=https://<railway-domain> OPENVINO_BENCHMARK_SECRET=<secret> 
 ```
 
 For this benchmark only, set `OPENVINO_BENCHMARK_RETURN_DESCRIPTOR=true` on Railway, run the benchmark, then set it back to `false`.
+
+OpenVINO profile migration progress:
+
+```bash
+npm run openvino:profile-report
+```
+
+This reports how many active approved employees have enough shadow OpenVINO samples. It is aggregate-only by default and does not switch live matching. Set `OPENVINO_PROFILE_REPORT_DETAILS=true` locally only when you need person-level follow-up.
 
 Production note:
 - this app must not silently fall back to browser local storage in production
