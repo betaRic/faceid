@@ -399,6 +399,7 @@ Temporary one-month bridge target:
 - Set `NEXT_PUBLIC_SITE_URL` to the final Railway URL before testing CSRF-protected writes
 - Set `OPENVINO_BENCHMARK_SECRET` before using `/api/openvino/smoke`
 - Keep `OPENVINO_BENCHMARK_RETURN_DESCRIPTOR=false` unless you are running a controlled descriptor benchmark
+- If Railway still selects Node 18, set `NIXPACKS_NODE_VERSION=22` in Railway Variables and redeploy
 
 Before deploying:
 1. set all required environment variables in Vercel
