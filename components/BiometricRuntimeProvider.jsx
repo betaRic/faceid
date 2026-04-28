@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useCamera } from '@/hooks/useCamera'
-import { areModelsReady, getModelLoadStatus, loadModels } from '@/lib/biometrics/human'
+import { areDetectorModelsReady, areModelsReady, getModelLoadStatus, loadModels } from '@/lib/biometrics/human'
 import {
   LOCATION_BOOT_TIMEOUT_MS,
   LOCATION_CACHE_MAX_AGE_MS,
@@ -65,9 +65,9 @@ export function BiometricRuntimeProvider({ children }) {
   const kioskRoute = isKioskRoute(pathname)
   const adminReenrollRoute = isAdminReenrollRoute(pathname)
   const requiresImmediateCamera = kioskRoute || adminReenrollRoute
-  const [modelsReady, setModelsReady] = useState(areModelsReady())
+  const [modelsReady, setModelsReady] = useState(areDetectorModelsReady())
   const [modelStatus, setModelStatus] = useState(getModelLoadStatus())
-  const [bootStage, setBootStage] = useState(areModelsReady() ? 'idle' : 'models')
+  const [bootStage, setBootStage] = useState(areDetectorModelsReady() ? 'idle' : 'models')
   const [runtimeError, setRuntimeError] = useState(null)
   const [locationState, setLocationState] = useState(getDefaultLocationState())
   const [retryKey, setRetryKey] = useState(0)
@@ -79,7 +79,7 @@ export function BiometricRuntimeProvider({ children }) {
     if (!biometricRoute) {
       stopCamera()
       setRuntimeError(null)
-      setBootStage(areModelsReady() ? 'idle' : 'models')
+      setBootStage(areDetectorModelsReady() ? 'idle' : 'models')
       setLocationState(getDefaultLocationState())
       return () => {
         active = false
@@ -143,14 +143,30 @@ export function BiometricRuntimeProvider({ children }) {
       setRuntimeError(null)
 
       try {
-        if (!areModelsReady()) {
+        if (!areDetectorModelsReady()) {
           setBootStage('models')
-          setModelStatus('Loading models...')
-          await loadModels()
+          setModelStatus('Loading face detector...')
+          await loadModels(status => {
+            if (active) setModelStatus(status)
+          }, { requireFull: false })
+        } else if (!areModelsReady()) {
+          setModelStatus(getModelLoadStatus())
         }
 
         setModelsReady(true)
-        setModelStatus('Ready')
+        setModelStatus(areModelsReady() ? 'Ready' : getModelLoadStatus())
+
+        if (!areModelsReady()) {
+          loadModels(status => {
+            if (active) setModelStatus(status)
+          }, { requireFull: true })
+            .then(() => {
+              if (active) setModelStatus('Ready')
+            })
+            .catch(error => {
+              if (active) setModelStatus('Error: ' + (error?.message || 'Failed to load verification models'))
+            })
+        }
 
         if (kioskRoute) {
           setBootStage('location')

@@ -397,6 +397,10 @@ Temporary one-month bridge target:
 - Build command downloads OpenVINO retail face models before `next build`
 - Keep Firestore as the database during this bridge; do not move data into Railway's ephemeral filesystem
 - Set `NEXT_PUBLIC_SITE_URL` to the final Railway URL before testing CSRF-protected writes
+- Set `NEXT_PUBLIC_USE_LOCAL_MODELS=false` on Railway. Do not make Railway serve `/models/human` unless you want slow first loads; use jsDelivr or `NEXT_PUBLIC_HUMAN_MODEL_URL` pointing at a real static host/CDN.
+- Keep `SERVER_ATTENDANCE_PAD_ENABLED=false` during Railway testing unless you are intentionally benchmarking the slower server anti-spoof/liveness path. Browser burst liveness is still required.
+- Use Redis in the same region as Railway, preferably Singapore/Asia. A US-East Redis endpoint is a bad latency trade for attendance.
+- If Redis Cloud free will not let you delete the database, set a new `CACHE_KEY_PREFIX` value to abandon old keys without changing Redis databases.
 - Set `OPENVINO_BENCHMARK_SECRET` before using `/api/openvino/smoke`
 - Keep `OPENVINO_BENCHMARK_RETURN_DESCRIPTOR=false` unless you are running a controlled descriptor benchmark
 - If Railway still selects Node 18, set `NIXPACKS_NODE_VERSION=22` in Railway Variables and redeploy
