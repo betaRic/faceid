@@ -3,6 +3,8 @@ import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import AppProviders from '@/components/AppProviders'
 
+const isVercelRuntime = process.env.VERCEL === '1'
+
 export const metadata = {
   title: 'FaceAttend — DILG Region XII',
   description: 'Biometric face attendance system for DILG Region XII government offices. GPS-validated, server-enforced attendance tracking.',
@@ -16,8 +18,12 @@ export default function RootLayout({ children }) {
     <html lang="en" data-scroll-behavior="smooth">
       <body className="font-sans">
         <AppProviders>{children}</AppProviders>
-        <Analytics />
-        <SpeedInsights />
+        {isVercelRuntime ? (
+          <>
+            <Analytics />
+            <SpeedInsights />
+          </>
+        ) : null}
       </body>
     </html>
   )
