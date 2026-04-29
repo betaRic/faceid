@@ -1,4 +1,6 @@
 import { createClient } from 'redis'
+import { existsSync } from 'fs'
+import path from 'path'
 
 import { loadRepoEnv } from './lib/load-local-env.mjs'
 
@@ -57,8 +59,45 @@ const SERVER_ENV_KEYS = [
   'EMPLOYEE_VIEW_SESSION_SECRET',
 ]
 
+const OPENVINO_MODEL_ROOT = process.env.OPENVINO_MODEL_DIR
+  ? path.resolve(process.env.OPENVINO_MODEL_DIR)
+  : path.join(process.cwd(), 'public', 'models', 'openvino')
+
+const OPENVINO_REQUIRED_MODEL_FILES = [
+  'face-detection-retail-0004/FP16/face-detection-retail-0004.xml',
+  'face-detection-retail-0004/FP16/face-detection-retail-0004.bin',
+  'landmarks-regression-retail-0009/FP16/landmarks-regression-retail-0009.xml',
+  'landmarks-regression-retail-0009/FP16/landmarks-regression-retail-0009.bin',
+  'face-reidentification-retail-0095/FP16/face-reidentification-retail-0095.xml',
+  'face-reidentification-retail-0095/FP16/face-reidentification-retail-0095.bin',
+]
+
 function hasValue(key) {
   return Boolean(process.env[key]?.trim())
+}
+
+function boolEnv(key, fallback = false) {
+  const value = process.env[key]
+  if (value == null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase())
+}
+
+function defaultOpenVinoShadowEnabled() {
+  return hasValue('RAILWAY_SERVICE_ID') || process.env.INCLUDE_OPENVINO_RUNTIME === 'true'
+}
+
+function getOpenVinoReadiness() {
+  const missingModelFiles = OPENVINO_REQUIRED_MODEL_FILES
+    .map(relativePath => path.join(OPENVINO_MODEL_ROOT, relativePath))
+    .filter(filePath => !existsSync(filePath))
+
+  return {
+    shadowEnabled: boolEnv('OPENVINO_SHADOW_ENABLED', defaultOpenVinoShadowEnabled()),
+    defaultShadowEnabled: defaultOpenVinoShadowEnabled(),
+    modelRoot: OPENVINO_MODEL_ROOT,
+    modelsAvailable: missingModelFiles.length === 0,
+    missingModelFiles,
+  }
 }
 
 function firebaseAdminConfigured() {
@@ -93,6 +132,7 @@ function getRuntimeReadiness() {
   const employeeViewSessionConfigured = serverEnv.EMPLOYEE_VIEW_SESSION_SECRET || firebaseServerConfigured
   const redisConfigured = hasValue('REDIS_URL')
   const publicAttendanceEnabled = isPublicAttendanceEnabled()
+  const openvino = getOpenVinoReadiness()
   const warnings = []
   const baselineReadyChecks = [
     firebaseClientConfigured,
@@ -125,6 +165,12 @@ function getRuntimeReadiness() {
   }
   if (!redisConfigured) warnings.push('REDIS_URL is not configured; cache misses and rate limits will fall back to Firestore.')
   if (publicAttendanceEnabled) warnings.push('Public attendance browsing is enabled. Disable it unless broad visibility is intentional.')
+  if (openvino.shadowEnabled && !openvino.modelsAvailable) {
+    warnings.push('OpenVINO shadow collection is enabled but retail model files are missing. Run npm run openvino:download-models before Railway deployment.')
+  }
+  if (openvino.shadowEnabled) {
+    warnings.push('OpenVINO is enabled for shadow profile collection only; Human matching remains primary until real scan benchmarks justify promotion.')
+  }
   warnings.push('Attendance descriptors are server-generated from submitted still frames, but frames, GPS, and liveness evidence still originate from the browser.')
 
   return {
@@ -139,6 +185,7 @@ function getRuntimeReadiness() {
     redisConfigured,
     publicAttendanceEnabled,
     railwayPublicDomainConfigured,
+    openvino,
     publicEnv,
     serverEnv,
     productionReady,

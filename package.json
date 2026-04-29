@@ -15,6 +15,7 @@
     "check:env": "node scripts/check-env.mjs",
     "test": "node tests/run-tests.mjs",
     "backfill:biometric-index": "node scripts/backfill-biometric-index.mjs",
+    "backfill:openvino-profiles": "node scripts/backfill-openvino-from-photos.mjs",
     "biometric:shadow-benchmark": "node scripts/biometric-shadow-benchmark.mjs",
     "openvino:profile-report": "node scripts/openvino-profile-report.mjs",
     "openvino:download-models": "node scripts/download-openvino-models.mjs",

@@ -323,30 +323,9 @@ export function useKioskLoop({
         const antispoof = primaryVerification.detection.antispoof
         const liveness = primaryVerification.detection.liveness
 
-        // Per-frame fast-fail only on obvious spoofs. Human's RGB PAD score is
-        // noisy on real phones/webcams, so gray-zone scores are handled by the
-        // burst/server policy instead of blocking employees locally.
-        if (antispoof !== undefined && antispoof < 0.25) {
-          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
-          setKioskState('blocked')
-          pausedRef.current = true
-          showAlertAndResume('Photo or screen detected. Please present your live face.', 3500)
-          confirmRef.current = 0
-          return
-        }
-
-        if (liveness !== undefined && liveness < 0.15) {
-          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
-          setKioskState('blocked')
-          pausedRef.current = true
-          showAlertAndResume('Fake face detected. Please scan your live face.', 3500)
-          confirmRef.current = 0
-          return
-        }
-
         // Burst-level anti-spoof + liveness gate. Uses temporal signals across
         // all strict-oval frames (not just the primary), which is more robust
-        // than any single-frame score.
+        // than any single-frame PAD/liveness score.
         if (livenessEvidence && !livenessEvidence.pass) {
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('blocked')

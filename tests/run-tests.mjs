@@ -137,6 +137,7 @@ const {
   SCAN_CAPTURE_POLICY_VERSION,
 } = attendanceCapturePolicyModule
 const {
+  getOpenVinoShadowProfileConfig,
   normalizeOpenVinoProfileSamples,
   shouldCollectOpenVinoProfileSample,
 } = openVinoShadowProfileModule
@@ -921,6 +922,30 @@ await run('OpenVINO shadow enrollment only collects from strong accepted Human m
   assert.equal(shouldCollectOpenVinoProfileSample({ personMatch, entry: noFrames }, config).reason, 'missing_scan_frames')
 })
 
+await run('OpenVINO shadow defaults on for Railway but remains opt-out', () => {
+  const previousShadow = process.env.OPENVINO_SHADOW_ENABLED
+  const previousRailway = process.env.RAILWAY_SERVICE_ID
+  const previousInclude = process.env.INCLUDE_OPENVINO_RUNTIME
+
+  try {
+    delete process.env.OPENVINO_SHADOW_ENABLED
+    delete process.env.INCLUDE_OPENVINO_RUNTIME
+    process.env.RAILWAY_SERVICE_ID = 'railway-service-fixture'
+    assert.equal(getOpenVinoShadowProfileConfig().enabled, true)
+    assert.equal(getOpenVinoShadowProfileConfig().framesPerScan, 2)
+
+    process.env.OPENVINO_SHADOW_ENABLED = 'false'
+    assert.equal(getOpenVinoShadowProfileConfig().enabled, false)
+  } finally {
+    if (previousShadow === undefined) delete process.env.OPENVINO_SHADOW_ENABLED
+    else process.env.OPENVINO_SHADOW_ENABLED = previousShadow
+    if (previousRailway === undefined) delete process.env.RAILWAY_SERVICE_ID
+    else process.env.RAILWAY_SERVICE_ID = previousRailway
+    if (previousInclude === undefined) delete process.env.INCLUDE_OPENVINO_RUNTIME
+    else process.env.INCLUDE_OPENVINO_RUNTIME = previousInclude
+  }
+})
+
 await run('OpenVINO shadow profile samples strip invalid vectors and cap metadata', () => {
   const samples = normalizeOpenVinoProfileSamples([
     {
@@ -1218,7 +1243,7 @@ await run('scan capture policy treats one low PAD frame as risk when temporal li
   assert.equal(assessment.riskFlags.includes('pad_gray_zone'), true)
 })
 
-await run('scan capture policy still blocks low PAD when temporal liveness is weak', () => {
+await run('scan capture policy treats low PAD as risk when only eye signal is weak', () => {
   const assessment = getScanCapturePolicyAssessment({
     descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
     antispoof: 0.29,
@@ -1237,9 +1262,42 @@ await run('scan capture policy still blocks low PAD when temporal liveness is we
       descriptorSpread: 0.09,
     },
     livenessEvidence: {
-      earSamples: [0.25, 0.18, 0.25],
-      meshDeltas: [0.17, 0.18],
-      irisDeltas: [0.08, 0.09],
+      earSamples: [0.25, 0.25, 0.25],
+      meshDeltas: [0.31, 0.29],
+      irisDeltas: [0.22, 0.24],
+      avgAntispoof: 0.82,
+      avgLiveness: 0.82,
+      frameCount: 3,
+    },
+  })
+
+  assert.equal(assessment.ok, true)
+  assert.equal(assessment.riskFlags.includes('weak_eye_signal'), true)
+  assert.equal(assessment.riskFlags.includes('single_frame_pad_low'), true)
+})
+
+await run('scan capture policy still blocks low PAD when temporal evidence is static', () => {
+  const assessment = getScanCapturePolicyAssessment({
+    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
+    antispoof: 0.29,
+    liveness: 0.82,
+    captureContext: {
+      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
+      verificationFrames: 4,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      screenOrientation: 'portrait-primary',
+      mobile: true,
+    },
+    scanDiagnostics: {
+      strictFrames: 3,
+      descriptorSpread: 0.09,
+    },
+    livenessEvidence: {
+      earSamples: [0.25, 0.25, 0.25],
+      meshDeltas: [0.05, 0.06],
+      irisDeltas: [0.02, 0.03],
       avgAntispoof: 0.42,
       avgLiveness: 0.82,
       frameCount: 3,
@@ -1247,7 +1305,7 @@ await run('scan capture policy still blocks low PAD when temporal liveness is we
   })
 
   assert.equal(assessment.ok, false)
-  assert.equal(assessment.decisionCode, 'blocked_antispoof')
+  assert.equal(assessment.decisionCode, 'blocked_liveness')
 })
 
 await run('liveness still hard-blocks clear anti-spoof failures', () => {
