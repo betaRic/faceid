@@ -90,10 +90,12 @@ function getOpenVinoReadiness() {
   const missingModelFiles = OPENVINO_REQUIRED_MODEL_FILES
     .map(relativePath => path.join(OPENVINO_MODEL_ROOT, relativePath))
     .filter(filePath => !existsSync(filePath))
+  const framesPerScan = Number(process.env.OPENVINO_SHADOW_FRAMES_PER_SCAN || 2)
 
   return {
     shadowEnabled: boolEnv('OPENVINO_SHADOW_ENABLED', defaultOpenVinoShadowEnabled()),
     defaultShadowEnabled: defaultOpenVinoShadowEnabled(),
+    framesPerScan: Number.isFinite(framesPerScan) && framesPerScan > 0 ? Math.floor(framesPerScan) : 2,
     modelRoot: OPENVINO_MODEL_ROOT,
     modelsAvailable: missingModelFiles.length === 0,
     missingModelFiles,
@@ -167,6 +169,9 @@ function getRuntimeReadiness() {
   if (publicAttendanceEnabled) warnings.push('Public attendance browsing is enabled. Disable it unless broad visibility is intentional.')
   if (openvino.shadowEnabled && !openvino.modelsAvailable) {
     warnings.push('OpenVINO shadow collection is enabled but retail model files are missing. Run npm run openvino:download-models before Railway deployment.')
+  }
+  if (openvino.shadowEnabled && openvino.framesPerScan < 2) {
+    warnings.push('OPENVINO_SHADOW_FRAMES_PER_SCAN is below 2. Use 2 so attendance can collect both server-submitted frames during shadow migration.')
   }
   if (openvino.shadowEnabled) {
     warnings.push('OpenVINO is enabled for shadow profile collection only; Human matching remains primary until real scan benchmarks justify promotion.')

@@ -557,6 +557,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "decisionCode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "scan_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "clientIp",
           "order": "ASCENDING"
         },
