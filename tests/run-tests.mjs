@@ -131,7 +131,11 @@ const { mapPersonRecord } = personsDirectoryListModule
 const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const { normalizeEntry } = attendanceNormalizeModule
-const { getScanCapturePolicyAssessment, SCAN_CAPTURE_POLICY_VERSION } = attendanceCapturePolicyModule
+const {
+  getScanCapturePolicyAssessment,
+  MIN_SCAN_STRICT_FRAMES,
+  SCAN_CAPTURE_POLICY_VERSION,
+} = attendanceCapturePolicyModule
 const {
   normalizeOpenVinoProfileSamples,
   shouldCollectOpenVinoProfileSample,
@@ -1163,6 +1167,22 @@ await run('liveness keeps gray-zone antispoof as risk instead of blocking real s
   assert.equal(validation.ok, true)
   assert.equal(validation.riskFlags.includes('pad_gray_zone'), true)
   assert.equal(validation.riskFlags.includes('weak_human_liveness_score'), true)
+})
+
+await run('scan strict frame floor matches liveness frame requirement', () => {
+  assert.equal(MIN_SCAN_STRICT_FRAMES, 3)
+
+  const validation = validateLivenessEvidence({
+    earSamples: [0.24, 0.17],
+    meshDeltas: [0.31],
+    irisDeltas: [0.22],
+    avgAntispoof: 0.82,
+    avgLiveness: 0.74,
+    frameCount: 2,
+  })
+
+  assert.equal(validation.ok, false)
+  assert.equal(validation.reason, 'insufficient_liveness_frames')
 })
 
 await run('scan capture policy treats one low PAD frame as risk when temporal liveness is strong', () => {

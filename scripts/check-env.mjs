@@ -88,7 +88,8 @@ function getRuntimeReadiness() {
   const hrSessionConfigured = serverEnv.HR_SESSION_SECRET
   const hrPinSaltConfigured = serverEnv.HR_PIN_SALT
   const cronSecretConfigured = serverEnv.CRON_SECRET
-  const siteUrlConfigured = serverEnv.NEXT_PUBLIC_SITE_URL
+  const railwayPublicDomainConfigured = hasValue('RAILWAY_PUBLIC_DOMAIN')
+  const siteUrlConfigured = serverEnv.NEXT_PUBLIC_SITE_URL || railwayPublicDomainConfigured
   const employeeViewSessionConfigured = serverEnv.EMPLOYEE_VIEW_SESSION_SECRET || firebaseServerConfigured
   const redisConfigured = hasValue('REDIS_URL')
   const publicAttendanceEnabled = isPublicAttendanceEnabled()
@@ -112,7 +113,11 @@ function getRuntimeReadiness() {
   if (!hrSessionConfigured) warnings.push('HR session signing is not configured.')
   if (!hrPinSaltConfigured) warnings.push('HR PIN hashing salt is not configured.')
   if (!cronSecretConfigured) warnings.push('Cron protection secret is not configured.')
-  if (!siteUrlConfigured) warnings.push('NEXT_PUBLIC_SITE_URL is not configured; CSRF protection will reject writes.')
+  if (!siteUrlConfigured) {
+    warnings.push('NEXT_PUBLIC_SITE_URL is not configured; CSRF protection will reject writes.')
+  } else if (!serverEnv.NEXT_PUBLIC_SITE_URL && railwayPublicDomainConfigured) {
+    warnings.push('Using RAILWAY_PUBLIC_DOMAIN for CSRF origin checks. Set NEXT_PUBLIC_SITE_URL explicitly after the Railway URL is final.')
+  }
   if (!employeeViewSessionConfigured) {
     warnings.push('Employee self-view sessions are unavailable because neither EMPLOYEE_VIEW_SESSION_SECRET nor Firebase Admin storage is available.')
   } else if (!serverEnv.EMPLOYEE_VIEW_SESSION_SECRET) {
@@ -133,6 +138,7 @@ function getRuntimeReadiness() {
     employeeViewSessionConfigured,
     redisConfigured,
     publicAttendanceEnabled,
+    railwayPublicDomainConfigured,
     publicEnv,
     serverEnv,
     productionReady,

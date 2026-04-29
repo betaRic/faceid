@@ -10,6 +10,7 @@ import {
   VERIFICATION_BURST_MOBILE_INTERVAL_MS,
   VERIFICATION_TOP_DESCRIPTORS,
 } from '@/lib/config'
+import { MIN_SCAN_STRICT_FRAMES } from '@/lib/attendance/capture-policy'
 import { selectOvalReadyFace, buildOvalCaptureCanvas } from '@/lib/biometrics/oval-capture'
 import { analyzeBurstLiveness } from '@/lib/biometrics/liveness'
 
@@ -136,15 +137,17 @@ export function useVerificationBurst(camera) {
     const isMobile = isProbablyMobileDevice()
     const targetFrames = isMobile ? VERIFICATION_BURST_MOBILE_FRAMES : VERIFICATION_BURST_FRAMES
     const frameInterval = isMobile ? VERIFICATION_BURST_MOBILE_INTERVAL_MS : VERIFICATION_BURST_INTERVAL_MS
+    const maxAttempts = targetFrames + (isMobile ? 3 : 2)
+    let strictCaptureCount = 0
 
-    for (let attempt = 0; attempt < targetFrames; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const rawCanvas = camera.captureImageData({
         maxWidth: PREVIEW_MAX_DIMENSION,
         maxHeight: PREVIEW_MAX_DIMENSION,
       })
       const canvas = buildOvalCaptureCanvas(rawCanvas)
       if (!canvas) {
-        if (attempt < targetFrames - 1) await wait(frameInterval)
+        if (attempt < maxAttempts - 1) await wait(frameInterval)
         continue
       }
       if (!camera.camOn) break
@@ -160,20 +163,23 @@ export function useVerificationBurst(camera) {
 
       if (primary?.descriptor?.length) {
         const metrics = measureFrameMetrics(canvas, primary.detection?.box)
+        const strictOval = Boolean(strictPrimary)
         captures.push({
           canvas,
           detections,
           primary: {
             detection: primary,
             box: primary.detection?.box || null,
-            strictOval: Boolean(strictPrimary),
+            strictOval,
           },
           metrics,
           qualityScore: scoreCaptureQuality(primary, metrics),
         })
+        if (strictOval) strictCaptureCount += 1
       }
 
-      if (attempt < targetFrames - 1) await wait(frameInterval)
+      if (strictCaptureCount >= targetFrames) break
+      if (attempt < maxAttempts - 1) await wait(frameInterval)
     }
 
     if (captures.length === 0) return null
@@ -183,7 +189,7 @@ export function useVerificationBurst(camera) {
     // analysis. Loose/fallback captures have jittery mesh coordinates that can
     // inflate EAR variance and mesh delta signals from detection noise alone,
     // producing false liveness positives on a held-still photo.
-    if (strictCaptures.length < 2) return null
+    if (strictCaptures.length < MIN_SCAN_STRICT_FRAMES) return null
 
     const livenessFrames = strictCaptures.map(capture => ({
       primary: {

@@ -373,7 +373,7 @@ export default function RegisterView({
           statusMsg={statusMsg}
         />
       ) : (
-        <div className="page-frame flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
+        <div className="page-frame flex h-full min-h-0 flex-col gap-3 overflow-hidden">
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
@@ -387,7 +387,7 @@ export default function RegisterView({
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 18 }}
             transition={{ duration: 0.4, delay: 0.05 }}
-            className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow sm:p-4"
+            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow sm:p-4"
           >
             <div className="flex shrink-0 flex-col gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
