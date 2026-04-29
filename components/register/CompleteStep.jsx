@@ -15,7 +15,7 @@ export default function CompleteStep({ lastSavedSummary, onAddAnotherSample, onE
         <div className="mt-3 space-y-2 text-sm text-muted">
           <p><strong className="text-ink">Employee ID:</strong> {lastSavedSummary?.employeeId}</p>
           <p><strong className="text-ink">Office:</strong> {lastSavedSummary?.officeName}</p>
-          <p><strong className="text-ink">Samples saved:</strong> {lastSavedSummary?.savedSampleCount} (guided multi-angle)</p>
+          <p><strong className="text-ink">Samples saved:</strong> {lastSavedSummary?.savedSampleCount} (guided support set)</p>
           <p><strong className="text-ink">Total on record:</strong> {lastSavedSummary?.sampleCount}</p>
           {lastSavedSummary?.remaining > 0 ? (
             <p><strong className="text-ink">Recommended additional:</strong> {lastSavedSummary?.remaining}</p>

@@ -40,16 +40,16 @@ export default function ReviewStep({
 
         {burstSummary && !burstSummary.genuinelyDiverse ? (
           <InfoCard
-            title="Single angle detected"
-            text="The system captured similar poses across the guided phases. For better accuracy, retake and follow the front, side, and chin-down prompts."
+            title="Support set incomplete"
+            text="The capture did not keep 2 validated support frames for every guided pose. Retake before submitting."
             tone="warn"
           />
         ) : null}
 
         {burstSummary && burstSummary.genuinelyDiverse ? (
           <InfoCard
-            title={`${burstSummary.keptCount} diverse samples captured`}
-            text={`${burstSummary.detectedCount} frames processed across ${burstSummary.phasesCompleted} guided poses. Diverse poses improve cross-device recognition accuracy.`}
+            title={`${burstSummary.keptCount} support samples captured`}
+            text={`${burstSummary.detectedCount} frames processed across ${burstSummary.phasesCompleted} guided poses. Support pairs help prevent employee-to-employee mismatch.`}
           />
         ) : null}
 

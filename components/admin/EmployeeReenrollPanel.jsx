@@ -239,8 +239,8 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
               title={burstSummary.genuinelyDiverse ? 'Capture quality good' : 'Retake recommended'}
               text={
                 burstSummary.genuinelyDiverse
-                  ? `${burstSummary.keptCount} diverse samples captured across the guided multi-pose flow.`
-                  : 'The capture completed, but the angles were too similar. Retake for cleaner biometric separation.'
+                  ? `${burstSummary.keptCount} support samples captured across the guided multi-pose flow.`
+                  : 'The capture completed, but it did not keep 2 validated support frames for every pose. Retake for cleaner biometric separation.'
               }
               tone={burstSummary.genuinelyDiverse ? 'default' : 'warn'}
             />
@@ -369,7 +369,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
         <InfoCard
           title="Capture target"
-          text="Use the same guided capture as registration and kiosk: front, side, opposite side, then chin down. The face should sit in the shared green distance band before capture starts."
+          text="Use the same guided capture as registration: front, side, opposite side, then chin down. The system keeps 2 support frames per pose, with the face inside the shared green distance band."
         />
 
         <div className="grid gap-3 pt-1">

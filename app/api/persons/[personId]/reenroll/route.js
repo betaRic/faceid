@@ -16,6 +16,10 @@ import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biom
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enrollment'
+import {
+  ENROLLMENT_MIN_SAMPLES,
+  ENROLLMENT_SUPPORT_SAMPLE_MIN_DIVERSITY,
+} from '@/lib/biometrics/enrollment-burst'
 import { syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import {
   getEffectivePersonApprovalStatus,
@@ -101,10 +105,12 @@ export async function POST(request, { params }) {
     const validDescriptors = authoritativePayload.descriptors
 
     // Deduplicate within the new batch (no comparison to old — we're replacing everything)
-    const { accepted, rejected } = deduplicateDescriptors(validDescriptors, [])
-    if (accepted.length < 4) {
+    const { accepted, rejected } = deduplicateDescriptors(validDescriptors, [], {
+      minSampleDiversity: ENROLLMENT_SUPPORT_SAMPLE_MIN_DIVERSITY,
+    })
+    if (accepted.length < ENROLLMENT_MIN_SAMPLES) {
       return NextResponse.json(
-        { ok: false, message: 'Captured samples are too similar to each other. Try again with better head angle diversity.' },
+        { ok: false, message: `Captured samples did not produce ${ENROLLMENT_MIN_SAMPLES} separate support samples. Try again with steady lighting and hold every guided pose.` },
         { status: 400 },
       )
     }

@@ -104,6 +104,7 @@ const {
   selectEnrollmentBurstSamples,
   summarizeEnrollmentCaptureQuality,
   validateEnrollmentDescriptorBatch,
+  validateEnrollmentServerDescriptorSet,
 } = enrollmentBurstModule
 const { verifyGuidedCapturePoseCoverage } = guidedCaptureValidationModule
 const { getFaceSizeGuidance } = faceSizeGuidanceModule
@@ -457,16 +458,20 @@ await run('person directory summary uses sampleCount without requiring descripto
 await run('guided enrollment sample frames normalize and validate required pose coverage', () => {
   const sampleFrames = normalizeEnrollmentSampleFrames([
     { phaseId: 'center', frameDataUrl: 'data:image/jpeg;base64,AAAA' },
+    { phaseId: 'center', frameDataUrl: 'data:image/jpeg;base64,AAAB' },
     { phaseId: 'side_a', frameDataUrl: 'data:image/jpeg;base64,BBBB' },
+    { phaseId: 'side_a', frameDataUrl: 'data:image/jpeg;base64,BBBC' },
     { phaseId: 'side_b', frameDataUrl: 'data:image/jpeg;base64,CCCC' },
+    { phaseId: 'side_b', frameDataUrl: 'data:image/jpeg;base64,CCCD' },
     { phaseId: 'chin_down', frameDataUrl: 'data:image/jpeg;base64,DDDD' },
+    { phaseId: 'chin_down', frameDataUrl: 'data:image/jpeg;base64,DDDE' },
   ])
 
-  assert.equal(sampleFrames.length, 4)
+  assert.equal(sampleFrames.length, 8)
   assert.equal(validateEnrollmentSampleFrames(sampleFrames), null)
   assert.match(
-    validateEnrollmentSampleFrames(sampleFrames.slice(0, 3)),
-    /incomplete/i,
+    validateEnrollmentSampleFrames(sampleFrames.filter((_, index) => index % 2 === 0)),
+    /8 validated/i,
   )
 })
 
@@ -526,24 +531,72 @@ await run('burst sample selector preserves required guided pose coverage', () =>
   )
 })
 
+await run('burst sample selector keeps support pairs for every guided pose', () => {
+  const baseMetrics = { detectionScore: 0.95, faceAreaRatio: 0.3, centeredness: 0.9, brightness: 130, contrast: 35, sharpness: 25 }
+  const captures = [
+    { attempt: 0, phaseId: 'center', descriptor: [0, 0, 0], metrics: baseMetrics, score: 9.8 },
+    { attempt: 1, phaseId: 'center', descriptor: [0.08, 0, 0], metrics: baseMetrics, score: 9.7 },
+    { attempt: 2, phaseId: 'center', descriptor: [0.16, 0, 0], metrics: baseMetrics, score: 9.6 },
+    { attempt: 3, phaseId: 'side_a', descriptor: [1, 0, 0], metrics: baseMetrics, score: 9.5 },
+    { attempt: 4, phaseId: 'side_a', descriptor: [1, 0.08, 0], metrics: baseMetrics, score: 9.4 },
+    { attempt: 5, phaseId: 'side_a', descriptor: [1, 0.16, 0], metrics: baseMetrics, score: 9.3 },
+    { attempt: 6, phaseId: 'side_b', descriptor: [0, 1, 0], metrics: baseMetrics, score: 9.2 },
+    { attempt: 7, phaseId: 'side_b', descriptor: [0, 1, 0.08], metrics: baseMetrics, score: 9.1 },
+    { attempt: 8, phaseId: 'side_b', descriptor: [0, 1, 0.16], metrics: baseMetrics, score: 9 },
+    { attempt: 9, phaseId: 'chin_down', descriptor: [0, 0, 1], metrics: baseMetrics, score: 8.9 },
+    { attempt: 10, phaseId: 'chin_down', descriptor: [0.08, 0, 1], metrics: baseMetrics, score: 8.8 },
+    { attempt: 11, phaseId: 'chin_down', descriptor: [0.16, 0, 1], metrics: baseMetrics, score: 8.7 },
+  ]
+
+  const selected = selectEnrollmentBurstSamples(captures, {
+    maxSamples: 8,
+    requiredPhaseIds: ['center', 'side_a', 'side_b', 'chin_down'],
+    minPhaseCounts: { center: 2, side_a: 2, side_b: 2, chin_down: 2 },
+  })
+  const counts = selected.reduce((acc, item) => {
+    acc[item.phaseId] = (acc[item.phaseId] || 0) + 1
+    return acc
+  }, {})
+
+  assert.equal(selected.length, 8)
+  assert.deepEqual(counts, { center: 2, side_a: 2, side_b: 2, chin_down: 2 })
+})
+
 await run('enrollment capture metadata requires all guided poses', () => {
   assert.equal(validateEnrollmentCaptureMetadata({
     phasesCaptured: ['center', 'side_a', 'side_b', 'chin_down'],
+    phaseSampleCounts: { center: 2, side_a: 2, side_b: 2, chin_down: 2 },
     genuinelyDiverse: true,
-    keptCount: 5,
-  }, [[1], [2], [3], [4], [5]]), null)
+    keptCount: 8,
+  }, [
+    { phaseId: 'center' },
+    { phaseId: 'center' },
+    { phaseId: 'side_a' },
+    { phaseId: 'side_a' },
+    { phaseId: 'side_b' },
+    { phaseId: 'side_b' },
+    { phaseId: 'chin_down' },
+    { phaseId: 'chin_down' },
+  ]), null)
 
   assert.match(validateEnrollmentCaptureMetadata({
     phasesCaptured: ['center', 'side_a'],
     genuinelyDiverse: true,
-    keptCount: 3,
-  }, [[1], [2], [3]]), /incomplete/i)
+    keptCount: 8,
+  }, Array.from({ length: 8 }, () => [1])), /incomplete/i)
 
   assert.match(validateEnrollmentCaptureMetadata({
     phasesCaptured: ['center', 'side_a', 'side_b', 'chin_down'],
     genuinelyDiverse: false,
-    keptCount: 4,
-  }, [[1], [2], [3], [4]]), /diversity/i)
+    keptCount: 8,
+  }, Array.from({ length: 8 }, () => [1])), /diversity/i)
+
+  assert.match(validateEnrollmentCaptureMetadata({
+    phasesCaptured: ['center', 'side_a', 'side_b', 'chin_down'],
+    phaseSampleCounts: { center: 2, side_a: 2, side_b: 2, chin_down: 1 },
+    genuinelyDiverse: true,
+    keptCount: 7,
+  }, Array.from({ length: 7 }, () => [1])), /required 8/i)
 })
 
 await run('server guided pose verification rejects mislabeled or incomplete pose coverage', () => {
@@ -563,6 +616,36 @@ await run('server guided pose verification rejects mislabeled or incomplete pose
   ])
   assert.equal(badCoverage.ok, false)
   assert.match(badCoverage.message, /opposite side pose/i)
+})
+
+await run('server enrollment descriptor set requires stable support pairs', () => {
+  const descriptor = (phaseOffset, sampleOffset = 0) => (
+    Array.from({ length: 1024 }, (_, index) => {
+      if (index === 0) return 1
+      if (index === 1) return phaseOffset + sampleOffset
+      return 0
+    })
+  )
+  const goodSamples = [
+    { phaseId: 'center', descriptor: descriptor(0, 0) },
+    { phaseId: 'center', descriptor: descriptor(0, 0.02) },
+    { phaseId: 'side_a', descriptor: descriptor(0.15, 0) },
+    { phaseId: 'side_a', descriptor: descriptor(0.15, 0.02) },
+    { phaseId: 'side_b', descriptor: descriptor(0.3, 0) },
+    { phaseId: 'side_b', descriptor: descriptor(0.3, 0.02) },
+    { phaseId: 'chin_down', descriptor: descriptor(0.45, 0) },
+    { phaseId: 'chin_down', descriptor: descriptor(0.45, 0.02) },
+  ]
+
+  assert.equal(validateEnrollmentServerDescriptorSet(goodSamples).ok, true)
+
+  const duplicatePair = goodSamples.map(sample => ({ ...sample, descriptor: sample.descriptor.slice() }))
+  duplicatePair[1].descriptor = duplicatePair[0].descriptor.slice()
+  assert.equal(validateEnrollmentServerDescriptorSet(duplicatePair).reasonCode, 'duplicate_phase_support_pair')
+
+  const inconsistentPair = goodSamples.map(sample => ({ ...sample, descriptor: sample.descriptor.slice() }))
+  inconsistentPair[1].descriptor = Array.from({ length: 1024 }, (_, index) => (index === 2 ? 1 : 0))
+  assert.equal(validateEnrollmentServerDescriptorSet(inconsistentPair).reasonCode, 'inconsistent_phase_support_pair')
 })
 
 await run('capture quality summary flags dim low-contrast frames', () => {

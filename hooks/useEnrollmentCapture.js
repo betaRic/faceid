@@ -30,6 +30,7 @@ import {
   scoreEnrollmentCapture,
   selectEnrollmentBurstSamples,
   summarizeEnrollmentCaptureQuality,
+  ENROLLMENT_REQUIRED_PHASE_SAMPLE_COUNTS,
   ENROLLMENT_TARGET_BURST_SAMPLES,
 } from '@/lib/biometrics/enrollment-burst'
 import { DETECTION_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, REGISTRATION_SCAN_INTERVAL_MS } from '@/lib/config'
@@ -510,14 +511,28 @@ export function useEnrollmentCapture(camera) {
         maxSamples: ENROLLMENT_TARGET_BURST_SAMPLES,
         minFrameGap: 1,
         requiredPhaseIds: CAPTURE_PHASES.map(phase => phase.id),
+        minPhaseCounts: ENROLLMENT_REQUIRED_PHASE_SAMPLE_COUNTS,
       })
 
+      const phaseSampleCounts = selected.reduce((counts, capture) => {
+        const phaseId = String(capture?.phaseId || '')
+        if (phaseId) counts[phaseId] = (counts[phaseId] || 0) + 1
+        return counts
+      }, {})
+      const supportPairsReady = CAPTURE_PHASES.every(phase => (
+        Number(phaseSampleCounts[phase.id] || 0) >= Number(ENROLLMENT_REQUIRED_PHASE_SAMPLE_COUNTS[phase.id] || 0)
+      ))
       const selectedPhases = new Set(selected.map(c => c.phaseIndex))
-      const genuinelyDiverse = selectedPhases.size === CAPTURE_PHASES.length
+      const genuinelyDiverse = selectedPhases.size === CAPTURE_PHASES.length && supportPairsReady
 
       // ✅ Warn if diversity is still low despite per-frame enforcement
       if (!genuinelyDiverse) {
-        console.warn('[EnrollmentCapture] Low diversity in selected samples — only phases:', [...selectedPhases])
+        console.warn('[EnrollmentCapture] Low support diversity in selected samples', {
+          phases: [...selectedPhases],
+          phaseSampleCounts,
+        })
+        onStatusUpdate?.('Could not keep 2 validated frames for every pose — retrying capture')
+        return null
       }
 
       const primary = selected[0]
@@ -531,6 +546,8 @@ export function useEnrollmentCapture(camera) {
         detectedCount: allCaptures.length,
         phasesCompleted: CAPTURE_PHASES.length,
         phasesCaptured: phaseIds,
+        phaseSampleCounts,
+        supportPairsReady,
         genuinelyDiverse,
         qualityScore: Math.round((Number(primary.score || 0)) * 100) / 100,
         primaryMetrics: primary.metrics,
@@ -556,6 +573,8 @@ export function useEnrollmentCapture(camera) {
           genuinelyDiverse,
           phasesCaptured: phaseIds.length,
           phaseIds,
+          phaseSampleCounts,
+          supportPairsReady,
           sideAYw,
         },
       }

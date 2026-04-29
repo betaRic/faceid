@@ -401,7 +401,7 @@ export default function RegisterView({
                     : 'bg-amber-100 text-amber-800'
                 }`}>
                   {burstSummary.keptCount} samples
-                  {burstSummary.genuinelyDiverse ? ' · Diverse angles ✓' : ' · Single angle — retake recommended'}
+                  {burstSummary.supportPairsReady ? ' · Support pairs ready' : ' · Retake recommended'}
                 </div>
               ) : null}
             </div>
