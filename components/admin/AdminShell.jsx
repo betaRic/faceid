@@ -3,13 +3,13 @@
 function NavButton({ item, active, onClick, compact = false }) {
   return (
     <button
-      className={`group flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+      className={`group flex items-center justify-between gap-2 border text-left text-sm font-semibold transition ${
         active
           ? 'border-navy bg-navy text-white shadow-sm'
           : item.disabled
             ? 'cursor-not-allowed border-black/5 bg-stone-50 text-muted opacity-50'
             : 'border-black/5 bg-white text-ink hover:border-black/10 hover:bg-stone-50'
-      } ${compact ? 'min-w-[8.5rem]' : 'w-full'}`}
+      } ${compact ? 'min-w-[6.6rem] rounded-xl px-3 py-2.5' : 'w-full rounded-2xl px-4 py-3'}`}
       disabled={item.disabled}
       onClick={() => onClick?.(item.id)}
       type="button"
@@ -39,9 +39,9 @@ export default function AdminShell({
   const activeItem = navItems.find(item => item.id === activePanel) || navItems[0] || null
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[linear-gradient(180deg,#f6f8fc_0%,#edf2f8_100%)] text-ink">
-      <header className="border-b border-black/5 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-4 py-4 sm:px-6">
+    <div className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[linear-gradient(180deg,#f6f8fc_0%,#edf2f8_100%)] text-ink md:h-[100dvh] md:overflow-hidden">
+      <header className="sticky top-0 z-30 shrink-0 border-b border-black/5 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-3 py-3 sm:px-6 sm:py-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0 flex-1">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-navy-dark">
@@ -55,7 +55,7 @@ export default function AdminShell({
                   {roleScope === 'regional' ? 'Regional control' : 'Office control'}
                 </span>
               </div>
-              <p className="mt-1 text-sm text-muted">
+              <p className="mt-1 hidden text-sm text-muted sm:block">
                 Mobile-first operations with server-enforced controls and low-scroll panels.
               </p>
             </div>
@@ -80,8 +80,8 @@ export default function AdminShell({
         </div>
       </header>
 
-      <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col px-4 py-4 sm:px-6">
-        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+      <div className={`mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-3 py-3 sm:px-6 md:min-h-0 md:py-4 ${navItems.length > 0 ? 'pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:pb-4' : 'pb-4'}`}>
+        <div className="grid flex-1 gap-3 md:min-h-0 md:gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="hidden min-h-0 xl:block">
             <div className="flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-black/5 bg-white shadow-sm">
               <div className="border-b border-black/5 px-5 py-4">
@@ -103,22 +103,22 @@ export default function AdminShell({
             </div>
           </aside>
 
-          <main className="min-h-0 overflow-hidden rounded-[1.75rem] border border-black/5 bg-white shadow-sm">
-            <div className="h-full overflow-hidden">
+          <main className="min-w-0 rounded-[1.25rem] border border-black/5 bg-white shadow-sm md:min-h-0 md:overflow-hidden md:rounded-[1.75rem]">
+            <div className="min-w-0 md:h-full md:overflow-hidden">
               {children}
             </div>
           </main>
         </div>
 
-        <footer className="mt-4 flex min-h-11 items-center justify-between rounded-2xl border border-black/5 bg-white/85 px-4 py-2 text-[11px] text-muted backdrop-blur">
+        <footer className="mt-4 hidden min-h-11 items-center justify-between rounded-2xl border border-black/5 bg-white/85 px-4 py-2 text-[11px] text-muted backdrop-blur md:flex">
           <span>DILG Region XII attendance workspace</span>
           <span>{activeItem?.label || 'Workspace'} panel</span>
         </footer>
       </div>
 
       {navItems.length > 0 ? (
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-black/5 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur md:hidden">
-          <div className="mx-auto flex max-w-[1600px] gap-2 overflow-x-auto">
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-black/5 bg-white/95 px-2 pb-[calc(0.65rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
+          <div className="mx-auto flex max-w-[1600px] gap-2 overflow-x-auto pb-1">
             {navItems.map((item) => (
               <NavButton
                 key={`bottom-nav-${item.id}`}

@@ -2,7 +2,7 @@ import { Badge } from '@/components/shared/ui'
 
 export default function SummaryTable({ summaryLoading, summaryRows, onEditAttendance }) {
   return (
-    <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
+    <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">
       {summaryLoading ? (
         <div className="flex flex-col items-center justify-center gap-3 py-12">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />

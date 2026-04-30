@@ -116,7 +116,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
             href="/scan"
           >
-            Kiosk
+            Scan
           </Link>
           <button
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
@@ -131,7 +131,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       onPanelChange={setActivePanel}
       roleScope={roleScope}
     >
-      <div className="flex h-full min-h-0 flex-col p-3 pb-24 sm:p-5 md:pb-5">
+      <div className="flex min-h-0 flex-col p-2 pb-3 sm:p-5 md:h-full md:pb-5">
         {isHr ? (
           <>
             {activePanel === 'employees' && <HrEmployeesPanel />}

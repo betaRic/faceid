@@ -16,12 +16,12 @@ export default function SummaryFilters({
   onSetSummaryOfficeFilter,
 }) {
   return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-      <div>
+    <div className="grid gap-3 lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,2fr)] lg:items-end">
+      <div className="min-w-0">
         <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Summary</div>
-        <h2 className="mt-1 font-display text-3xl font-bold text-ink">Daily Report</h2>
+        <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Daily Report</h2>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <Field label="Date">
           <input
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
@@ -42,7 +42,7 @@ export default function SummaryFilters({
             ))}
           </select>
         </Field>
-        <Field label="Employee">
+        <Field className="col-span-2 xl:col-span-1" label="Employee">
           <select
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
             disabled={summaryLoading}

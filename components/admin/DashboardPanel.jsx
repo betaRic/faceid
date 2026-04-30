@@ -187,19 +187,19 @@ function DashboardPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
+      className="flex min-h-0 flex-col gap-4 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
       <div className="shrink-0">
         <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Dashboard</div>
-        <h2 className="font-display text-3xl font-bold text-ink">Overview</h2>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
+        <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Overview</h2>
+        <p className="mt-2 hidden max-w-2xl text-sm text-muted sm:block">
           Executive snapshot first. Heavier biometric diagnostics stay collapsed until you actually need them.
         </p>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
         <div className="grid gap-5">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Offices" value={String(visibleOffices.length).padStart(2, '0')} />

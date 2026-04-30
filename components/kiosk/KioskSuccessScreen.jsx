@@ -122,17 +122,18 @@ export default function KioskSuccessScreen({
       }
 
   const modeLabel = attendanceMode ? (isWfh ? 'WFH' : 'On-site') : 'Attendance'
+  const recordedTime = currentMatch?.time || formatTime(currentMatch?.timestamp || Date.now())
 
   return (
-    <div className="absolute inset-0 z-[6] flex items-center justify-center overflow-auto px-4 py-6 sm:px-6">
+    <div className="absolute inset-0 z-[6] overflow-y-auto overscroll-contain bg-white px-3 py-3 sm:bg-transparent sm:px-6 sm:py-6">
       <motion.div
         animate={{ scale: 1, opacity: 1 }}
-        className="w-full max-w-5xl overflow-hidden rounded-[2rem] border border-black/5 bg-white/92 shadow-2xl backdrop-blur"
+        className="mx-auto w-full max-w-5xl overflow-hidden rounded-[1.25rem] border border-black/5 bg-white/95 shadow-2xl backdrop-blur sm:rounded-[2rem]"
         initial={{ scale: 0.97, opacity: 0 }}
       >
         <div className={`h-1.5 w-full ${statusTone.edge}`} />
 
-        <div className="grid gap-4 p-4 sm:gap-6 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_360px]">
+        <div className="grid gap-3 p-3 sm:gap-6 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_340px]">
           <div className="min-w-0">
             <div className="flex items-start gap-3 sm:gap-4">
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full sm:h-14 sm:w-14 ${statusTone.icon}`}>
@@ -152,8 +153,8 @@ export default function KioskSuccessScreen({
                 <div className={`text-xs font-semibold uppercase tracking-[0.2em] ${statusTone.banner}`}>
                   {currentMatch?.detail || 'Attendance recorded'}
                 </div>
-                <h2 className="mt-1 font-display text-2xl text-ink sm:mt-2 sm:text-4xl">{successTitle}</h2>
-                <div className="mt-2 text-xl font-semibold text-ink sm:mt-3 sm:text-3xl">{currentMatch?.name || 'Employee'}</div>
+                <h2 className="mt-1 font-display text-2xl font-bold leading-tight text-ink sm:mt-2 sm:text-4xl">{successTitle}</h2>
+                <div className="mt-2 break-words text-xl font-semibold leading-tight text-ink sm:mt-3 sm:text-3xl">{currentMatch?.name || 'Employee'}</div>
                 <div className="mt-1 text-sm text-muted sm:mt-2 sm:text-base">
                   {currentMatch?.officeName || 'Unassigned office'}
                 </div>
@@ -167,7 +168,7 @@ export default function KioskSuccessScreen({
             <div className={`mt-4 grid grid-cols-2 gap-2 rounded-[1.5rem] border p-3 sm:mt-6 sm:gap-3 sm:p-4 ${statusTone.summary} xl:grid-cols-4`}>
               <ResultStat
                 label={isReviewOnly ? 'Latest recorded time' : 'Time'}
-                value={currentMatch?.time || formatTime(currentMatch?.timestamp || Date.now())}
+                value={recordedTime}
               />
               <ResultStat label="Employee ID" value={currentMatch?.employeeId || '--'} />
               <ResultStat label="Office" value={currentMatch?.officeName || '--'} />
@@ -177,12 +178,16 @@ export default function KioskSuccessScreen({
             <MonthlySummary currentMatch={currentMatch} employeeId={currentMatch?.employeeId} />
           </div>
 
-          <aside className="flex flex-col gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 sm:gap-4 sm:p-5">
+          <aside className="flex flex-col gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-3 sm:gap-4 sm:rounded-[1.5rem] sm:p-5">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">Next actions</div>
-              <h3 className="mt-2 text-lg font-semibold text-ink">What to do next</h3>
+              <h3 className="mt-2 text-lg font-semibold text-ink">
+                {isReviewOnly ? 'Record already exists' : `Recorded at ${recordedTime}`}
+              </h3>
               <p className="mt-2 text-sm leading-6 text-muted">
-                Return to scan for the next employee, or open the attendance table for more detail.
+                {isReviewOnly
+                  ? 'No duplicate attendance log was added. Review the table if the employee needs a correction.'
+                  : 'The employee can leave this screen. It will close automatically for privacy.'}
               </p>
             </div>
 

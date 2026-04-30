@@ -93,12 +93,12 @@ export default function OfficePanel() {
 
   return (
     <>
-      <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-black/5 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
-          <div>
+      <section className="flex min-h-0 flex-col bg-white p-3 sm:p-6 md:h-full md:overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-black/5 pb-3 sm:flex-row sm:items-end sm:justify-between sm:pb-5">
+          <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Office</div>
-            <h2 className="mt-2 font-display text-3xl text-ink">Office list</h2>
-            <p className="mt-2 text-sm leading-7 text-muted">
+            <h2 className="mt-1 font-display text-2xl text-ink sm:mt-2 sm:text-3xl">Office list</h2>
+            <p className="mt-2 hidden text-sm leading-7 text-muted sm:block">
               Manage offices from one table. Edit opens a modal. Delete stays in the action column.
             </p>
           </div>
@@ -111,7 +111,7 @@ export default function OfficePanel() {
           </button>
         </div>
 
-        <div className="overflow-auto xl:min-h-0 xl:flex-1 xl:overflow-auto">
+        <div className="md:min-h-0 md:flex-1 md:overflow-auto">
           <div className="divide-y divide-black/5 bg-white lg:hidden">
             {visibleOffices.map(office => {
               const geofence = formatGeofenceSummary(office)

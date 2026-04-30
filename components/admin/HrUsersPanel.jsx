@@ -27,7 +27,7 @@ function HrUsersPanelInner() {
     return (
       <motion.section
         animate={{ opacity: 1, y: 0 }}
-        className="flex h-full items-center justify-center rounded-[2rem] border border-black/5 bg-white/80 p-6 shadow-glow backdrop-blur"
+        className="flex min-h-64 items-center justify-center bg-white p-6 md:h-full"
         initial={{ opacity: 0, y: 18 }}
         transition={{ duration: 0.35 }}
       >
@@ -59,16 +59,16 @@ function HrUsersPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
+      className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
       <div>
         <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">HR Users</div>
-        <h2 className="mt-1 font-display text-3xl font-bold text-ink">Manage HR</h2>
+        <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Manage HR</h2>
       </div>
 
-      <div className="grid gap-3 rounded-xl border border-black/5 bg-stone-50 p-4 lg:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 rounded-xl border border-black/5 bg-stone-50 p-3 sm:p-4 lg:grid-cols-2 xl:grid-cols-4">
         <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setHrEmail(e.target.value)} placeholder="Email" type="email" value={hrEmail} />
         <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setHrDisplayName(e.target.value)} placeholder="Display name" value={hrDisplayName} />
         <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setHrScope(e.target.value)} value={hrScope}>
@@ -92,7 +92,7 @@ function HrUsersPanelInner() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
+      <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">
         {!hrUsersLoaded ? (
           <div className="px-4 py-8 text-center text-sm text-muted">Loading...</div>
         ) : hrUsers.length === 0 ? (

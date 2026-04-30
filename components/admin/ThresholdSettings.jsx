@@ -263,11 +263,11 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
   const hasAnyPending = Object.keys(pending).length > 0
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white p-4 shadow-sm sm:p-6">
+    <section className="flex min-h-0 flex-col gap-4 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
       <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="font-display text-2xl font-bold text-ink">System Settings</h2>
-          <p className="mt-0.5 text-sm text-muted">Tune biometric matching, scan behavior, and enrollment without redeploying.</p>
+          <p className="mt-0.5 hidden text-sm text-muted sm:block">Tune biometric matching, scan behavior, and enrollment without redeploying.</p>
         </div>
         {hasAnyPending ? (
           <div className="flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
@@ -276,7 +276,7 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
         <div className="grid gap-5">
           {sections.biometric && (
             <BiometricSection

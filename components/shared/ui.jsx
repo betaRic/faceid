@@ -1,8 +1,8 @@
 import { useAdminStore } from '@/lib/admin/store'
 
-export function Field({ label, children }) {
+export function Field({ label, children, className = '' }) {
   return (
-    <label className="grid gap-2">
+    <label className={`grid gap-2 ${className}`}>
       <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</span>
       {children}
     </label>

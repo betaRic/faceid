@@ -129,17 +129,17 @@ function EmployeesPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/80 p-4 shadow-glow backdrop-blur sm:p-6"
+      className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+      <div className="grid gap-3 lg:grid-cols-[minmax(160px,0.55fr)_minmax(0,2.2fr)] lg:items-end">
+        <div className="min-w-0">
           <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Employees</div>
-          <h2 className="mt-1 font-display text-3xl font-bold text-ink">Directory</h2>
+          <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Directory</h2>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Field label="Search">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <Field className="col-span-2 xl:col-span-1" label="Search">
             <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={onSearchChange} placeholder="Name or ID" value={employeeQuery} />
           </Field>
           <Field label="Office">
@@ -166,11 +166,11 @@ function EmployeesPanelInner() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between rounded-xl border border-black/5 bg-stone-50 px-4 py-3 text-sm">
+      <div className="flex flex-col gap-3 rounded-xl border border-black/5 bg-stone-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-4">
         <span className="text-muted">
           {employeesLoaded ? `Showing ${employeeTotal} records` : 'Loading...'}
         </span>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={employees.length === 0} onClick={toggleSelectAllOnPage}>
             {allPageSelected ? 'Clear page' : 'Select page'}
           </ActionButton>
@@ -243,7 +243,7 @@ function EmployeesPanelInner() {
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
+      <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">
         <div className="divide-y divide-black/5 bg-white md:hidden">
           {!employeesLoaded ? (
             Array.from({ length: 4 }).map((_, index) => (

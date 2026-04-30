@@ -15,7 +15,7 @@ function AdminsPanelInner() {
 
   if (roleScope !== 'regional') {
     return (
-      <section className="flex h-full items-center justify-center rounded-[2rem] border border-black/5 bg-white p-6 shadow-sm">
+      <section className="flex min-h-64 items-center justify-center bg-white p-6 md:h-full">
         <div className="rounded-xl border border-dashed border-black/10 bg-stone-50 px-8 py-6 text-center text-sm text-muted">
           Only regional admins can manage admin accounts.
         </div>
@@ -71,11 +71,11 @@ function AdminsPanelInner() {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white p-4 shadow-sm sm:p-6">
+    <section className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Roles</div>
-          <h2 className="mt-1 font-display text-3xl font-bold text-ink">Manage Roles</h2>
+          <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Manage Roles</h2>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
@@ -113,7 +113,7 @@ function AdminsPanelInner() {
         
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-black/5">
+      <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">
         <div className="divide-y divide-black/5 bg-white lg:hidden">
           {(!adminsLoaded || !hrUsersLoaded) ? (
             <div className="px-4 py-8 text-center text-sm text-muted">Loading...</div>

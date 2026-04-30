@@ -1,0 +1,10 @@
+
+> face-id-app@1.0.0 dev
+> next dev
+
+▲ Next.js 16.2.4 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.1.237:3001
+- Environments: .env.local
+✓ Ready in 2.9s
+[?25h

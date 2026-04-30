@@ -9,7 +9,7 @@ import { usePortalDestination } from './usePortalDestination'
 const PUBLIC_ATTENDANCE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_ATTENDANCE === 'true'
 const baseNavItems = [
   { href: '/', label: 'Home' },
-  { href: '/scan', label: 'Kiosk' },
+  { href: '/scan', label: 'Scan' },
   ...(PUBLIC_ATTENDANCE_ENABLED ? [{ href: '/attendance', label: 'Attendance' }] : []),
   { href: '/registration', label: 'Register' },
 ]

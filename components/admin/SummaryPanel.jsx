@@ -28,7 +28,7 @@ function SummaryPanelInner() {
   }, [reloadSummary])
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white p-4 shadow-sm sm:p-6">
+    <section className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
       <SummaryFilters
         isRawExportPending={isPending('summary-raw-export')}
         summaryDate={summaryDate}
