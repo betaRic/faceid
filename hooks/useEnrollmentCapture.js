@@ -78,6 +78,9 @@ const YAW_SIDE_MIN = 0.12
 const YAW_SIDE_GOOD = 0.18
 const PITCH_CHIN_DOWN_MIN = 0.18
 const CAPTURE_METRIC_SAMPLE_STEP = 4
+const SERVER_SAMPLE_MAX_DIMENSION = 448
+const SERVER_SAMPLE_JPEG_QUALITY = 0.72
+const PREVIEW_JPEG_QUALITY = 0.85
 
 function getCaptureTimingProfile() {
   const device = getNavigatorDeviceProfile()
@@ -294,6 +297,26 @@ function measureCaptureMetrics(canvas, faceResult) {
   }
 }
 
+function buildJpegDataUrl(canvas, { maxDimension, quality }) {
+  const width = Number(canvas?.width || 0)
+  const height = Number(canvas?.height || 0)
+  if (!width || !height) return ''
+
+  const longest = Math.max(width, height)
+  if (longest <= maxDimension) {
+    return canvas.toDataURL('image/jpeg', quality)
+  }
+
+  const scale = maxDimension / longest
+  const target = document.createElement('canvas')
+  target.width = Math.max(1, Math.round(width * scale))
+  target.height = Math.max(1, Math.round(height * scale))
+  const ctx = target.getContext('2d')
+  if (!ctx) return canvas.toDataURL('image/jpeg', quality)
+  ctx.drawImage(canvas, 0, 0, target.width, target.height)
+  return target.toDataURL('image/jpeg', quality)
+}
+
 function buildCandidate(canvas, faceResult, phaseIndex, frameIndex, pose) {
   const metrics = measureCaptureMetrics(canvas, faceResult)
   return {
@@ -301,7 +324,14 @@ function buildCandidate(canvas, faceResult, phaseIndex, frameIndex, pose) {
     phaseId: CAPTURE_PHASES[phaseIndex]?.id || 'unknown',
     phaseIndex,
     descriptor: Array.from(faceResult?.descriptor || []),
-    previewUrl: canvas.toDataURL('image/jpeg', 0.85),
+    previewUrl: buildJpegDataUrl(canvas, {
+      maxDimension: PREVIEW_MAX_DIMENSION,
+      quality: PREVIEW_JPEG_QUALITY,
+    }),
+    frameDataUrl: buildJpegDataUrl(canvas, {
+      maxDimension: SERVER_SAMPLE_MAX_DIMENSION,
+      quality: SERVER_SAMPLE_JPEG_QUALITY,
+    }),
     metrics,
     score: scoreEnrollmentCapture(metrics),
     yaw: pose?.yaw ?? null,
@@ -561,7 +591,7 @@ export function useEnrollmentCapture(camera) {
         descriptors: selected.map(c => c.descriptor),
         sampleFrames: selected.map(c => ({
           phaseId: String(c.phaseId || ''),
-          frameDataUrl: c.previewUrl,
+          frameDataUrl: c.frameDataUrl || c.previewUrl,
         })),
         previewUrl: primary.previewUrl,
         qualitySummary: quality,

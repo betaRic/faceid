@@ -9,6 +9,19 @@ import { recalculateDailyAttendanceMetrics } from '@/lib/daily-attendance'
 import { toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
 
+function hasSegmentTimestamp(record) {
+  return Boolean(
+    record?.amInTimestamp ||
+    record?.amOutTimestamp ||
+    record?.pmInTimestamp ||
+    record?.pmOutTimestamp,
+  )
+}
+
+function shouldRebuildFromRawLogs(records) {
+  return records.some(record => Number(record?.logCount ?? 0) > 0 && !hasSegmentTimestamp(record))
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const date = String(searchParams.get('date') || '').trim()
@@ -33,7 +46,7 @@ export async function GET(request) {
     const offices = await listOfficeRecords(db)
     const officesById = new Map(offices.map(office => [office.id, office]))
     const cachedRecords = await listDailyAttendanceRecordsForDate(db, date)
-    if (cachedRecords.length > 0) {
+    if (cachedRecords.length > 0 && !shouldRebuildFromRawLogs(cachedRecords)) {
       const records = cachedRecords
         .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
         .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)

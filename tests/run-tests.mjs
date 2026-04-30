@@ -77,7 +77,7 @@ const {
   resolveOfficeSignatory,
   normalizeDivisionList,
 } = officesModule
-const { deriveDailyAttendanceRecord } = dailyAttendanceModule
+const { deriveDailyAttendanceRecord, getNextAttendanceAction } = dailyAttendanceModule
 const {
   buildAttendanceEntryTiming,
   getAttendanceHour,
@@ -368,6 +368,89 @@ await run('deriveDailyAttendanceRecord does not invent pmIn from extra morning s
   assert.equal(record.amOutTimestamp, logs[2].timestamp)
 })
 
+await run('lunch-gap first check-in is kept as PM in', () => {
+  const office = {
+    id: 'office-lunch',
+    name: 'Lunch Gap Office',
+    workPolicy: {
+      morningIn: '08:00',
+      morningOut: '12:00',
+      afternoonIn: '13:00',
+      afternoonOut: '17:00',
+    },
+  }
+  const person = {
+    employeeId: 'EMP-LUNCH',
+    name: 'Lunch Gap Employee',
+    officeId: office.id,
+    officeName: office.name,
+  }
+  const logs = [
+    {
+      action: 'checkin',
+      timestamp: new Date('2026-04-09T12:28:00+08:00').getTime(),
+      decisionCode: 'accepted_onsite',
+      officeId: office.id,
+      officeName: office.name,
+      name: person.name,
+    },
+  ]
+
+  const record = deriveDailyAttendanceRecord({
+    logs,
+    person,
+    office,
+    targetDateKey: '2026-04-09',
+  })
+
+  assert.equal(record.amInTimestamp, null)
+  assert.equal(record.amOutTimestamp, null)
+  assert.equal(record.pmInTimestamp, logs[0].timestamp)
+  assert.equal(record.pmOutTimestamp, null)
+  assert.match(record.pmIn, /12:28\s?PM/i)
+  assert.equal(record.logCount, 1)
+  assert.equal(getNextAttendanceAction(logs, office), 'checkout')
+})
+
+await run('lunch-gap check-in after AM checkout starts the PM segment', () => {
+  const office = {
+    id: 'office-lunch-2',
+    name: 'Lunch Gap Office 2',
+    workPolicy: {
+      morningIn: '08:00',
+      morningOut: '12:00',
+      afternoonIn: '13:00',
+      afternoonOut: '17:00',
+    },
+  }
+  const person = {
+    employeeId: 'EMP-LUNCH-2',
+    name: 'Lunch Gap Employee 2',
+    officeId: office.id,
+    officeName: office.name,
+  }
+  const logs = [
+    { action: 'checkin', timestamp: new Date('2026-04-09T08:00:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+    { action: 'checkout', timestamp: new Date('2026-04-09T12:00:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+    { action: 'checkin', timestamp: new Date('2026-04-09T12:30:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+    { action: 'checkout', timestamp: new Date('2026-04-09T17:00:00+08:00').getTime(), decisionCode: 'accepted_onsite', officeId: office.id, officeName: office.name, name: person.name },
+  ]
+
+  const record = deriveDailyAttendanceRecord({
+    logs,
+    person,
+    office,
+    targetDateKey: '2026-04-09',
+  })
+
+  assert.equal(record.amInTimestamp, logs[0].timestamp)
+  assert.equal(record.amOutTimestamp, logs[1].timestamp)
+  assert.equal(record.pmInTimestamp, logs[2].timestamp)
+  assert.equal(record.pmOutTimestamp, logs[3].timestamp)
+  assert.equal(record.status, 'Complete')
+  assert.equal(getNextAttendanceAction(logs, office), 'complete')
+})
+
 await run('buildAttendanceEntryTiming produces machine and display dates for Manila time', () => {
   const timing = buildAttendanceEntryTiming(new Date('2026-04-09T08:05:06+08:00').getTime())
 
@@ -453,6 +536,23 @@ await run('person directory summary uses sampleCount without requiring descripto
 
   assert.equal(person.sampleCount, 4)
   assert.equal(Object.hasOwn(person, 'descriptors'), false)
+})
+
+await run('person directory recognizes review_required duplicate status', () => {
+  const record = {
+    id: 'person-duplicate-review',
+    data: () => ({
+      name: 'SIMILAR FACE',
+      employeeId: 'EMP-DUP',
+      duplicateReviewStatus: 'review_required',
+      sampleCount: 8,
+    }),
+  }
+
+  const person = mapPersonRecord(record)
+
+  assert.equal(person.duplicateReviewRequired, true)
+  assert.equal(person.duplicateReviewStatus, 'review_required')
 })
 
 await run('guided enrollment sample frames normalize and validate required pose coverage', () => {

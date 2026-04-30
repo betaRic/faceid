@@ -44,6 +44,7 @@
     "html2pdf.js": "^0.14.0",
     "leaflet": "^1.9.4",
     "next": "^16.2.3",
+    "openvino-node": "^2026.1.0",
     "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -52,7 +53,9 @@
     "semver": "^7.7.4",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.17",
-    "zustand": "^5.0.12",
-    "openvino-node": "^2026.1.0"
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.15.0"
   }
 }

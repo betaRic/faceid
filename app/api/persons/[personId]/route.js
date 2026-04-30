@@ -174,7 +174,7 @@ export async function PUT(request, { params }) {
 
     if (
       approvalChanged
-      && existingData.duplicateReviewStatus === 'required'
+      && (existingData.duplicateReviewRequired === true || ['required', 'review_required'].includes(existingData.duplicateReviewStatus))
       && nextApprovalStatus !== PERSON_APPROVAL_PENDING
     ) {
       nextPerson.duplicateReviewRequired = false

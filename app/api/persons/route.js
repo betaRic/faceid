@@ -144,6 +144,7 @@ export async function POST(request) {
   if (validationError) {
     return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
   }
+  timer.mark('body')
 
   let publicSubmission = true
   try {
@@ -206,6 +207,14 @@ export async function POST(request) {
       body.captureMetadata,
     )
     timer.mark('server-enrollment')
+    if (Number(authoritativePayload.diagnostics?.totalWallMs || 0) >= 5000) {
+      console.warn('[PersonsAPI] Slow enrollment embedding', {
+        totalWallMs: authoritativePayload.diagnostics.totalWallMs,
+        acceptedCount: authoritativePayload.diagnostics.acceptedCount,
+        rejectedCount: authoritativePayload.diagnostics.rejectedFrames?.length || 0,
+        frameTimings: authoritativePayload.diagnostics.frameTimings || [],
+      })
+    }
     body = {
       ...body,
       descriptors: authoritativePayload.descriptors,
