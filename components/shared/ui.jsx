@@ -24,14 +24,14 @@ export function InfoCard({ title, text, tone = 'default' }) {
 
 export function WizardStep({ active, complete, number, title, description }) {
   return (
-    <div className={`rounded-[1.1rem] border px-3 py-3 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-navy/30 bg-navy/8' : 'border-black/5 bg-stone-50'}`}>
-      <div className="flex items-center gap-3">
-        <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-navy text-white' : 'bg-white text-muted'}`}>
+    <div className={`rounded-[1rem] border px-3 py-2.5 ${complete ? 'border-emerald-200 bg-emerald-50' : active ? 'border-navy/30 bg-navy/8' : 'border-black/5 bg-stone-50'}`}>
+      <div className="flex items-center gap-2.5">
+        <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-navy text-white' : 'bg-white text-muted'}`}>
           {number}
         </span>
         <div className="min-w-0">
           <div className="text-sm font-semibold text-ink">{title}</div>
-          <div className="hidden text-xs leading-5 text-muted sm:block">{description}</div>
+          <div className="hidden text-xs leading-5 text-muted xl:block">{description}</div>
         </div>
       </div>
     </div>

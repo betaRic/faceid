@@ -14,7 +14,7 @@ function resolveImportSpecifier(specifier, fileUrl) {
   if (specifier.startsWith('./') || specifier.startsWith('../')) {
     return new URL(ensureJsExtension(specifier), fileUrl).href
   }
-  return specifier
+  return import.meta.resolve(specifier)
 }
 
 function rewriteModuleSpecifiers(source, fileUrl) {
@@ -70,6 +70,7 @@ const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-da
 const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
 const csrfModule = await importLocalModule('../lib/csrf.js')
+const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 
 const {
   calculateDistanceMeters,
@@ -149,6 +150,7 @@ const {
 const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
 const { validateOrigin } = csrfModule
+const { syncPersonBiometricsRecord } = personBiometricsModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -501,6 +503,49 @@ await run('person approval defaults legacy records to approved and blocks pendin
   assert.equal(getEffectivePersonApprovalStatus({ approvalStatus: PERSON_APPROVAL_PENDING }), 'pending')
   assert.equal(isPersonBiometricActive({ active: true }), true)
   assert.equal(isPersonBiometricActive({ active: true, approvalStatus: PERSON_APPROVAL_PENDING }), false)
+})
+
+await run('person biometrics mirror wraps descriptor embeddings for Firestore', async () => {
+  let writtenPayload = null
+  let writtenOptions = null
+  const db = {
+    collection(name) {
+      assert.equal(name, 'person_biometrics')
+      return {
+        doc(id) {
+          assert.equal(id, 'person-1')
+          return {
+            async set(payload, options) {
+              writtenPayload = payload
+              writtenOptions = options
+            },
+          }
+        },
+      }
+    },
+  }
+
+  await syncPersonBiometricsRecord(db, 'person-1', {
+    employeeId: 'EMP-001',
+    name: 'Test Employee',
+    officeId: 'office-a',
+    officeName: 'Office A',
+    active: true,
+    approvalStatus: 'approved',
+    biometricModelVersion: 'human-faceres-server-v1',
+    descriptors: [
+      { vector: [1, 0, 0] },
+      { vector: [0, 1, 0] },
+    ],
+  })
+
+  assert.deepEqual(writtenOptions, { merge: true })
+  assert.equal(writtenPayload.descriptorCount, 2)
+  assert.deepEqual(writtenPayload.embeddings, [
+    { vector: [1, 0, 0] },
+    { vector: [0, 1, 0] },
+  ])
+  assert.equal(writtenPayload.embeddings.some(Array.isArray), false)
 })
 
 await run('enrollment descriptor batch wraps a single descriptor and validates multiple samples', () => {

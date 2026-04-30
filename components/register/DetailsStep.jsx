@@ -25,15 +25,8 @@ export default function DetailsStep({
   const isRegional = String(selectedOffice?.officeType || '') === 'Regional Office'
   const divisions = Array.isArray(selectedOffice?.divisions) ? selectedOffice.divisions : []
   return (
-    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="grid content-start gap-4 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4">
-        <div className="rounded-[1.25rem] border border-navy/10 bg-navy/5 px-4 py-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy/70">Before face capture</div>
-          <p className="mt-2 text-sm leading-7 text-muted">
-            Enter the employee details first. The system should not start biometric work before the basic identity fields are complete.
-          </p>
-        </div>
-
+    <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid content-start gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-3 sm:p-4">
         <Field label="Full name">
           <input
             ref={nameRef}
@@ -130,7 +123,7 @@ export default function DetailsStep({
         ) : null}
       </div>
 
-      <div className="grid content-start gap-3">
+      <div className="hidden content-start gap-3 xl:grid">
         <InfoCard
           title="Approval workflow"
           text="Public registration is open, but the submitted employee record and biometric samples stay pending and non-matchable until an admin explicitly approves them."

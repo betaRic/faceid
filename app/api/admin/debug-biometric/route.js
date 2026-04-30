@@ -8,6 +8,7 @@ import {
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
+import { createOriginGuard } from '@/lib/csrf'
 import {
   collectDuplicateCandidatePersons,
   evaluateDuplicateFaceCandidates,
@@ -70,6 +71,10 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const guard = createOriginGuard()
+  const originError = await guard(request)
+  if (originError) return originError
+
   const db = getAdminDb()
   const session = parseAdminSessionCookieValue(
     request.cookies.get(getAdminSessionCookieName())?.value,

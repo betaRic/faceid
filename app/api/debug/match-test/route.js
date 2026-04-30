@@ -6,6 +6,7 @@ import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCoo
 import { normalizeDescriptor, euclideanDistance } from '@/lib/biometrics/descriptor-utils'
 import { buildDescriptorBuckets } from '@/lib/biometric-index'
 import { getActiveThresholds } from '@/lib/thresholds'
+import { createOriginGuard } from '@/lib/csrf'
 
 /**
  * POST /api/debug/match-test
@@ -84,6 +85,10 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const guard = createOriginGuard()
+  const originError = await guard(request)
+  if (originError) return originError
+
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
