@@ -370,6 +370,110 @@ await run('deriveDailyAttendanceRecord does not invent pmIn from extra morning s
   assert.equal(record.amOutTimestamp, logs[2].timestamp)
 })
 
+await run('afternoon scan after missed AM out starts PM in', () => {
+  const office = {
+    id: 'office-missed-am-out',
+    name: 'Missed AM Out Office',
+    workPolicy: {
+      morningIn: '08:00',
+      morningOut: '12:00',
+      afternoonIn: '13:00',
+      afternoonOut: '17:00',
+    },
+  }
+  const person = {
+    employeeId: 'EMP-MISSED-AM',
+    name: 'Missed AM Out Employee',
+    officeId: office.id,
+    officeName: office.name,
+  }
+  const amIn = {
+    action: 'checkin',
+    timestamp: new Date('2026-05-05T09:07:00+08:00').getTime(),
+    decisionCode: 'accepted_onsite',
+    officeId: office.id,
+    officeName: office.name,
+    name: person.name,
+  }
+  const afternoonScanTimestamp = new Date('2026-05-05T13:03:00+08:00').getTime()
+
+  assert.equal(getNextAttendanceAction([amIn], office, afternoonScanTimestamp), 'checkin')
+
+  const logs = [
+    amIn,
+    {
+      action: 'checkin',
+      timestamp: afternoonScanTimestamp,
+      decisionCode: 'accepted_onsite',
+      officeId: office.id,
+      officeName: office.name,
+      name: person.name,
+    },
+  ]
+  const record = deriveDailyAttendanceRecord({
+    logs,
+    person,
+    office,
+    targetDateKey: '2026-05-05',
+  })
+
+  assert.equal(record.amInTimestamp, amIn.timestamp)
+  assert.equal(record.amOutTimestamp, null)
+  assert.equal(record.pmInTimestamp, afternoonScanTimestamp)
+  assert.equal(record.pmOutTimestamp, null)
+  assert.match(record.pmIn, /1:03\s?PM/i)
+})
+
+await run('orphan afternoon checkout after missed AM out is repaired as PM in', () => {
+  const office = {
+    id: 'office-repair-afternoon',
+    name: 'Repair Afternoon Office',
+    workPolicy: {
+      morningIn: '08:00',
+      morningOut: '12:00',
+      afternoonIn: '13:00',
+      afternoonOut: '17:00',
+    },
+  }
+  const person = {
+    employeeId: 'EMP-REPAIR',
+    name: 'Repair Employee',
+    officeId: office.id,
+    officeName: office.name,
+  }
+  const logs = [
+    {
+      action: 'checkin',
+      timestamp: new Date('2026-05-05T09:07:00+08:00').getTime(),
+      decisionCode: 'accepted_onsite',
+      officeId: office.id,
+      officeName: office.name,
+      name: person.name,
+    },
+    {
+      action: 'checkout',
+      timestamp: new Date('2026-05-05T13:03:00+08:00').getTime(),
+      decisionCode: 'accepted_onsite',
+      officeId: office.id,
+      officeName: office.name,
+      name: person.name,
+    },
+  ]
+
+  const record = deriveDailyAttendanceRecord({
+    logs,
+    person,
+    office,
+    targetDateKey: '2026-05-05',
+  })
+
+  assert.equal(record.amInTimestamp, logs[0].timestamp)
+  assert.equal(record.amOutTimestamp, null)
+  assert.equal(record.pmInTimestamp, logs[1].timestamp)
+  assert.equal(record.pmOutTimestamp, null)
+  assert.match(record.pmIn, /1:03\s?PM/i)
+})
+
 await run('lunch-gap first check-in is kept as PM in', () => {
   const office = {
     id: 'office-lunch',
@@ -1226,6 +1330,8 @@ await run('employee monthly attendance reads exact daily docs for the month', as
   assert.equal(requestedIds[29], 'EMP-001_2026-04-30')
   assert.equal(records.length, 1)
   assert.equal(records[0].dateKey, '2026-04-09')
+  assert.equal(records[0].pmInTimestamp, 2)
+  assert.equal(records[0].pmOutTimestamp, null)
 })
 
 await run('employee daily attendance reads one cached daily doc by id', async () => {
@@ -1260,6 +1366,47 @@ await run('employee daily attendance reads one cached daily doc by id', async ()
   assert.equal(requestedId, 'EMP-001_2026-04-09')
   assert.equal(record.employeeId, 'EMP-001')
   assert.equal(record.dateKey, '2026-04-09')
+})
+
+await run('cached daily attendance repairs orphan PM out from missed AM out', async () => {
+  const db = {
+    collection(name) {
+      assert.equal(name, 'attendance_daily')
+      return {
+        doc(id) {
+          assert.equal(id, 'EMP-001_2026-05-05')
+          return {
+            async get() {
+              return {
+                id,
+                exists: true,
+                data: () => ({
+                  employeeId: 'EMP-001',
+                  dateKey: '2026-05-05',
+                  logCount: 2,
+                  amInTimestamp: 1777933620000,
+                  amIn: '9:07 AM',
+                  amOut: '--',
+                  pmIn: '--',
+                  pmOutTimestamp: 1777942980000,
+                  pmOut: '1:03 PM',
+                }),
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+
+  const record = await getEmployeeDailyAttendanceRecord(db, 'EMP-001', '2026-05-05')
+
+  assert.equal(record.amIn, '9:07 AM')
+  assert.equal(record.amOut, '--')
+  assert.equal(record.pmInTimestamp, 1777942980000)
+  assert.equal(record.pmIn, '1:03 PM')
+  assert.equal(record.pmOutTimestamp, null)
+  assert.equal(record.pmOut, '--')
 })
 
 await run('raw attendance workbook creates one worksheet per employee', () => {
