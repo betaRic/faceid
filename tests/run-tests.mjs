@@ -1741,6 +1741,75 @@ await run('scan capture policy treats one low PAD frame as risk when temporal li
   assert.equal(assessment.riskFlags.includes('pad_gray_zone'), true)
 })
 
+await run('scan capture policy trusts server descriptor spread over legacy raw client spread', () => {
+  const assessment = getScanCapturePolicyAssessment({
+    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
+    antispoof: 0.29,
+    liveness: 0.82,
+    captureContext: {
+      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
+      verificationFrames: 4,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      screenOrientation: 'portrait-primary',
+      mobile: true,
+    },
+    scanDiagnostics: {
+      strictFrames: 3,
+      descriptorSpread: 5.4,
+      serverDescriptorSpread: 0.22,
+    },
+    livenessEvidence: {
+      earSamples: [0.25, 0.17, 0.25],
+      meshDeltas: [0.31, 0.29],
+      irisDeltas: [0.22, 0.24],
+      avgAntispoof: 0.42,
+      avgLiveness: 0.82,
+      frameCount: 3,
+    },
+  })
+
+  assert.equal(assessment.ok, true)
+  assert.equal(assessment.riskFlags.includes('legacy_client_descriptor_spread'), true)
+  assert.equal(assessment.riskFlags.includes('client_server_descriptor_spread_mismatch'), true)
+  assert.equal(assessment.riskFlags.includes('unstable_descriptor_spread'), false)
+})
+
+await run('scan capture policy blocks server-authoritative unstable descriptor spread', () => {
+  const assessment = getScanCapturePolicyAssessment({
+    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
+    antispoof: 0.82,
+    liveness: 0.82,
+    captureContext: {
+      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
+      verificationFrames: 4,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      screenOrientation: 'portrait-primary',
+      mobile: true,
+    },
+    scanDiagnostics: {
+      strictFrames: 3,
+      descriptorSpread: 0.12,
+      serverDescriptorSpread: 0.9,
+    },
+    livenessEvidence: {
+      earSamples: [0.25, 0.17, 0.25],
+      meshDeltas: [0.31, 0.29],
+      irisDeltas: [0.22, 0.24],
+      avgAntispoof: 0.82,
+      avgLiveness: 0.82,
+      frameCount: 3,
+    },
+  })
+
+  assert.equal(assessment.ok, false)
+  assert.equal(assessment.decisionCode, 'blocked_unstable_descriptor_burst')
+  assert.equal(assessment.riskFlags.includes('unstable_descriptor_spread'), true)
+})
+
 await run('scan capture policy treats low PAD as risk when only eye signal is weak', () => {
   const assessment = getScanCapturePolicyAssessment({
     descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
