@@ -3,6 +3,7 @@ import { existsSync } from 'fs'
 import path from 'path'
 
 import { loadRepoEnv } from './lib/load-local-env.mjs'
+import { parseFirebaseServiceAccount } from '../lib/firebase-service-account.js'
 
 loadRepoEnv()
 
@@ -103,15 +104,7 @@ function getOpenVinoReadiness() {
 }
 
 function firebaseAdminConfigured() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim()
-  if (!raw) return false
-
-  try {
-    const parsed = JSON.parse(raw)
-    return Boolean(parsed?.project_id && parsed?.private_key && parsed?.client_email)
-  } catch {
-    return false
-  }
+  return Boolean(parseFirebaseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT_JSON))
 }
 
 function isPublicAttendanceEnabled() {

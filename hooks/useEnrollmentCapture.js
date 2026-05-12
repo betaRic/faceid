@@ -190,7 +190,26 @@ function isPoseMatchingPhase(phaseType, yaw, sideAYaw, pitch) {
 function getReadyFaceFromDetections(detections, width, height) {
   const ready = selectOvalReadyFace(detections, width, height)
   if (!ready) {
-    return { ok: false, reason: 'oval', face: null, faceAreaRatio: null }
+    const largestFace = Array.isArray(detections) && detections.length > 0
+      ? detections.reduce((best, curr) => {
+          const currBox = curr?.detection?.box || curr?.box
+          const bestBox = best?.detection?.box || best?.box
+          if (!currBox) return best
+          if (!bestBox) return curr
+          return (currBox.width * currBox.height) > (bestBox.width * bestBox.height) ? curr : best
+        }, null)
+      : null
+    const largestBox = largestFace?.detection?.box || largestFace?.box || null
+    const faceAreaRatio = getFaceAreaRatioFromBox(largestBox, width, height)
+    const guidance = getFaceSizeGuidance(faceAreaRatio)
+
+    return {
+      ok: false,
+      reason: guidance.status !== 'not-detected' && !guidance.isCaptureReady ? 'distance' : 'oval',
+      face: null,
+      faceAreaRatio,
+      guidance,
+    }
   }
 
   const faceAreaRatio = ready.faceAreaRatio ?? getFaceAreaRatioFromBox(ready.box, width, height)

@@ -1,7 +1,13 @@
 import { useCallback } from 'react'
 import { isProbablyMobileDevice } from '@/lib/biometrics/device-profile'
 import { extractFaceRotationAngles, getHumanVerification } from '@/lib/biometrics/human'
-import { euclideanDistance, normalizeDescriptor } from '@/lib/biometrics/descriptor-utils'
+import { normalizeDescriptor } from '@/lib/biometrics/descriptor-utils'
+import {
+  aggregateDescriptors,
+  scoreVerificationCaptureQuality,
+  selectStableVerificationCaptures,
+  summarizeDescriptorSpread,
+} from '@/lib/biometrics/verification-capture'
 import {
   PREVIEW_MAX_DIMENSION,
   VERIFICATION_BURST_FRAMES,
@@ -19,22 +25,6 @@ const wait = duration => new Promise(resolve => {
 })
 
 const SERVER_SCAN_FRAME_LIMIT = 2
-
-function descriptorDistance(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return Number.POSITIVE_INFINITY
-  return euclideanDistance(a, b)
-}
-
-function aggregateDescriptors(descriptors) {
-  if (!Array.isArray(descriptors) || descriptors.length === 0) return null
-  if (descriptors.length === 1) return Array.from(normalizeDescriptor(descriptors[0]))
-
-  const normalized = descriptors.map(normalizeDescriptor)
-  const merged = normalized[0].map((_, index) => (
-    normalized.reduce((sum, vector) => sum + Number(vector[index] || 0), 0) / normalized.length
-  ))
-  return Array.from(normalizeDescriptor(merged))
-}
 
 function measureFrameMetrics(canvas, box) {
   if (!canvas || !box) {
@@ -58,23 +48,6 @@ function measureFrameMetrics(canvas, box) {
     faceAreaRatio,
     centeredness: Math.max(0, centeredness),
   }
-}
-
-function scoreCaptureQuality(detection, metrics) {
-  const yawAbs = Math.abs(Number(detection?.rotation?.yaw || 0))
-  const pitchAbs = Math.abs(Number(detection?.rotation?.pitch || 0))
-  const rollAbs = Math.abs(Number(detection?.rotation?.roll || 0))
-  const score = Number(detection?.detection?.score || 0)
-  const faceAreaRatio = Number(metrics?.faceAreaRatio || 0)
-  const centeredness = Number(metrics?.centeredness || 0)
-  const poseScore = Math.max(0, 1 - ((yawAbs * 0.7) + (pitchAbs * 0.4) + (rollAbs * 0.8)))
-
-  return (
-    (score * 2.4)
-    + (faceAreaRatio * 6.5)
-    + (centeredness * 1.8)
-    + (poseScore * 1.2)
-  )
 }
 
 let irisWarningIssued = false
@@ -116,17 +89,6 @@ function selectBestFallbackFace(detections) {
     const bestScore = Number(best?.detection?.score || 0) + ((best?.detection?.box?.width || 0) * (best?.detection?.box?.height || 0))
     return currScore > bestScore ? curr : best
   }, detections[0])
-}
-
-function summarizeDescriptorSpread(descriptors) {
-  if (!Array.isArray(descriptors) || descriptors.length < 2) return 0
-  let spread = 0
-  for (let i = 0; i < descriptors.length; i += 1) {
-    for (let j = i + 1; j < descriptors.length; j += 1) {
-      spread = Math.max(spread, descriptorDistance(descriptors[i], descriptors[j]))
-    }
-  }
-  return spread
 }
 
 export function useVerificationBurst(camera) {
@@ -173,7 +135,7 @@ export function useVerificationBurst(camera) {
             strictOval,
           },
           metrics,
-          qualityScore: scoreCaptureQuality(primary, metrics),
+          qualityScore: scoreVerificationCaptureQuality(primary, metrics),
         })
         if (strictOval) strictCaptureCount += 1
       }
@@ -202,10 +164,12 @@ export function useVerificationBurst(camera) {
     }))
     const livenessEvidence = analyzeBurstLiveness(livenessFrames)
 
-    const rankedCaptures = [...strictCaptures].sort((left, right) => right.qualityScore - left.qualityScore)
-    const aggregationCount = Math.min(3, rankedCaptures.length)
-    const selectedForAggregation = rankedCaptures.slice(0, aggregationCount)
-    const scanFrames = rankedCaptures.slice(0, SERVER_SCAN_FRAME_LIMIT).map(capture => ({
+    const selectedCaptures = selectStableVerificationCaptures(strictCaptures, {
+      aggregationCount: Math.min(3, strictCaptures.length),
+      serverFrameLimit: SERVER_SCAN_FRAME_LIMIT,
+    })
+    const selectedForAggregation = selectedCaptures.aggregationCaptures
+    const scanFrames = selectedCaptures.serverFrameCaptures.map(capture => ({
       frameDataUrl: capture.canvas.toDataURL('image/jpeg', 0.82),
     }))
     const descriptorSamples = selectedForAggregation
@@ -219,7 +183,7 @@ export function useVerificationBurst(camera) {
     const descriptorSpread = summarizeDescriptorSpread(descriptorSamples)
     const strictCount = strictCaptures.length
     const multiFaceFrames = captures.filter(capture => (capture?.detections?.length || 0) > 1).length
-    const bestCapture = rankedCaptures[0]
+    const bestCapture = selectedCaptures.bestCapture
 
     const burstDiagnostics = {
       targetFrames,

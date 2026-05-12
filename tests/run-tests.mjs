@@ -53,6 +53,7 @@ const personApprovalModule = await importLocalModule('../lib/person-approval.js'
 const enrollmentBurstModule = await importLocalModule('../lib/biometrics/enrollment-burst.js')
 const guidedCaptureValidationModule = await importLocalModule('../lib/biometrics/guided-capture-validation.js')
 const faceSizeGuidanceModule = await importLocalModule('../lib/biometrics/face-size-guidance.js')
+const verificationCaptureModule = await importLocalModule('../lib/biometrics/verification-capture.js')
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
 const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
@@ -71,6 +72,7 @@ const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
 const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
+const firebaseServiceAccountModule = await importLocalModule('../lib/firebase-service-account.js')
 
 const {
   calculateDistanceMeters,
@@ -103,12 +105,17 @@ const {
   validateEnrollmentCaptureMetadata,
   validateEnrollmentSampleFrames,
   selectEnrollmentBurstSamples,
+  scoreEnrollmentCapture,
   summarizeEnrollmentCaptureQuality,
   validateEnrollmentDescriptorBatch,
   validateEnrollmentServerDescriptorSet,
 } = enrollmentBurstModule
 const { verifyGuidedCapturePoseCoverage } = guidedCaptureValidationModule
 const { getFaceSizeGuidance } = faceSizeGuidanceModule
+const {
+  descriptorDistance: verificationDescriptorDistance,
+  selectStableVerificationCaptures,
+} = verificationCaptureModule
 const {
   getOvalCaptureRegion,
   isFaceInsideCaptureOval,
@@ -130,7 +137,10 @@ const {
   DUPLICATE_STATUS_REVIEW_REQUIRED,
 } = duplicateFaceModule
 const { mapPersonRecord } = personsDirectoryListModule
-const { buildMatchSupportSnapshot } = attendanceMatchPolicyModule
+const {
+  buildMatchSupportSnapshot,
+  isStrongUnambiguousSingleSampleSupport,
+} = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const { normalizeEntry } = attendanceNormalizeModule
 const {
@@ -151,6 +161,7 @@ const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
 const { validateOrigin } = csrfModule
 const { syncPersonBiometricsRecord } = personBiometricsModule
+const { parseFirebaseServiceAccount } = firebaseServiceAccountModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -173,6 +184,15 @@ function translateMesh(mesh, dx, dy) {
     point ? { x: point.x + dx, y: point.y + dy } : point
   ))
 }
+
+await run('Firebase service account parser accepts escaped JSON env values', () => {
+  const escaped = '{\\"type\\":\\"service_account\\",\\"project_id\\":\\"faceattend-test\\",\\"private_key\\":\\"line1\\\\nline2\\",\\"client_email\\":\\"svc@example.test\\"}'
+  const parsed = parseFirebaseServiceAccount(escaped)
+
+  assert.equal(parsed.project_id, 'faceattend-test')
+  assert.equal(parsed.client_email, 'svc@example.test')
+  assert.equal(parsed.private_key, 'line1\nline2')
+})
 
 await run('calculateDistanceMeters returns zero for same coordinates', () => {
   const point = { latitude: 6.4971, longitude: 124.8466 }
@@ -728,25 +748,25 @@ await run('burst sample selector keeps distinct top-ranked captures', () => {
   const captures = [
     {
       attempt: 0,
-      descriptor: [0, 0, 0],
+      descriptor: [1, 0, 0],
       metrics: { detectionScore: 0.95, faceAreaRatio: 0.2, centeredness: 0.9, brightness: 130, contrast: 35, sharpness: 25 },
       score: 9,
     },
     {
       attempt: 1,
-      descriptor: [0.01, 0.01, 0.01],
+      descriptor: [0.999, 0.02, 0],
       metrics: { detectionScore: 0.94, faceAreaRatio: 0.2, centeredness: 0.88, brightness: 128, contrast: 35, sharpness: 25 },
       score: 8.8,
     },
     {
       attempt: 3,
-      descriptor: [0.2, 0.2, 0.2],
+      descriptor: [0.8, 0.6, 0],
       metrics: { detectionScore: 0.91, faceAreaRatio: 0.18, centeredness: 0.8, brightness: 120, contrast: 32, sharpness: 22 },
       score: 8.2,
     },
     {
       attempt: 5,
-      descriptor: [0.38, 0.38, 0.38],
+      descriptor: [0.3, 0.95, 0],
       metrics: { detectionScore: 0.9, faceAreaRatio: 0.18, centeredness: 0.78, brightness: 118, contrast: 31, sharpness: 21 },
       score: 8,
     },
@@ -911,10 +931,44 @@ await run('capture quality summary flags dim low-contrast frames', () => {
 })
 
 await run('shared face-size guidance now prefers a closer capture band', () => {
-  assert.equal(getFaceSizeGuidance(0.12).status, 'move-closer')
-  assert.equal(getFaceSizeGuidance(0.24).status, 'ready')
+  assert.equal(getFaceSizeGuidance(0.12).status, 'too-far')
+  assert.equal(getFaceSizeGuidance(0.18).status, 'too-far')
+  assert.equal(getFaceSizeGuidance(0.32).status, 'move-closer')
+  assert.equal(getFaceSizeGuidance(0.55).status, 'ready')
   assert.equal(getFaceSizeGuidance(0.64).status, 'ready')
-  assert.equal(getFaceSizeGuidance(0.8).status, 'slightly-close')
+  assert.equal(getFaceSizeGuidance(0.72).status, 'slightly-close')
+  assert.equal(getFaceSizeGuidance(0.8).status, 'too-close')
+})
+
+await run('verification capture spread compares normalized descriptors', () => {
+  assert.equal(verificationDescriptorDistance([4, 0], [1, 0]), 0)
+})
+
+await run('verification capture selection prefers stable descriptors over one high-score outlier', () => {
+  const stableA = {
+    qualityScore: 4,
+    primary: { detection: { descriptor: [1, 0] } },
+  }
+  const stableB = {
+    qualityScore: 3.8,
+    primary: { detection: { descriptor: [0.99, 0.1] } },
+  }
+  const stableC = {
+    qualityScore: 3.7,
+    primary: { detection: { descriptor: [0.98, 0.2] } },
+  }
+  const outlier = {
+    qualityScore: 9,
+    primary: { detection: { descriptor: [0, 1] } },
+  }
+
+  const selected = selectStableVerificationCaptures([stableA, stableB, stableC, outlier], {
+    aggregationCount: 3,
+    serverFrameLimit: 2,
+  })
+
+  assert.equal(selected.aggregationCaptures.includes(outlier), false)
+  assert.equal(selected.serverFrameCaptures.includes(outlier), false)
 })
 
 await run('oval capture region center-crops wide frames to portrait view', () => {
@@ -928,26 +982,78 @@ await run('oval capture region center-crops wide frames to portrait view', () =>
 
 await run('oval fit gate accepts centered faces and rejects off-center faces', () => {
   assert.equal(
-    isFaceInsideCaptureOval({ x: 90, y: 140, width: 160, height: 160 }, 340, 500),
+    isFaceInsideCaptureOval({ x: 40, y: 120, width: 260, height: 260 }, 340, 500),
     true,
   )
 
   assert.equal(
-    isFaceInsideCaptureOval({ x: -80, y: 140, width: 160, height: 160 }, 340, 500),
+    isFaceInsideCaptureOval({ x: -80, y: 120, width: 260, height: 260 }, 340, 500),
     false,
   )
 })
 
 await run('oval ready face selector ignores detections outside the live oval', () => {
   const detections = [
-    { box: { x: 0, y: 145, width: 158, height: 158 } },
-    { box: { x: 92, y: 140, width: 160, height: 160 } },
+    { box: { x: -80, y: 120, width: 260, height: 260 } },
+    { box: { x: 40, y: 120, width: 260, height: 260 } },
   ]
 
   const ready = selectOvalReadyFace(detections, 340, 500)
 
   assert.ok(ready)
   assert.deepEqual(ready.box, detections[1].box)
+})
+
+await run('oval ready face selector prefers target distance over oversized close faces', () => {
+  const detections = [
+    { box: { x: 20, y: 100, width: 300, height: 300 } },
+    { box: { x: 2, y: 82, width: 336, height: 336 } },
+  ]
+
+  const ready = selectOvalReadyFace(detections, 340, 500)
+
+  assert.ok(ready)
+  assert.deepEqual(ready.box, detections[0].box)
+})
+
+await run('enrollment capture scoring favors target distance over close frames', () => {
+  const baseMetrics = {
+    detectionScore: 0.95,
+    centeredness: 0.95,
+    brightness: 128,
+    contrast: 25,
+    sharpness: 10,
+  }
+
+  const targetScore = scoreEnrollmentCapture({ ...baseMetrics, faceAreaRatio: 0.54 })
+  const closeScore = scoreEnrollmentCapture({ ...baseMetrics, faceAreaRatio: 0.74 })
+
+  assert.ok(targetScore > closeScore)
+})
+
+await run('enrollment burst ranking penalizes too-close samples', () => {
+  const targetSample = {
+    descriptor: [0, 0.001, 0.002],
+    metrics: {
+      detectionScore: 0.95,
+      faceAreaRatio: 0.54,
+      centeredness: 0.95,
+      brightness: 128,
+      contrast: 25,
+      sharpness: 10,
+    },
+  }
+  const closeSample = {
+    descriptor: [0.5, 0.501, 0.502],
+    metrics: {
+      ...targetSample.metrics,
+      faceAreaRatio: 0.74,
+    },
+  }
+
+  const selected = selectEnrollmentBurstSamples([closeSample, targetSample], { maxSamples: 1 })
+
+  assert.equal(selected[0]?.metrics?.faceAreaRatio, 0.54)
 })
 
 await run('DTR range spec normalizes custom and preset ranges', () => {
@@ -1130,7 +1236,7 @@ await run('biometric benchmark report exposes operational gate and honest realit
     challengeUsed: true,
     decisionCode: 'accepted_onsite',
     matchDebug: { bestDistance: 0.52, threshold: 0.78 },
-    scanDiagnostics: { deviceClass: 'mobile', bestFaceAreaRatio: 0.2, serverMatchMode: 'single_frame_fast', serverEmbeddingAverageMs: 720 },
+    scanDiagnostics: { deviceClass: 'mobile', bestFaceAreaRatio: 0.54, serverMatchMode: 'single_frame_fast', serverEmbeddingAverageMs: 720 },
     captureContext: { userAgent: 'Mozilla/5.0 Chrome/124.0', burstQualityScore: 4.1, mobile: true },
     performance: { totalMeasuredMs: 1600, serverEmbeddingMs: 820, matchingMs: 90, firestoreReadMs: 120, firestoreWriteMs: 180 },
   }
@@ -1143,7 +1249,7 @@ await run('biometric benchmark report exposes operational gate and honest realit
     ...Array.from({ length: 80 }, (_, index) => ({
       ...baseEvent,
       timestamp: now - (index * 1000),
-      scanDiagnostics: { deviceClass: 'desktop', bestFaceAreaRatio: 0.19, serverMatchMode: 'two_frame_fallback', serverEmbeddingAverageMs: 950 },
+      scanDiagnostics: { deviceClass: 'desktop', bestFaceAreaRatio: 0.55, serverMatchMode: 'two_frame_fallback', serverEmbeddingAverageMs: 950 },
       captureContext: { userAgent: 'Mozilla/5.0 Safari/605.1.15', burstQualityScore: 4.0, mobile: false },
       performance: { totalMeasuredMs: 2600, serverEmbeddingMs: 1900, matchingMs: 110, firestoreReadMs: 150, firestoreWriteMs: 220 },
     })),
@@ -1159,7 +1265,24 @@ await run('biometric benchmark report exposes operational gate and honest realit
   assert.equal(report.operationalGate.status, 'pass')
   assert.equal(report.summary.serverTimingCoverageRate, 1)
   assert.equal(report.summary.twoFrameFallbackRate, 0.4)
+  assert.equal(report.summary.identityResolvedRate, 1)
   assert.equal(report.deploymentHealth.p95ServerEmbeddingMs, 1900)
+})
+
+await run('biometric benchmark separates identity resolution from attendance writes', () => {
+  const events = [
+    { status: 'accepted', decisionCode: 'accepted_onsite', challengeUsed: true },
+    { status: 'blocked', decisionCode: 'blocked_recent_duplicate', challengeUsed: true },
+    { status: 'blocked', decisionCode: 'blocked_geofence', challengeUsed: true },
+    { status: 'blocked', decisionCode: 'blocked_no_reliable_match', challengeUsed: true },
+  ]
+
+  const report = buildBiometricBenchmarkReport(events, { days: 1, now: Date.now() })
+
+  assert.equal(report.deploymentHealth.successRate, 0.25)
+  assert.equal(report.deploymentHealth.identityResolvedRate, 0.75)
+  assert.equal(report.deploymentHealth.postMatchOperationalBlockRate, 0.5)
+  assert.equal(report.deploymentHealth.hardBiometricBlockRate, 0.25)
 })
 
 await run('shadow benchmark ranks 1:N candidates without storing descriptor vectors in report', () => {
@@ -1714,6 +1837,21 @@ await run('match support snapshot blocks weak single-sample support on marginal 
   assert.equal(snapshot.weakSingleSample, true)
 })
 
+await run('match support allows a strong single-sample hit only with a wide global margin', () => {
+  const descriptors = [
+    [1, 0],
+    [-1, 0],
+    [0, -1],
+    [-0.2, -0.98],
+  ]
+  const queryDescriptor = [0.84, 0.543]
+  const snapshot = buildMatchSupportSnapshot({ descriptors }, queryDescriptor, 0.85)
+
+  assert.equal(snapshot.weakSingleSample, true)
+  assert.equal(isStrongUnambiguousSingleSampleSupport(snapshot, { secondDistance: 0.82 }), true)
+  assert.equal(isStrongUnambiguousSingleSampleSupport(snapshot, { secondDistance: 0.7 }), false)
+})
+
 await run('multi-descriptor match blocks a single lucky descriptor without corroboration', () => {
   const candidateSamples = [
     {
@@ -1738,6 +1876,70 @@ await run('multi-descriptor match blocks a single lucky descriptor without corro
     [0.68, 0.733],
     [0.6, -0.8],
     [0.58, -0.81],
+  ]
+
+  const result = matchBiometricIndexMultiDescriptor(candidateSamples, descriptors, 0.85, 0.02)
+
+  assert.equal(result.ok, false)
+  assert.equal(result.decisionCode, 'blocked_no_reliable_match')
+  assert.equal(result.debug.supportGate, 'weak_query_descriptor_support')
+})
+
+await run('multi-descriptor match accepts strong partial query support with a safe challenger margin', () => {
+  const candidateSamples = [
+    {
+      personId: 'person-a',
+      employeeId: 'E-1',
+      name: 'Person A',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [1, 0],
+    },
+    {
+      personId: 'person-b',
+      employeeId: 'E-2',
+      name: 'Person B',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [0, 1],
+    },
+  ]
+
+  const descriptors = [
+    [0.88, 0.47],
+    [0.68, 0.733],
+  ]
+
+  const result = matchBiometricIndexMultiDescriptor(candidateSamples, descriptors, 0.85, 0.02)
+
+  assert.equal(result.ok, true)
+  assert.equal(result.personId, 'person-a')
+  assert.equal(result.debug.supportGate, 'strong_partial_query_support')
+})
+
+await run('multi-descriptor strong partial support still blocks a close raw challenger', () => {
+  const candidateSamples = [
+    {
+      personId: 'person-a',
+      employeeId: 'E-1',
+      name: 'Person A',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [1, 0],
+    },
+    {
+      personId: 'person-b',
+      employeeId: 'E-2',
+      name: 'Person B',
+      officeId: 'office-a',
+      officeName: 'Office A',
+      normalizedDescriptor: [0.45, 0.893],
+    },
+  ]
+
+  const descriptors = [
+    [0.88, 0.47],
+    [0.4, -0.916],
   ]
 
   const result = matchBiometricIndexMultiDescriptor(candidateSamples, descriptors, 0.85, 0.02)

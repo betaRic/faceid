@@ -1,7 +1,11 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { getFaceSizeGuidance } from '@/lib/biometrics/face-size-guidance'
+import {
+  CAPTURE_DISTANCE_METER_READY_END,
+  CAPTURE_DISTANCE_METER_READY_START,
+  getFaceSizeGuidance,
+} from '@/lib/biometrics/face-size-guidance'
 
 function resolveTone(status) {
   if (status === 'ready') {
@@ -27,6 +31,8 @@ function resolveTone(status) {
 export default function CaptureDistanceHud({ guidance, faceAreaRatio, className = '' }) {
   const resolvedGuidance = guidance || getFaceSizeGuidance(faceAreaRatio)
   const tone = resolveTone(resolvedGuidance.status)
+  const readyWidth = CAPTURE_DISTANCE_METER_READY_END - CAPTURE_DISTANCE_METER_READY_START
+  const nearWidth = 100 - CAPTURE_DISTANCE_METER_READY_END
 
   return (
     <motion.div
@@ -45,9 +51,9 @@ export default function CaptureDistanceHud({ guidance, faceAreaRatio, className 
             <span className="text-[10px] font-medium text-white/38">Far</span>
             <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-white/14">
               <div className="absolute inset-0 flex">
-                <div className="h-full w-[24%] bg-amber-500/28" />
-                <div className="h-full w-[52%] bg-emerald-500/28" />
-                <div className="h-full w-[24%] bg-amber-500/28" />
+                <div className="h-full bg-amber-500/28" style={{ width: `${CAPTURE_DISTANCE_METER_READY_START}%` }} />
+                <div className="h-full bg-emerald-500/28" style={{ width: `${readyWidth}%` }} />
+                <div className="h-full bg-amber-500/28" style={{ width: `${nearWidth}%` }} />
               </div>
               <div
                 className={`absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full transition-all duration-200 ${tone.marker}`}

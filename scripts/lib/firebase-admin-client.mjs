@@ -1,5 +1,6 @@
 import { cert, getApp, getApps, initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
+import { parseFirebaseServiceAccount } from '../../lib/firebase-service-account.js'
 
 let cachedServiceAccount = null
 let parsedServiceAccount = false
@@ -7,18 +8,7 @@ let parsedServiceAccount = false
 export function readFirebaseServiceAccount() {
   if (!parsedServiceAccount) {
     parsedServiceAccount = true
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim()
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw)
-        cachedServiceAccount = {
-          ...parsed,
-          private_key: parsed.private_key?.replace(/\\n/g, '\n'),
-        }
-      } catch {
-        cachedServiceAccount = null
-      }
-    }
+    cachedServiceAccount = parseFirebaseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)
   }
 
   return cachedServiceAccount

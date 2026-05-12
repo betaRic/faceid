@@ -52,6 +52,7 @@ function BreakdownList({ title, items = [] }) {
             </div>
             <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-muted">
               <span>Accepted {formatPercent(item.acceptedRate)}</span>
+              <span>Resolved {formatPercent(item.identityResolvedRate)}</span>
               <span>No-match {formatPercent(item.noReliableMatchRate)}</span>
               <span>Ambiguous {formatPercent(item.ambiguousRate)}</span>
             </div>
@@ -166,8 +167,9 @@ export function BiometricBenchmarkPanel() {
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="Success rate" value={formatPercent(deployment.successRate)} detail="Accepted scans across the full report window" />
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <MetricTile label="Accepted records" value={formatPercent(deployment.successRate)} detail="Scans that wrote attendance records" />
+        <MetricTile label="Identity resolved" value={formatPercent(deployment.identityResolvedRate)} detail="Accepted plus post-match operational blocks" />
         <MetricTile label="No-match rate" value={formatPercent(deployment.noMatchRate)} detail="Hard false-reject proxy" />
         <MetricTile label="Spoof blocks" value={formatPercent(deployment.spoofBlockRate)} detail="Anti-spoof and liveness hard blocks" />
         <MetricTile label="WFH accepted" value={formatPercent(deployment.wfhAcceptedRate)} detail="Accepted WFH scans in the report window" />
