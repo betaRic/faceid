@@ -6,6 +6,7 @@ import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
 import { downloadResponseBlob } from '@/lib/browser-download'
 import {
   buildDtrRangeSpec,
+  DTR_MONTH_NAMES,
   DTR_RANGE_OPTIONS,
   filterAttendanceDaysByRange,
   getDaysInMonth,
