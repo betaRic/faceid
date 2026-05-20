@@ -110,7 +110,6 @@ function StateMessage({ title, message, actionLabel = 'Back to scan', onAction }
 export default function AttendanceTableView({
   currentMatch,
   onBack,
-  autoReturnCountdown = null,
 }) {
   const [days, setDays] = useState([])
   const [loading, setLoading] = useState(true)
@@ -272,11 +271,6 @@ export default function AttendanceTableView({
                 <div className="mt-0.5 flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted sm:text-xs">
                   <span>{currentMatch.employeeId}</span>
                 </div>
-                {autoReturnCountdown ? (
-                  <div className="mt-1 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-                    Returns to scan in {autoReturnCountdown}s
-                  </div>
-                ) : null}
               </div>
 
               <button

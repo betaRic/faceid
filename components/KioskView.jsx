@@ -15,8 +15,6 @@ import KioskAlert from './kiosk/KioskAlert'
 import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
 import { clearAttendanceMatch, saveAttendanceMatch } from '@/lib/attendance-match'
 
-const RESULT_PRIVACY_RETURN_MS = 20_000
-
 export default function KioskView({
   camera,
   modelsReady,
@@ -29,10 +27,7 @@ export default function KioskView({
   const { recordScan, recordVerification, recordNetwork } = useKioskMetrics()
   const previousStateRef = useRef('idle')
   const resultKeyRef = useRef('')
-  const privacyReturnTimerRef = useRef(null)
-  const privacyReturnIntervalRef = useRef(null)
   const [postScanView, setPostScanView] = useState('success')
-  const [privacyReturnCountdown, setPrivacyReturnCountdown] = useState(null)
 
   const {
     kioskState,
@@ -140,55 +135,6 @@ export default function KioskView({
   const showResultScreen = Boolean(currentMatch && (isConfirmed || isReviewableBlockedState))
 
   useEffect(() => {
-    if (privacyReturnTimerRef.current) {
-      window.clearTimeout(privacyReturnTimerRef.current)
-      privacyReturnTimerRef.current = null
-    }
-    if (privacyReturnIntervalRef.current) {
-      window.clearInterval(privacyReturnIntervalRef.current)
-      privacyReturnIntervalRef.current = null
-    }
-    setPrivacyReturnCountdown(null)
-
-    if (!showResultScreen) {
-      return
-    }
-
-    const deadline = Date.now() + RESULT_PRIVACY_RETURN_MS
-    const syncCountdown = () => {
-      const remainingMs = Math.max(0, deadline - Date.now())
-      setPrivacyReturnCountdown(Math.max(1, Math.ceil(remainingMs / 1000)))
-    }
-
-    syncCountdown()
-    privacyReturnIntervalRef.current = window.setInterval(syncCountdown, 250)
-    privacyReturnTimerRef.current = window.setTimeout(() => {
-      clearAttendanceMatch()
-      setPostScanView('success')
-      scheduleResume(250)
-    }, RESULT_PRIVACY_RETURN_MS)
-
-    return () => {
-      if (privacyReturnTimerRef.current) {
-        window.clearTimeout(privacyReturnTimerRef.current)
-        privacyReturnTimerRef.current = null
-      }
-      if (privacyReturnIntervalRef.current) {
-        window.clearInterval(privacyReturnIntervalRef.current)
-        privacyReturnIntervalRef.current = null
-      }
-      setPrivacyReturnCountdown(null)
-    }
-  }, [
-    currentMatch?.employeeId,
-    currentMatch?.resultState,
-    currentMatch?.timestamp,
-    postScanView,
-    scheduleResume,
-    showResultScreen,
-  ])
-
-  useEffect(() => {
     if (!showResultScreen) {
       setPostScanView('success')
       resultKeyRef.current = ''
@@ -231,14 +177,12 @@ export default function KioskView({
               <AttendanceTableView
                 currentMatch={currentMatch}
                 onBack={handleBackToKiosk}
-                autoReturnCountdown={privacyReturnCountdown}
               />
             ) : (
               <KioskSuccessScreen
                 currentMatch={currentMatch}
                 onBack={handleBackToKiosk}
                 onViewTable={handleViewAttendanceTable}
-                privacyReturnCountdown={privacyReturnCountdown}
               />
             )
           ) : (

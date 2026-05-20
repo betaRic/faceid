@@ -16,7 +16,6 @@ function SummaryPanelInner() {
     summaryRows, summaryLoading,
     summaryEmployeeOptions,
     reloadSummary,
-    handleRawExport, isPending,
   } = useSummary()
   const { visibleOffices } = useOffices()
 
@@ -30,7 +29,6 @@ function SummaryPanelInner() {
   return (
     <section className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
       <SummaryFilters
-        isRawExportPending={isPending('summary-raw-export')}
         summaryDate={summaryDate}
         summaryEmployeeFilter={summaryEmployeeFilter}
         summaryEmployeeOptions={summaryEmployeeOptions}
@@ -38,7 +36,6 @@ function SummaryPanelInner() {
         summaryOfficeFilter={summaryOfficeFilter}
         summaryRows={summaryRows}
         visibleOffices={visibleOffices}
-        onExportRaw={handleRawExport}
         onOpenDtr={() => setShowDtr(true)}
         onSetSummaryDate={setSummaryDate}
         onSetSummaryEmployeeFilter={setSummaryEmployeeFilter}

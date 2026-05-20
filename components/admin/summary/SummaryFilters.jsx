@@ -1,7 +1,6 @@
 import { Field } from '@/components/shared/ui'
 
 export default function SummaryFilters({
-  isRawExportPending,
   summaryDate,
   summaryEmployeeFilter,
   summaryEmployeeOptions,
@@ -9,7 +8,6 @@ export default function SummaryFilters({
   summaryOfficeFilter,
   summaryRows,
   visibleOffices,
-  onExportRaw,
   onOpenDtr,
   onSetSummaryDate,
   onSetSummaryEmployeeFilter,
@@ -21,7 +19,7 @@ export default function SummaryFilters({
         <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Summary</div>
         <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Daily Report</h2>
       </div>
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Field label="Date">
           <input
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
@@ -57,16 +55,6 @@ export default function SummaryFilters({
             ))}
           </select>
         </Field>
-        <div className="flex items-end">
-          <button
-            className="w-full rounded-xl border border-black/10 px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100 disabled:opacity-50"
-            disabled={summaryRows.length === 0 || isRawExportPending}
-            onClick={onExportRaw}
-            type="button"
-          >
-            {isRawExportPending ? 'Downloading...' : 'Raw Download'}
-          </button>
-        </div>
         <div className="flex items-end">
           <button
             className="w-full rounded-xl border border-navy px-4 py-2 text-sm font-semibold text-navy transition hover:bg-navy/5 disabled:opacity-50"

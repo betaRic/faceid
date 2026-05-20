@@ -94,7 +94,6 @@ export default function KioskSuccessScreen({
   currentMatch,
   onBack,
   onViewTable,
-  privacyReturnCountdown = null,
 }) {
   const attendanceMode = String(currentMatch?.attendanceMode || '')
   const isWfh = attendanceMode.toLowerCase() === 'wfh'
@@ -187,17 +186,9 @@ export default function KioskSuccessScreen({
               <p className="mt-2 text-sm leading-6 text-muted">
                 {isReviewOnly
                   ? 'No duplicate attendance log was added. Review the table if the employee needs a correction.'
-                  : 'The employee can leave this screen. It will close automatically for privacy.'}
+                  : 'The employee can review this screen and open the attendance table before returning to scan.'}
               </p>
             </div>
-
-            {privacyReturnCountdown ? (
-              <div className="rounded-[1.25rem] border border-black/5 bg-white px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Privacy return</div>
-                <div className="mt-2 text-lg font-semibold text-ink">{privacyReturnCountdown}s</div>
-                <div className="mt-1 text-xs text-muted">This result closes automatically to protect employee privacy.</div>
-              </div>
-            ) : null}
 
             <div className="grid gap-3">
               {onViewTable ? (

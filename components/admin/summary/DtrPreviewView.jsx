@@ -2,6 +2,23 @@ import { MassDtrRenderer } from '@/components/hr/Form48Dtr'
 import { MassRawAttendanceRenderer } from '@/components/hr/RawAttendancePdf'
 import { DTR_MONTH_NAMES } from '@/lib/dtr'
 
+function getActiveRows(dtr) {
+  return (dtr?.rows || []).filter(row => row.inMonth && row.isActive)
+}
+
+function getRowsWithLogs(dtr) {
+  return getActiveRows(dtr).filter(row => row.amIn || row.amOut || row.pmIn || row.pmOut)
+}
+
+function SummaryMetric({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">{label}</div>
+      <div className="mt-2 text-3xl font-bold text-ink">{value}</div>
+    </div>
+  )
+}
+
 export default function DtrPreviewView({
   downloadKind,
   dtrEmployees,
@@ -13,6 +30,10 @@ export default function DtrPreviewView({
   onClose,
   onDownloadAgain,
 }) {
+  const totalCoveredRows = dtrEmployees.reduce((sum, dtr) => sum + getActiveRows(dtr).length, 0)
+  const coveredDays = downloadKind === 'raw' ? totalRawRows : totalCoveredRows
+  const documentType = downloadKind === 'raw' ? 'Raw Time In/Out' : 'CSC Form 48 DTR'
+
   return (
     <div className="print:contents">
       <div className="flex items-center justify-between border-b border-black/5 px-6 py-4 print:hidden">
@@ -49,67 +70,54 @@ export default function DtrPreviewView({
       </div>
 
       <div className="max-h-[70vh] overflow-auto print:max-h-none print:overflow-visible">
-        {downloadKind === 'raw' ? (
-          <div className="p-6 print:hidden">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Employees</div>
-                <div className="mt-2 text-3xl font-bold text-ink">{dtrEmployees.length}</div>
-              </div>
-              <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Covered Days</div>
-                <div className="mt-2 text-3xl font-bold text-ink">{totalRawRows}</div>
-              </div>
-              <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Document Type</div>
-                <div className="mt-2 text-lg font-bold text-ink">Raw Time In/Out</div>
-              </div>
+        <div className="p-6 print:hidden">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <SummaryMetric label="Employees" value={dtrEmployees.length} />
+            <SummaryMetric label="Covered Days" value={coveredDays} />
+            <SummaryMetric label="Document Type" value={documentType} />
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-black/5 bg-white">
+            <div className="border-b border-black/5 px-5 py-4">
+              <h4 className="text-sm font-semibold text-ink">Included Employees</h4>
+              <p className="mt-1 text-xs text-muted">
+                The PDF is ready. The full document is rendered off-screen for download so the modal stays fast and readable.
+              </p>
             </div>
+            <div className="divide-y divide-black/5">
+              {dtrEmployees.map((dtr, index) => {
+                const rows = getActiveRows(dtr)
+                const withLogs = getRowsWithLogs(dtr).length
 
-            <div className="mt-5 rounded-2xl border border-black/5 bg-white">
-              <div className="border-b border-black/5 px-5 py-4">
-                <h4 className="text-sm font-semibold text-ink">Included Employees</h4>
-                <p className="mt-1 text-xs text-muted">
-                  The PDF is ready. This preview keeps the modal readable and shows who is included instead of rendering the full raw sheet.
-                </p>
-              </div>
-              <div className="divide-y divide-black/5">
-                {dtrEmployees.map((dtr, index) => {
-                  const rows = (dtr?.rows || []).filter(row => row.inMonth && row.isActive)
-                  const withLogs = rows.filter(row => row.amIn || row.amOut || row.pmIn || row.pmOut).length
-
-                  return (
-                    <div key={`${dtr.employee?.employeeId || 'employee'}-${index}`} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] sm:items-center">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-ink">{dtr.employee?.name || 'Unknown employee'}</div>
-                        <div className="mt-1 text-xs text-muted">
-                          {(dtr.employee?.employeeId || '--')} • {(dtr.employee?.office || 'Unassigned')}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Period</div>
-                        <div className="mt-1 text-sm text-ink">{dtr.period?.periodLabel || '--'}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Rows</div>
-                        <div className="mt-1 text-sm text-ink">{rows.length}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">With Logs</div>
-                        <div className="mt-1 text-sm text-ink">{withLogs}</div>
+                return (
+                  <div key={`${dtr.employee?.employeeId || 'employee'}-${index}`} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] sm:items-center">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-ink">{dtr.employee?.name || 'Unknown employee'}</div>
+                      <div className="mt-1 text-xs text-muted">
+                        {(dtr.employee?.employeeId || '--')} • {(dtr.employee?.office || 'Unassigned')}
                       </div>
                     </div>
-                  )
-                })}
-              </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Period</div>
+                      <div className="mt-1 text-sm text-ink">{dtr.period?.periodLabel || '--'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Rows</div>
+                      <div className="mt-1 text-sm text-ink">{rows.length}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">With Logs</div>
+                      <div className="mt-1 text-sm text-ink">{withLogs}</div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
-        ) : (
-          <MassDtrRenderer employees={dtrEmployees} />
-        )}
+        </div>
       </div>
 
-      <div aria-hidden="true" className="fixed left-[-200vw] top-0">
+      <div aria-hidden="true" className="dtr-pdf-render-target fixed left-[-200vw] top-0">
         {downloadKind === 'raw'
           ? <MassRawAttendanceRenderer employees={dtrEmployees} />
           : <MassDtrRenderer employees={dtrEmployees} />}

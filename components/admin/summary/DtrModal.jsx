@@ -108,7 +108,7 @@ export default function DtrModal({ summaryRows, onClose }) {
         }
 
         const params = new URLSearchParams({
-          employeeId: personDoc.id,
+          employeeId: personDoc.employeeId || employee.employeeId,
           month: String(dtrMonth),
           year: String(dtrYear),
           range: dtrRange,
@@ -138,10 +138,10 @@ export default function DtrModal({ summaryRows, onClose }) {
           const suffix = formatDtrRangeForFilename(results[0]?.rangeSpec)
           if (downloadKind === 'raw') {
             const filename = `RAW_ATTENDANCE_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${results.length}employees`
-            await downloadDtrPdf(filename, '.form48-container', { orientation: 'portrait' })
+            await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container', { orientation: 'portrait' })
           } else {
             const filename = `DTR_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${results.length}employees`
-            await downloadDtrPdf(filename)
+            await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container')
           }
         }, 600)
       }
@@ -157,10 +157,10 @@ export default function DtrModal({ summaryRows, onClose }) {
     const suffix = formatDtrRangeForFilename(dtrEmployees[0]?.rangeSpec)
     if (downloadKind === 'raw') {
       const filename = `RAW_ATTENDANCE_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${dtrEmployees.length}employees`
-      await downloadDtrPdf(filename, '.form48-container', { orientation: 'portrait' })
+      await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container', { orientation: 'portrait' })
     } else {
       const filename = `DTR_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${dtrEmployees.length}employees`
-      await downloadDtrPdf(filename)
+      await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container')
     }
     setPdfDownloading(false)
   }, [downloadKind, dtrEmployees, dtrMonth, dtrYear])

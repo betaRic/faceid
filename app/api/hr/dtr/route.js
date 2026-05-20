@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
-import { loadPersonByEmployeeId, resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
+import { loadPersonByEmployeeIdentifier, resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
 import { listOfficeRecords } from '@/lib/office-directory'
 import { buildDtrDocument, getDaysInMonth } from '@/lib/dtr'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
@@ -37,7 +37,7 @@ export async function GET(request) {
   }
 
   try {
-    const personData = await loadPersonByEmployeeId(db, employeeId)
+    const personData = await loadPersonByEmployeeIdentifier(db, employeeId)
     if (!personData) {
       return NextResponse.json({ ok: false, message: 'Employee not found.' }, { status: 404 })
     }
