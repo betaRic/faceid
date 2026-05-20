@@ -3,6 +3,30 @@
 import { useEffect, useState } from 'react'
 import { SkeletonLine } from './Skeleton'
 
+const phDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+function getPhDateKey(date = new Date()) {
+  return phDateFormatter.format(date)
+}
+
+function getBenchmarkParams(windowKey) {
+  const dateKey = getPhDateKey()
+  const params = new URLSearchParams({ limit: '1200' })
+  if (windowKey === 'today') {
+    params.set('date', dateKey)
+  } else if (windowKey === 'month') {
+    params.set('month', dateKey.slice(0, 7))
+  } else {
+    params.set('days', '14')
+  }
+  return params
+}
+
 function formatPercent(value) {
   if (!Number.isFinite(value)) return '--'
   return `${(value * 100).toFixed(value >= 0.1 ? 1 : 2)}%`
@@ -69,11 +93,12 @@ export function BiometricBenchmarkPanel() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [copyState, setCopyState] = useState('')
+  const [windowKey, setWindowKey] = useState('today')
 
-  const fetchReport = async (isRefresh = false) => {
+  const fetchReport = async (isRefresh = false, selectedWindow = windowKey) => {
     if (isRefresh) setRefreshing(true)
     try {
-      const res = await fetch('/api/admin/biometric-benchmark?days=14&limit=1200', { cache: 'no-store' })
+      const res = await fetch(`/api/admin/biometric-benchmark?${getBenchmarkParams(selectedWindow).toString()}`, { cache: 'no-store' })
       const data = await res.json()
       if (data.ok) {
         setPayload(data)
@@ -88,10 +113,10 @@ export function BiometricBenchmarkPanel() {
   }
 
   useEffect(() => {
-    fetchReport()
-    const interval = setInterval(() => fetchReport(true), 120000)
+    fetchReport(false, windowKey)
+    const interval = setInterval(() => fetchReport(true, windowKey), 120000)
     return () => clearInterval(interval)
-  }, [])
+  }, [windowKey])
 
   if (loading) {
     return (
@@ -111,6 +136,8 @@ export function BiometricBenchmarkPanel() {
   const gate = report.operationalGate || { status: 'insufficient', checks: [], summary: 'No report available.' }
   const deployment = report.deploymentHealth || {}
   const breakdowns = report.breakdowns || {}
+  const pilot = report.pilot || {}
+  const staleEmployeeIds = pilot.staleResolvedEmployeeIds || []
   const handleCopyReport = async () => {
     if (!payload || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
       setCopyState('Copy unavailable')
@@ -142,12 +169,30 @@ export function BiometricBenchmarkPanel() {
                     : 'Insufficient evidence'}
             </span>
             <span className="text-xs text-muted">
-              {report.sampleSize} scan events • {report.windowDays} days
+              {report.sampleSize} scan events • {report.window?.label || `${report.windowDays} days`}
             </span>
           </div>
           <p className="mt-2 text-sm leading-6 text-muted">{gate.summary}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-full border border-black/10 bg-white p-0.5 text-xs font-semibold">
+            {[
+              ['today', 'Today'],
+              ['month', 'This month'],
+              ['recent', '14 days'],
+            ].map(([key, label]) => (
+              <button
+                className={`rounded-full px-3 py-1.5 transition ${
+                  windowKey === key ? 'bg-navy text-white' : 'text-ink hover:bg-stone-100'
+                }`}
+                key={key}
+                onClick={() => setWindowKey(key)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-ink transition hover:bg-stone-100 disabled:opacity-50"
             disabled={refreshing}
@@ -177,9 +222,15 @@ export function BiometricBenchmarkPanel() {
 
       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Challenge coverage" value={formatPercent(report.summary?.challengeCoverageRate)} detail="Requests using the challenge-protected path" />
-        <MetricTile label="Passive token rate" value={formatPercent(report.summary?.challengeCoverageRate)} detail="Scans using the replay-protected passive challenge path" />
+        <MetricTile label="Current employees" value={pilot.currentApprovedActiveEmployees ?? '--'} detail={`${pilot.uniqueCurrentAcceptedEmployeeIds ?? 0} accepted in this window`} />
         <MetricTile label="Mobile no-match" value={formatPercent(mobile.noReliableMatchRate)} detail={`${mobile.total || 0} mobile events`} />
         <MetricTile label="Desktop no-match" value={formatPercent(desktop.noReliableMatchRate)} detail={`${desktop.total || 0} desktop events`} />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <MetricTile label="Unresolved scan attempts" value={pilot.unresolvedEvents ?? '--'} detail="Mostly biometric blocks without an employee ID" />
+        <MetricTile label="Accepted current scans" value={pilot.acceptedCurrentEmployeeEvents ?? '--'} detail="Successful scans for current approved employees" />
+        <MetricTile label="Stale employee IDs" value={staleEmployeeIds.length} detail={staleEmployeeIds.length ? staleEmployeeIds.join(', ') : 'None in this window'} />
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

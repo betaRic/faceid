@@ -1,12 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import { Timestamp } from 'firebase-admin/firestore'
 import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
+import { resolveReportWindow } from '@/lib/report-window'
 
 function safeSerialize(value) {
   if (value === null || value === undefined) return value
@@ -46,11 +48,13 @@ export async function GET(request) {
   }
   const decisionCode = searchParams.get('decisionCode')
   const officeId = searchParams.get('officeId')
-  const dateFrom = searchParams.get('from')
-  const dateTo = searchParams.get('to')
   const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500)
   const offset = searchParams.get('offset')
-  let query = db.collection('audit_logs').orderBy('createdAt', 'desc')
+  const window = resolveReportWindow(searchParams, { now: Date.now(), defaultDays: 14, maxDays: 62 })
+  const query = db.collection('audit_logs')
+    .where('createdAt', '>=', Timestamp.fromMillis(window.startMs))
+    .where('createdAt', '<', Timestamp.fromMillis(window.endMs))
+    .orderBy('createdAt', 'desc')
 
   let snapshot = await query.limit(limit).get()
 
@@ -71,13 +75,11 @@ export async function GET(request) {
   })
 
   let filtered = logs
-  if (dateFrom || dateTo) {
-    const fromMs = dateFrom ? new Date(dateFrom).getTime() : 0
-    const toMs = dateTo ? new Date(dateTo).getTime() : Date.now()
-    filtered = logs.filter(log => {
-      const ts = log.createdAt ? new Date(log.createdAt).getTime() : 0
-      return ts >= fromMs && ts <= toMs
-    })
+  if (decisionCode) {
+    filtered = filtered.filter(log => String(log.metadata?.decisionCode || '') === decisionCode)
+  }
+  if (officeId) {
+    filtered = filtered.filter(log => String(log.officeId || log.metadata?.officeId || '') === officeId)
   }
 
   if (summary) {
@@ -109,6 +111,14 @@ export async function GET(request) {
 
     return NextResponse.json({
       total: filtered.length,
+      window: {
+        mode: window.mode,
+        label: window.label,
+        fromDateKey: window.fromDateKey,
+        toDateKey: window.toDateKey,
+        startUtc: window.startUtc,
+        endUtcExclusive: window.endUtcExclusive,
+      },
       byDecisionCode: byDecision,
       byDate,
       byHour,
@@ -119,8 +129,16 @@ export async function GET(request) {
   const nextOffset = logs.length > 0 ? logs[logs.length - 1].id : null
 
   return NextResponse.json({
-    logs,
+    logs: filtered,
     nextOffset,
-    total: snapshot.size,
+    total: filtered.length,
+    window: {
+      mode: window.mode,
+      label: window.label,
+      fromDateKey: window.fromDateKey,
+      toDateKey: window.toDateKey,
+      startUtc: window.startUtc,
+      endUtcExclusive: window.endUtcExclusive,
+    },
   })
 }

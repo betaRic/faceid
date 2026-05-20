@@ -1,8 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import { Timestamp } from 'firebase-admin/firestore'
 import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { resolveReportWindow } from '@/lib/report-window'
 
 function safeTimestamp(value) {
   if (!value) return null
@@ -42,11 +44,18 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100)
     const action = searchParams.get('action') || ''
+    const window = resolveReportWindow(searchParams, { now: Date.now(), defaultDays: 14, maxDays: 62 })
 
-    let query = db.collection('audit_logs').orderBy('createdAt', 'desc').limit(limit)
+    let query = db.collection('audit_logs')
+      .where('createdAt', '>=', Timestamp.fromMillis(window.startMs))
+      .where('createdAt', '<', Timestamp.fromMillis(window.endMs))
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
     if (action) {
       query = db.collection('audit_logs')
         .where('action', '==', action)
+        .where('createdAt', '>=', Timestamp.fromMillis(window.startMs))
+        .where('createdAt', '<', Timestamp.fromMillis(window.endMs))
         .orderBy('createdAt', 'desc')
         .limit(limit)
     }
@@ -73,7 +82,20 @@ export async function GET(request) {
       if (dc) byDecisionCode[dc] = (byDecisionCode[dc] || 0) + 1
     }
 
-    return NextResponse.json({ total: logs.length, byAction, byDecisionCode, logs })
+    return NextResponse.json({
+      total: logs.length,
+      window: {
+        mode: window.mode,
+        label: window.label,
+        fromDateKey: window.fromDateKey,
+        toDateKey: window.toDateKey,
+        startUtc: window.startUtc,
+        endUtcExclusive: window.endUtcExclusive,
+      },
+      byAction,
+      byDecisionCode,
+      logs,
+    })
   } catch (err) {
     return NextResponse.json(
       { error: err.message, stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined },

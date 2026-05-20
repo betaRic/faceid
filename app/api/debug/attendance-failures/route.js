@@ -1,8 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import { Timestamp } from 'firebase-admin/firestore'
 import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { resolveReportWindow } from '@/lib/report-window'
 
 function safeTimestamp(value) {
   if (!value) return null
@@ -41,9 +43,12 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100)
+    const window = resolveReportWindow(searchParams, { now: Date.now(), defaultDays: 14, maxDays: 62 })
 
     const snapshot = await db.collection('audit_logs')
       .where('action', '==', 'attendance_scan_failed')
+      .where('createdAt', '>=', Timestamp.fromMillis(window.startMs))
+      .where('createdAt', '<', Timestamp.fromMillis(window.endMs))
       .orderBy('createdAt', 'desc')
       .limit(limit)
       .get()
@@ -80,7 +85,19 @@ export async function GET(request) {
       byDecision[dc] = (byDecision[dc] || 0) + 1
     }
 
-    return NextResponse.json({ total: logs.length, byDecisionCode: byDecision, logs: diagnosed })
+    return NextResponse.json({
+      total: logs.length,
+      window: {
+        mode: window.mode,
+        label: window.label,
+        fromDateKey: window.fromDateKey,
+        toDateKey: window.toDateKey,
+        startUtc: window.startUtc,
+        endUtcExclusive: window.endUtcExclusive,
+      },
+      byDecisionCode: byDecision,
+      logs: diagnosed,
+    })
   } catch (err) {
     return NextResponse.json(
       { error: err.message, stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined },

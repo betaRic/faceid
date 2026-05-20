@@ -75,6 +75,7 @@ const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendan
 const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 const firebaseServiceAccountModule = await importLocalModule('../lib/firebase-service-account.js')
+const reportWindowModule = await importLocalModule('../lib/report-window.js')
 
 const {
   calculateDistanceMeters,
@@ -166,6 +167,7 @@ const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAtt
 const { validateOrigin } = csrfModule
 const { syncPersonBiometricsRecord } = personBiometricsModule
 const { parseFirebaseServiceAccount } = firebaseServiceAccountModule
+const { resolveReportWindow } = reportWindowModule
 const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
 const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
@@ -1393,6 +1395,46 @@ await run('biometric benchmark separates identity resolution from attendance wri
   assert.equal(report.deploymentHealth.identityResolvedRate, 0.75)
   assert.equal(report.deploymentHealth.postMatchOperationalBlockRate, 0.5)
   assert.equal(report.deploymentHealth.hardBiometricBlockRate, 0.25)
+})
+
+await run('report windows resolve exact Manila calendar dates and months', () => {
+  const todayWindow = resolveReportWindow(new URLSearchParams({ date: '2026-05-20' }), {
+    now: new Date('2026-05-20T09:00:00+08:00').getTime(),
+  })
+  assert.equal(todayWindow.mode, 'date')
+  assert.equal(todayWindow.fromDateKey, '2026-05-20')
+  assert.equal(todayWindow.toDateKey, '2026-05-20')
+  assert.equal(todayWindow.startUtc, '2026-05-19T16:00:00.000Z')
+  assert.equal(todayWindow.endUtcExclusive, '2026-05-20T16:00:00.000Z')
+
+  const monthWindow = resolveReportWindow(new URLSearchParams({ month: '2026-05' }), {
+    now: new Date('2026-05-20T09:00:00+08:00').getTime(),
+  })
+  assert.equal(monthWindow.mode, 'month')
+  assert.equal(monthWindow.windowDays, 31)
+  assert.equal(monthWindow.fromDateKey, '2026-05-01')
+  assert.equal(monthWindow.toDateKey, '2026-05-31')
+  assert.equal(monthWindow.endDateExclusive, '2026-06-01')
+})
+
+await run('biometric benchmark reports current pilot context separately from scan attempts', () => {
+  const report = buildBiometricBenchmarkReport([
+    { status: 'accepted', decisionCode: 'accepted_onsite', employeeId: 'EMP-1', challengeUsed: true },
+    { status: 'accepted', decisionCode: 'accepted_wfh', employeeId: 'OLD-1', challengeUsed: true },
+    { status: 'blocked', decisionCode: 'blocked_no_reliable_match', challengeUsed: true },
+  ], {
+    days: 1,
+    now: Date.now(),
+    currentEmployeeIds: ['EMP-1', 'EMP-2'],
+  })
+
+  assert.equal(report.pilot.currentApprovedActiveEmployees, 2)
+  assert.equal(report.pilot.uniqueAcceptedEmployeeIds, 2)
+  assert.equal(report.pilot.uniqueCurrentAcceptedEmployeeIds, 1)
+  assert.equal(report.pilot.acceptedCurrentEmployeeEvents, 1)
+  assert.equal(report.pilot.acceptedStaleEmployeeEvents, 1)
+  assert.equal(report.pilot.unresolvedEvents, 1)
+  assert.deepEqual(report.pilot.staleResolvedEmployeeIds, ['OLD-1'])
 })
 
 await run('shadow benchmark ranks 1:N candidates without storing descriptor vectors in report', () => {
