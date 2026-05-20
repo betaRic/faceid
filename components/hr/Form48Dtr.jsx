@@ -1,183 +1,134 @@
 'use client'
 
-const OFFICIAL_HOURS = {
-  amArrival: '08:00',
-  pmArrival: '01:00',
-  amDeparture: '12:00',
-  pmDeparture: '05:00',
-}
+const BLANK = '\u00a0'
 
-function SignatureBlock({ name, subtitle, extraTopSpace = false }) {
+function NameSlot({ value, label }) {
   return (
-    <div className={`text-center ${extraTopSpace ? 'pt-[8px]' : ''}`}>
-      <div className="mx-auto w-[68%] border-b border-black" />
-      <div className="pt-[3px] text-[8pt] font-bold uppercase leading-[1.2]">{name || ' '}</div>
-      <div className="pt-[2px] text-[8pt] leading-[1.2]">{subtitle || ' '}</div>
+    <div className="form48-name-slot">
+      <div className="form48-name-value">{value || BLANK}</div>
+      <div className="form48-name-label">{label}</div>
     </div>
   )
 }
 
-function HeaderField({ label, value, lineWidth }) {
+function DetailRow({ label, children, small }) {
   return (
-    <div className="grid grid-cols-[auto_1fr] items-end gap-x-[4px] text-[7.5pt] leading-[1.2]">
-      <span className="font-bold">{label}</span>
-      <span
-        className="inline-flex min-h-[14px] items-end border-b border-black px-[3px] pb-[2px] font-bold uppercase"
-        style={{ width: lineWidth }}
-      >
-        {value || ' '}
-      </span>
+    <div className="form48-detail-row">
+      <div className="form48-detail-label">
+        {label}
+        {small ? <span className="form48-detail-small"> {small}</span> : null}
+      </div>
+      <div className="form48-detail-colon">:</div>
+      <div className="form48-detail-value">{children || BLANK}</div>
     </div>
   )
 }
 
-function OfficialHoursBlock() {
+function hasTimes(row) {
+  return Boolean(row?.amIn || row?.amOut || row?.pmIn || row?.pmOut)
+}
+
+function renderTime(value, row) {
+  if (!row?.isActive) return BLANK
+  return value || BLANK
+}
+
+function DtrTimeRow({ row }) {
+  const weekendLabel = row?.inMonth && row?.isWeekend && !hasTimes(row) ? row.dayOfWeek : ''
+
+  if (weekendLabel) {
+    return (
+      <tr>
+        <td className="form48-day-cell">{row.day}</td>
+        <td className="form48-weekend-cell" colSpan={2}>{weekendLabel}</td>
+        <td className="form48-weekend-cell" colSpan={2}>{weekendLabel}</td>
+      </tr>
+    )
+  }
+
   return (
-    <table className="mt-[6px] w-full table-fixed border-collapse text-[7pt] leading-[1.2]">
-      <colgroup>
-        <col className="w-[34%]" />
-        <col className="w-[19%]" />
-        <col className="w-[19%]" />
-        <col className="w-[28%]" />
-      </colgroup>
-      <tbody>
-        <tr>
-          <td className="border border-black px-[3px] py-[3px] align-middle" rowSpan={2}>
-            <span className="block leading-[1.2]">Official hours for</span>
-          </td>
-          <td className="border border-black px-[3px] py-[3px] text-center font-bold leading-[1.2]">AM</td>
-          <td className="border border-black px-[3px] py-[3px] text-center font-bold leading-[1.2]">PM</td>
-          <td className="border border-black px-[3px] py-[3px] text-center font-bold align-middle leading-[1.2]" rowSpan={2}>
-            Regular Days
-          </td>
-        </tr>
-        <tr>
-          <td className="border border-black px-[3px] py-[3px]">
-            <div className="flex items-center justify-between gap-[4px] leading-[1.2]">
-              <span className="font-bold">Arrival</span>
-              <span className="font-bold">{OFFICIAL_HOURS.amArrival}</span>
-            </div>
-            <div className="mt-[2px] flex items-center justify-between gap-[4px] leading-[1.2]">
-              <span className="font-bold">Departure</span>
-              <span className="font-bold">{OFFICIAL_HOURS.amDeparture}</span>
-            </div>
-          </td>
-          <td className="border border-black px-[3px] py-[3px]">
-            <div className="flex items-center justify-center font-bold leading-[1.2]">{OFFICIAL_HOURS.pmArrival}</div>
-            <div className="mt-[2px] flex items-center justify-center font-bold leading-[1.2]">{OFFICIAL_HOURS.pmDeparture}</div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <tr>
+      <td className="form48-day-cell">{row?.inMonth ? row.day : BLANK}</td>
+      <td className="form48-time-cell">{renderTime(row?.amIn, row)}</td>
+      <td className="form48-time-cell">{renderTime(row?.amOut, row)}</td>
+      <td className="form48-time-cell">{renderTime(row?.pmIn, row)}</td>
+      <td className="form48-time-cell">{renderTime(row?.pmOut, row)}</td>
+    </tr>
   )
 }
 
-function DtrTable({ rows, summary }) {
+function DtrTimeTable({ rows }) {
   return (
-    <table className="mt-[3px] w-full table-fixed border-collapse text-[7pt] leading-[1.2]">
+    <table className="form48-time-table" aria-label="Daily time record entries">
       <colgroup>
-        <col className="w-[12%]" />
-        <col className="w-[17%]" />
-        <col className="w-[17%]" />
-        <col className="w-[17%]" />
-        <col className="w-[17%]" />
-        <col className="w-[10%]" />
-        <col className="w-[10%]" />
+        <col className="form48-col-day" />
+        <col className="form48-col-time" />
+        <col className="form48-col-time" />
+        <col className="form48-col-time" />
+        <col className="form48-col-time" />
       </colgroup>
       <thead>
         <tr>
-          <th rowSpan={2} className="border border-black px-[2px] py-[3px] text-center font-bold align-middle leading-[1.2]">Day</th>
-          <th colSpan={2} className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">AM</th>
-          <th colSpan={2} className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">PM</th>
-          <th colSpan={2} className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">Undertime</th>
-        </tr>
-        <tr>
-          <th className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">Arrival</th>
-          <th className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">Depart.</th>
-          <th className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">Arrival</th>
-          <th className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">Depart.</th>
-          <th className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">Hour(s)</th>
-          <th className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">Mins.</th>
+          <th className="form48-day-header">Days</th>
+          <th className="form48-time-header">Arrival</th>
+          <th className="form48-time-header">Departure</th>
+          <th className="form48-time-header">Arrival</th>
+          <th className="form48-time-header">Departure</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((row) => (
-          <tr key={row.dateKey}>
-            <td className="border border-black px-[2px] py-[3px] text-center align-middle leading-[1.2]">{row.isActive ? row.day : ''}</td>
-            <td className="border border-black px-[2px] py-[3px] text-center align-middle leading-[1.2]">{renderTimeCell(row.amIn, row)}</td>
-            <td className="border border-black px-[2px] py-[3px] text-center align-middle leading-[1.2]">{row.amOut || ' '}</td>
-            <td className="border border-black px-[2px] py-[3px] text-center align-middle leading-[1.2]">{row.pmIn || ' '}</td>
-            <td className="border border-black px-[2px] py-[3px] text-center align-middle leading-[1.2]">{row.pmOut || ' '}</td>
-            <td className="border border-black px-[2px] py-[3px] text-center align-middle leading-[1.2]">
-              {row.undertimeHours !== '' ? row.undertimeHours : ' '}
-            </td>
-            <td className="border border-black px-[2px] py-[3px] text-center align-middle leading-[1.2]">
-              {row.undertimeMinutes !== '' ? row.undertimeMinutes : ' '}
-            </td>
-          </tr>
+          <DtrTimeRow key={row.dateKey} row={row} />
         ))}
-        <tr>
-          <td className="border border-black px-[2px] py-[3px] text-center leading-[1.2]">&nbsp;</td>
-          <td colSpan={4} className="border border-black px-[2px] py-[3px] text-center font-bold leading-[1.2]">TOTAL</td>
-          <td className="border border-black px-[2px] py-[3px] text-center leading-[1.2]">
-            {summary?.undertime ? Math.floor(summary.undertime / 60) : ' '}
-          </td>
-          <td className="border border-black px-[2px] py-[3px] text-center leading-[1.2]">
-            {summary?.undertime ? summary.undertime % 60 : ' '}
-          </td>
-        </tr>
       </tbody>
     </table>
   )
 }
 
-function renderTimeCell(value, row) {
-  if (value) return value
-  if (row?.isWeekend && row?.isActive) return row.dayOfWeek
-  return ' '
-}
-
 function DtrCopy({ dtr }) {
   const rows = dtr?.rows || []
-  const summary = dtr?.summary || {}
-  const name = dtr?.employee?.name || ''
-  const position = dtr?.employee?.position || ''
+  const employee = dtr?.employee || {}
+  const nameParts = employee.nameParts || {}
   const periodLabel = dtr?.period?.periodLabel || ''
-  const signatoryName = dtr?.signatory?.name || ''
-  const signatoryPosition = dtr?.signatory?.position || ''
+  const officialHours = dtr?.officialHours || {}
+  const employeeName = String(employee.name || '').trim()
+  const signatoryName = String(dtr?.signatory?.name || '').trim()
+  const signatoryPosition = String(dtr?.signatory?.position || '').trim()
 
   return (
-    <section
-      className="flex min-h-[9.72in] flex-col bg-white px-[1px] pt-[1px] text-black"
-      style={{ fontFamily: 'Arial, sans-serif' }}
-    >
-      <div className="text-center leading-[1.2]">
-        <div className="text-[7.5pt] font-bold uppercase">CIVIL SERVICE COMMISSION FORM NO. 48</div>
-        <div className="pt-[2px] text-[9pt] font-bold uppercase">DAILY TIME RECORD</div>
+    <section className="form48-copy">
+      <div className="form48-code">CSC FORM 48</div>
+      <h1 className="form48-title">DAILY&nbsp; TIME&nbsp; RECORD</h1>
+
+      <div className="form48-name-grid">
+        <NameSlot value={nameParts.familyName} label="Family Name" />
+        <NameSlot value={nameParts.firstName} label="First Name" />
+        <NameSlot value={nameParts.middleInitial} label="M.I." />
       </div>
 
-      <div className="mt-[12px] space-y-[5px]">
-        <HeaderField label="Name:" value={name} lineWidth="72%" />
-        <HeaderField label="Position:" value={position} lineWidth="72%" />
-        <HeaderField label="For the month of:" value={periodLabel} lineWidth="54%" />
+      <div className="form48-details">
+        <DetailRow label="For the Month of">{periodLabel}</DetailRow>
+        <DetailRow label="Official  Hours" small="(Reg. Days)">{officialHours.regularDays || 'Monday- Friday'}</DetailRow>
+        <DetailRow label="Arrival & Departure">{officialHours.arrivalDeparture || '8:00-12:00 to 1:00-5:00'}</DetailRow>
       </div>
 
-      <OfficialHoursBlock />
-      <DtrTable rows={rows} summary={summary} />
+      <DtrTimeTable rows={rows} />
 
-      <div className="mt-auto flex flex-col">
-        <div className="px-[1px] pt-[10px] text-[7.5pt] italic leading-[1.35]">
-          <div>I certify on my honor that the above is the true and correct report of the hours of work I performed.</div>
-          <div>Record of which was made daily at the time of arrival and departure from the office.</div>
-        </div>
+      <div className="form48-certification">
+        <p>I hereby CERTIFY on my honor that the above is true and correct report of the hours</p>
+        <p>performed. Records of which was made daily at the time of arrival and departure from office</p>
+      </div>
 
-        <div className="h-[10px]" />
-        <SignatureBlock name={name} subtitle="Name & Signature of Employee" />
+      <div className="form48-signature-space">
+        <div className="form48-employee-name">{employeeName || 'Name of Employee'}</div>
+        <div className="form48-signature-label">Signature of Employee</div>
+      </div>
 
-        <div className="pt-[12px] text-center text-[7.5pt] italic leading-[1.2]">Validated as to the prescribed official hours.</div>
+      <div className="form48-verified">Verified as to prescribed office hours:</div>
 
-        <div className="h-[12px]" />
-        <SignatureBlock name={signatoryName} subtitle={signatoryPosition} />
+      <div className="form48-head-block">
+        <div className="form48-head-name">{signatoryName || 'Name of Head of Office'}</div>
+        <div className="form48-head-position">{signatoryPosition || 'Position of Head of Office'}</div>
       </div>
     </section>
   )
@@ -185,13 +136,10 @@ function DtrCopy({ dtr }) {
 
 function SingleEmployeeDtrPage({ dtr, isFirst }) {
   return (
-    <div
-      className={`form48-page mx-auto box-border h-[11.69in] w-[8.27in] bg-white ${!isFirst ? 'print:break-before-page' : ''}`}
-      style={{ padding: '0.75in 0.25in', boxSizing: 'border-box' }}
-    >
-      <div className="grid h-full grid-cols-[3.58in_0.21in_3.58in] items-start justify-center">
+    <div className={`form48-page ${!isFirst ? 'print:break-before-page' : ''}`}>
+      <div className="form48-page-grid">
         <DtrCopy dtr={dtr} />
-        <div />
+        <div aria-hidden="true" />
         <DtrCopy dtr={dtr} />
       </div>
     </div>
@@ -233,6 +181,235 @@ export function MassDtrRenderer({ employees }) {
 function PrintStyles() {
   return (
     <style jsx global>{`
+      .form48-container {
+        background: #ffffff;
+      }
+
+      .form48-page {
+        box-sizing: border-box;
+        width: 8.27in;
+        height: 11.69in;
+        margin: 0 auto;
+        padding: 0.34in 0.24in;
+        background: #ffffff;
+        color: #000000;
+      }
+
+      .form48-page-grid {
+        display: grid;
+        grid-template-columns: 3.72in 0.19in 3.72in;
+        justify-content: center;
+        height: 100%;
+      }
+
+      .form48-copy {
+        box-sizing: border-box;
+        display: flex;
+        min-width: 0;
+        height: 100%;
+        flex-direction: column;
+        border: 2px solid #000000;
+        padding: 0.16in 0.12in 0.13in;
+        font-family: Arial, sans-serif;
+        color: #000000;
+      }
+
+      .form48-code {
+        min-height: 0.27in;
+        font-size: 10pt;
+        line-height: 1.1;
+      }
+
+      .form48-title {
+        margin: 0.2in 0 0;
+        text-align: center;
+        font-family: Algerian, "Arial Black", Arial, sans-serif;
+        font-size: 16pt;
+        font-weight: 700;
+        letter-spacing: 0;
+        line-height: 1;
+      }
+
+      .form48-name-grid {
+        display: grid;
+        grid-template-columns: 1.04fr 1.36fr 0.62fr;
+        column-gap: 0.12in;
+        margin-top: 0.45in;
+      }
+
+      .form48-name-value {
+        min-height: 0.18in;
+        border-bottom: 1.5px solid #000000;
+        text-align: center;
+        font-size: 9pt;
+        font-weight: 700;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+
+      .form48-name-label {
+        padding-top: 0.04in;
+        text-align: center;
+        font-size: 10pt;
+        line-height: 1;
+      }
+
+      .form48-details {
+        margin-top: 0.22in;
+      }
+
+      .form48-detail-row {
+        display: grid;
+        grid-template-columns: 1.31in 0.09in minmax(0, 1fr);
+        align-items: baseline;
+        min-height: 0.18in;
+        font-size: 10pt;
+        line-height: 1.05;
+      }
+
+      .form48-detail-label {
+        white-space: nowrap;
+      }
+
+      .form48-detail-small {
+        font-size: 7pt;
+      }
+
+      .form48-detail-colon {
+        text-align: center;
+        font-weight: 700;
+      }
+
+      .form48-detail-value {
+        overflow: hidden;
+        font-size: 10pt;
+        font-weight: 700;
+        line-height: 1.05;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .form48-time-table {
+        width: 100%;
+        margin-top: 0.24in;
+        table-layout: fixed;
+        border-collapse: collapse;
+        font-size: 9pt;
+        line-height: 1;
+      }
+
+      .form48-col-day {
+        width: 13%;
+      }
+
+      .form48-col-time {
+        width: 21.75%;
+      }
+
+      .form48-day-header,
+      .form48-time-header {
+        height: 0.18in;
+        padding: 0;
+        text-align: center;
+        font-weight: 400;
+        line-height: 1;
+      }
+
+      .form48-time-header {
+        border-bottom: 1.5px solid #000000;
+        font-size: 11pt;
+      }
+
+      .form48-day-header {
+        font-size: 8pt;
+      }
+
+      .form48-day-cell,
+      .form48-time-cell,
+      .form48-weekend-cell {
+        height: 0.178in;
+        padding: 0;
+        text-align: center;
+        vertical-align: middle;
+      }
+
+      .form48-day-cell {
+        font-size: 9pt;
+        font-weight: 700;
+      }
+
+      .form48-time-cell,
+      .form48-weekend-cell {
+        border-bottom: 1.5px solid #000000;
+      }
+
+      .form48-time-cell {
+        font-size: 8.5pt;
+      }
+
+      .form48-weekend-cell {
+        font-size: 11pt;
+        font-style: italic;
+        font-weight: 700;
+      }
+
+      .form48-certification {
+        margin-top: 0.19in;
+        text-align: center;
+        font-size: 6.5pt;
+        line-height: 1.45;
+      }
+
+      .form48-certification p {
+        margin: 0;
+      }
+
+      .form48-signature-space {
+        display: flex;
+        min-height: 1.55in;
+        flex-direction: column;
+        justify-content: flex-end;
+        text-align: center;
+      }
+
+      .form48-employee-name {
+        font-size: 11pt;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+
+      .form48-signature-label {
+        margin-top: 0.55in;
+        font-size: 9pt;
+        font-style: italic;
+        line-height: 1.1;
+      }
+
+      .form48-verified {
+        margin-top: 0.22in;
+        padding-left: 0.72in;
+        font-size: 8.5pt;
+        line-height: 1.1;
+      }
+
+      .form48-head-block {
+        margin-top: auto;
+        text-align: center;
+      }
+
+      .form48-head-name {
+        font-size: 11pt;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+
+      .form48-head-position {
+        margin-top: 0.06in;
+        font-size: 9pt;
+        font-style: italic;
+        line-height: 1.1;
+      }
+
       @media print {
         body * { visibility: hidden !important; }
         .form48-container, .form48-container * { visibility: visible !important; }
@@ -243,9 +420,8 @@ function PrintStyles() {
           width: 100%;
         }
         .form48-page {
-          box-sizing: border-box;
-          page-break-inside: avoid;
           box-shadow: none !important;
+          page-break-inside: avoid;
         }
         .form48-page, .form48-page * {
           color: #000 !important;

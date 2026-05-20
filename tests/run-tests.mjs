@@ -125,6 +125,7 @@ const {
   buildDtrDocument,
   buildDtrRangeSpec,
   filterAttendanceDaysByRange,
+  getDtrCalendarDay,
 } = dtrModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
 const { buildEngineShadowBenchmark, buildShadowBenchmarkReport } = shadowBenchmarkModule
@@ -1082,6 +1083,54 @@ await run('filterAttendanceDaysByRange keeps only selected rows', () => {
     filterAttendanceDaysByRange(days, rangeSpec).map(day => day.dateKey),
     ['2026-04-16', '2026-04-28'],
   )
+})
+
+await run('DTR calendar weekends are computed from the selected month and year', () => {
+  const mayDtr = buildDtrDocument({
+    employee: { name: 'JAN ERIC LONARIO', employeeId: 'EMP-001' },
+    month: 5,
+    year: 2026,
+    dayRecords: [],
+  })
+  const juneDtr = buildDtrDocument({
+    employee: { name: 'JAN ERIC LONARIO', employeeId: 'EMP-001' },
+    month: 6,
+    year: 2026,
+    dayRecords: [],
+  })
+
+  assert.equal(getDtrCalendarDay(2026, 5, 2), 6)
+  assert.equal(mayDtr.rows.find(row => row.day === 2).dayOfWeek, 'SATURDAY')
+  assert.equal(mayDtr.rows.find(row => row.day === 3).dayOfWeek, 'SUNDAY')
+  assert.equal(juneDtr.rows.find(row => row.day === 6).dayOfWeek, 'SATURDAY')
+  assert.equal(juneDtr.rows.find(row => row.day === 7).dayOfWeek, 'SUNDAY')
+  assert.equal(juneDtr.rows.find(row => row.day === 2).isWeekend, false)
+})
+
+await run('DTR document carries parsed name parts and office schedule details', () => {
+  const dtr = buildDtrDocument({
+    employee: { name: 'JAN ERIC LONARIO', employeeId: 'EMP-001' },
+    office: {
+      workPolicy: {
+        workingDays: [1, 2, 3, 4, 5],
+        morningIn: '08:00',
+        morningOut: '12:00',
+        afternoonIn: '13:00',
+        afternoonOut: '17:00',
+      },
+    },
+    month: 5,
+    year: 2026,
+    dayRecords: [],
+  })
+
+  assert.deepEqual(dtr.employee.nameParts, {
+    familyName: 'LONARIO',
+    firstName: 'JAN ERIC',
+    middleInitial: '',
+  })
+  assert.equal(dtr.officialHours.regularDays, 'Monday- Friday')
+  assert.equal(dtr.officialHours.arrivalDeparture, '8:00-12:00 to 1:00-5:00')
 })
 
 await run('buildDtrDocument shades inactive half-month rows and preserves active day data', () => {
