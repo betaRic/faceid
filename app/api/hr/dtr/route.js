@@ -3,9 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getAdminDb } from '@/lib/firebase-admin'
 import { loadPersonByEmployeeIdentifier, resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
-import { listOfficeRecords } from '@/lib/office-directory'
-import { buildDtrDocument, getDaysInMonth } from '@/lib/dtr'
-import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
+import { buildEmployeeDtrDocument } from '@/lib/dtr-server'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -47,69 +45,9 @@ export async function GET(request) {
       return NextResponse.json({ ok: false, message: 'This session cannot access that employee DTR.' }, { status: 403 })
     }
 
-    const allOffices = await listOfficeRecords(db)
-    const office = allOffices.find(o => o.id === officeId) || {}
-
-    const daysInMonth = getDaysInMonth(targetYear, targetMonth)
-    const monthLabel = String(targetMonth).padStart(2, '0')
-    const startDate = new Date(`${targetYear}-${monthLabel}-01T00:00:00+08:00`)
-    const endDate = new Date(`${targetYear}-${monthLabel}-${String(daysInMonth).padStart(2, '0')}T23:59:59.999+08:00`)
-
-    const empId = personData.employeeId || employeeId
-    const snapshot = await db
-      .collection('attendance')
-      .where('employeeId', '==', empId)
-      .where('timestamp', '>=', startDate.getTime())
-      .where('timestamp', '<=', endDate.getTime())
-      .orderBy('timestamp', 'asc')
-      .get()
-
-    const logs = snapshot.docs.map(doc => doc.data())
-
-    const logsByDate = {}
-    logs.forEach(log => {
-      const dateKey = log.dateKey
-      if (!logsByDate[dateKey]) logsByDate[dateKey] = []
-      logsByDate[dateKey].push(log)
-    })
-
-    // Use canonical deriveDailyAttendanceRecord (same logic as daily summary panel)
-    // so DTR and HR dashboard always agree on times, late minutes, and undertime.
-    const dayRecords = []
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateKey = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-      const dayLogs = (logsByDate[dateKey] || []).sort((a, b) => a.timestamp - b.timestamp)
-      const derived = deriveDailyAttendanceRecord({
-        logs: dayLogs,
-        person: personData,
-        office,
-        targetDateKey: dateKey,
-      })
-
-      dayRecords.push({
-        day,
-        dateKey,
-        amIn: derived.amIn !== '--' ? derived.amIn : '',
-        amOut: derived.amOut !== '--' ? derived.amOut : '',
-        pmIn: derived.pmIn !== '--' ? derived.pmIn : '',
-        pmOut: derived.pmOut !== '--' ? derived.pmOut : '',
-        undertime: derived.undertimeMinutes,
-        totalHours: derived.workingMinutes,
-      })
-    }
-
-    const dtr = buildDtrDocument({
-      employee: {
-        id: personData.id || employeeId,
-        name: personData.name || '',
-        employeeId: personData.employeeId || '',
-        position: personData.position || '',
-        office: office.name || personData.officeName || '',
-        divisionId: personData.divisionId || '',
-        divisionName: personData.divisionName || '',
-      },
-      office,
-      divisionId: personData.divisionId || '',
+    const dtr = await buildEmployeeDtrDocument(db, {
+      employeeIdentifier: employeeId,
+      personData,
       signatoryOverride: (signatoryName || signatoryPosition)
         ? { name: signatoryName, position: signatoryPosition }
         : null,
@@ -118,7 +56,6 @@ export async function GET(request) {
       range,
       customStartDay,
       customEndDay,
-      dayRecords,
     })
 
     return NextResponse.json({ ok: true, dtr })

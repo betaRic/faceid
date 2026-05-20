@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { downloadDtrPdf } from '@/lib/dtr-pdf'
-import { DTR_MONTH_NAMES, formatDtrRangeForFilename, getDaysInMonth } from '@/lib/dtr'
-import DtrPreviewView from './DtrPreviewView'
+import { downloadResponseBlob } from '@/lib/browser-download'
+import { getDaysInMonth } from '@/lib/dtr'
 import DtrSelectionView from './DtrSelectionView'
 
 export default function DtrModal({ summaryRows, onClose }) {
@@ -19,9 +18,7 @@ export default function DtrModal({ summaryRows, onClose }) {
   const [signatoryPosition, setSignatoryPosition] = useState('')
   const [dtrLoading, setDtrLoading] = useState(false)
   const [dtrProgress, setDtrProgress] = useState({ current: 0, total: 0 })
-  const [dtrEmployees, setDtrEmployees] = useState([])
-  const [downloadKind, setDownloadKind] = useState('dtr')
-  const [pdfDownloading, setPdfDownloading] = useState(false)
+  const [error, setError] = useState('')
   const abortRef = useRef(false)
   const daysInMonth = getDaysInMonth(dtrYear, dtrMonth)
 
@@ -82,102 +79,50 @@ export default function DtrModal({ summaryRows, onClose }) {
     if (selectedEmployees.length === 0) return
 
     setDtrLoading(true)
-    setDtrEmployees([])
+    setError('')
     setDtrProgress({ current: 0, total: selectedEmployees.length })
     abortRef.current = false
 
     try {
-      const employeeResponse = await fetch('/api/hr/dtr/employees', { credentials: 'include' })
-      const employeeData = await employeeResponse.json()
-      if (!employeeData.ok) {
+      const response = await fetch('/api/hr/dtr/workbook', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeIds: selectedEmployees.map(employee => employee.employeeId),
+          month: dtrMonth,
+          year: dtrYear,
+          range: dtrRange,
+          customStartDay: dtrRange === 'custom' ? customStartDay : undefined,
+          customEndDay: dtrRange === 'custom' ? customEndDay : undefined,
+          signatoryName: signatoryName.trim() || undefined,
+          signatoryPosition: signatoryPosition.trim() || undefined,
+        }),
+      })
+
+      if (abortRef.current) {
         setDtrLoading(false)
         return
       }
 
-      const employeeMap = new Map(employeeData.employees.map(employee => [employee.employeeId, employee]))
-      const results = []
-
-      for (let index = 0; index < selectedEmployees.length; index += 1) {
-        if (abortRef.current) break
-
-        const employee = selectedEmployees[index]
-        const personDoc = employeeMap.get(employee.employeeId)
-        if (!personDoc) {
-          setDtrProgress({ current: index + 1, total: selectedEmployees.length })
-          continue
-        }
-
-        const params = new URLSearchParams({
-          employeeId: personDoc.employeeId || employee.employeeId,
-          month: String(dtrMonth),
-          year: String(dtrYear),
-          range: dtrRange,
-        })
-
-        if (dtrRange === 'custom') {
-          params.set('customStartDay', String(customStartDay))
-          params.set('customEndDay', String(customEndDay))
-        }
-
-        if (signatoryName.trim()) params.set('signatoryName', signatoryName.trim())
-        if (signatoryPosition.trim()) params.set('signatoryPosition', signatoryPosition.trim())
-
-        const response = await fetch(`/api/hr/dtr?${params}`, { credentials: 'include' })
-        const data = await response.json()
-        if (data.ok && data.dtr) {
-          results.push(data.dtr)
-        }
-
-        setDtrProgress({ current: index + 1, total: selectedEmployees.length })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || 'Failed to generate DTR Excel workbook.')
       }
 
-      setDtrEmployees(results)
-
-      if (results.length > 0) {
-        window.setTimeout(async () => {
-          const suffix = formatDtrRangeForFilename(results[0]?.rangeSpec)
-          if (downloadKind === 'raw') {
-            const filename = `RAW_ATTENDANCE_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${results.length}employees`
-            await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container', { orientation: 'portrait' })
-          } else {
-            const filename = `DTR_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${results.length}employees`
-            await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container')
-          }
-        }, 600)
-      }
+      await downloadResponseBlob(response, 'DTR.xlsx')
+      setDtrProgress({ current: selectedEmployees.length, total: selectedEmployees.length })
     } catch (error) {
       console.error('DTR generation failed:', error)
+      setError(error instanceof Error ? error.message : 'Failed to generate DTR Excel workbook.')
     }
 
     setDtrLoading(false)
-  }, [customEndDay, customStartDay, downloadKind, dtrMonth, dtrRange, dtrYear, selectedIds, signatoryName, signatoryPosition, uniqueEmployees])
-
-  const handleDownloadAgain = useCallback(async () => {
-    setPdfDownloading(true)
-    const suffix = formatDtrRangeForFilename(dtrEmployees[0]?.rangeSpec)
-    if (downloadKind === 'raw') {
-      const filename = `RAW_ATTENDANCE_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${dtrEmployees.length}employees`
-      await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container', { orientation: 'portrait' })
-    } else {
-      const filename = `DTR_${DTR_MONTH_NAMES[dtrMonth - 1]}_${dtrYear}_${suffix}_${dtrEmployees.length}employees`
-      await downloadDtrPdf(filename, '.dtr-pdf-render-target .form48-container')
-    }
-    setPdfDownloading(false)
-  }, [downloadKind, dtrEmployees, dtrMonth, dtrYear])
+  }, [customEndDay, customStartDay, dtrMonth, dtrRange, dtrYear, selectedIds, signatoryName, signatoryPosition, uniqueEmployees])
 
   const handleCancel = useCallback(() => {
     abortRef.current = true
   }, [])
-
-  const handleBackToSelection = useCallback(() => {
-    setDtrEmployees([])
-    setSelectedIds(new Set())
-  }, [])
-
-  const totalRawRows = dtrEmployees.reduce((sum, dtr) => {
-    const rows = (dtr?.rows || []).filter(row => row.inMonth && row.isActive)
-    return sum + rows.length
-  }, 0)
 
   return (
     <motion.div
@@ -195,52 +140,37 @@ export default function DtrModal({ summaryRows, onClose }) {
         exit={{ opacity: 0, y: 24 }}
         initial={{ opacity: 0, y: 24 }}
       >
-        {dtrEmployees.length > 0 ? (
-          <DtrPreviewView
-            downloadKind={downloadKind}
-            dtrEmployees={dtrEmployees}
-            dtrMonth={dtrMonth}
-            dtrYear={dtrYear}
-            onBack={handleBackToSelection}
-            onClose={onClose}
-            onDownloadAgain={handleDownloadAgain}
-            pdfDownloading={pdfDownloading}
-            totalRawRows={totalRawRows}
-          />
-        ) : (
-          <DtrSelectionView
-            allVisibleSelected={allVisibleSelected}
-            customEndDay={customEndDay}
-            customStartDay={customStartDay}
-            daysInMonth={daysInMonth}
-            downloadKind={downloadKind}
-            dtrLoading={dtrLoading}
-            dtrMonth={dtrMonth}
-            dtrProgress={dtrProgress}
-            dtrRange={dtrRange}
-            dtrYear={dtrYear}
-            filteredEmployees={filteredEmployees}
-            onCancel={handleCancel}
-            onClose={onClose}
-            onGenerate={handleGenerate}
-            onSearchChange={setSearch}
-            onSelectAll={handleSelectAll}
-            onSetCustomEndDay={setCustomEndDay}
-            onSetCustomStartDay={setCustomStartDay}
-            onSetDownloadKind={setDownloadKind}
-            onSetDtrMonth={setDtrMonth}
-            onSetDtrRange={setDtrRange}
-            onSetDtrYear={setDtrYear}
-            onSetSignatoryName={setSignatoryName}
-            onSetSignatoryPosition={setSignatoryPosition}
-            onToggleEmployee={toggleEmployee}
-            search={search}
-            selectedIds={selectedIds}
-            signatoryName={signatoryName}
-            signatoryPosition={signatoryPosition}
-            uniqueEmployees={uniqueEmployees}
-          />
-        )}
+        <DtrSelectionView
+          allVisibleSelected={allVisibleSelected}
+          customEndDay={customEndDay}
+          customStartDay={customStartDay}
+          daysInMonth={daysInMonth}
+          dtrLoading={dtrLoading}
+          dtrMonth={dtrMonth}
+          dtrProgress={dtrProgress}
+          dtrRange={dtrRange}
+          dtrYear={dtrYear}
+          error={error}
+          filteredEmployees={filteredEmployees}
+          onCancel={handleCancel}
+          onClose={onClose}
+          onGenerate={handleGenerate}
+          onSearchChange={setSearch}
+          onSelectAll={handleSelectAll}
+          onSetCustomEndDay={setCustomEndDay}
+          onSetCustomStartDay={setCustomStartDay}
+          onSetDtrMonth={setDtrMonth}
+          onSetDtrRange={setDtrRange}
+          onSetDtrYear={setDtrYear}
+          onSetSignatoryName={setSignatoryName}
+          onSetSignatoryPosition={setSignatoryPosition}
+          onToggleEmployee={toggleEmployee}
+          search={search}
+          selectedIds={selectedIds}
+          signatoryName={signatoryName}
+          signatoryPosition={signatoryPosition}
+          uniqueEmployees={uniqueEmployees}
+        />
       </motion.div>
     </motion.div>
   )

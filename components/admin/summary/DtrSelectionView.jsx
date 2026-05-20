@@ -6,12 +6,12 @@ export default function DtrSelectionView({
   customEndDay,
   customStartDay,
   daysInMonth,
-  downloadKind,
   dtrLoading,
   dtrMonth,
   dtrProgress,
   dtrRange,
   dtrYear,
+  error = '',
   filteredEmployees,
   search,
   selectedIds,
@@ -25,7 +25,6 @@ export default function DtrSelectionView({
   onSelectAll,
   onSetCustomEndDay,
   onSetCustomStartDay,
-  onSetDownloadKind,
   onSetDtrMonth,
   onSetDtrRange,
   onSetDtrYear,
@@ -38,10 +37,10 @@ export default function DtrSelectionView({
       <div className="flex items-center justify-between border-b border-black/5 px-6 py-4">
         <div>
           <h3 className="font-display text-lg font-bold text-ink">
-            {downloadKind === 'raw' ? 'Generate Raw Attendance PDF' : 'Generate DTR'}
+            Generate DTR Excel
           </h3>
           <p className="text-xs text-muted">
-            {downloadKind === 'raw' ? 'One page per employee with raw time in and time out' : 'CSC Form 48 — Select employees'}
+            CSC Form 48 workbook - Select employees
           </p>
         </div>
         <button
@@ -54,18 +53,7 @@ export default function DtrSelectionView({
         </button>
       </div>
 
-      <div className="grid gap-3 border-b border-black/5 px-4 py-4 sm:grid-cols-4 sm:px-6">
-        <Field label="Export Type">
-          <select
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-            disabled={dtrLoading}
-            onChange={event => onSetDownloadKind(event.target.value)}
-            value={downloadKind}
-          >
-            <option value="dtr">Official DTR PDF</option>
-            <option value="raw">Raw Time In/Out PDF</option>
-          </select>
-        </Field>
+      <div className="grid gap-3 border-b border-black/5 px-4 py-4 sm:grid-cols-3 sm:px-6">
         <Field label="Month">
           <select
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
@@ -104,30 +92,28 @@ export default function DtrSelectionView({
         </Field>
       </div>
 
-      {downloadKind === 'dtr' ? (
-        <div className="grid gap-3 border-b border-black/5 px-4 py-3 sm:grid-cols-2 sm:px-6">
-          <Field label="Override signatory name (optional)">
-            <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm uppercase"
-              disabled={dtrLoading}
-              onChange={event => onSetSignatoryName(event.target.value.toUpperCase())}
-              placeholder="Leave blank to use the office head"
-              type="text"
-              value={signatoryName}
-            />
-          </Field>
-          <Field label="Override signatory position (optional)">
-            <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-              disabled={dtrLoading}
-              onChange={event => onSetSignatoryPosition(event.target.value)}
-              placeholder="e.g. OIC-City Director"
-              type="text"
-              value={signatoryPosition}
-            />
-          </Field>
-        </div>
-      ) : null}
+      <div className="grid gap-3 border-b border-black/5 px-4 py-3 sm:grid-cols-2 sm:px-6">
+        <Field label="Override signatory name (optional)">
+          <input
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm uppercase"
+            disabled={dtrLoading}
+            onChange={event => onSetSignatoryName(event.target.value.toUpperCase())}
+            placeholder="Leave blank to use the office head"
+            type="text"
+            value={signatoryName}
+          />
+        </Field>
+        <Field label="Override signatory position (optional)">
+          <input
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+            disabled={dtrLoading}
+            onChange={event => onSetSignatoryPosition(event.target.value)}
+            placeholder="e.g. OIC-City Director"
+            type="text"
+            value={signatoryPosition}
+          />
+        </Field>
+      </div>
 
       {dtrRange === 'custom' ? (
         <div className="grid gap-3 border-b border-black/5 px-4 py-4 sm:grid-cols-2 sm:px-6">
@@ -212,7 +198,7 @@ export default function DtrSelectionView({
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-navy border-t-transparent" />
             <div className="flex-1">
               <div className="mb-1 flex items-center justify-between text-xs text-muted">
-                <span>{downloadKind === 'raw' ? 'Generating raw attendance PDF...' : 'Generating DTR...'}</span>
+                <span>Generating DTR Excel...</span>
                 <span>{dtrProgress.current}/{dtrProgress.total}</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
@@ -233,7 +219,7 @@ export default function DtrSelectionView({
         ) : (
           <>
             <span className="text-xs text-muted">
-              {selectedIds.size} of {uniqueEmployees.length} employees
+              {error || `${selectedIds.size} of ${uniqueEmployees.length} employees`}
             </span>
             <button
               className="w-full rounded-xl bg-navy px-6 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50 sm:w-auto sm:py-2.5"
@@ -241,7 +227,7 @@ export default function DtrSelectionView({
               onClick={onGenerate}
               type="button"
             >
-              Generate & Download ({selectedIds.size})
+              Download Excel ({selectedIds.size})
             </button>
           </>
         )}

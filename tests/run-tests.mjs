@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { strFromU8, unzipSync } from 'fflate'
 
 const projectRootUrl = new URL('../', import.meta.url)
 
@@ -56,6 +57,7 @@ const faceSizeGuidanceModule = await importLocalModule('../lib/biometrics/face-s
 const verificationCaptureModule = await importLocalModule('../lib/biometrics/verification-capture.js')
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
+const dtrExcelModule = await importLocalModule('../lib/dtr-excel.js')
 const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
 const shadowBenchmarkModule = await importLocalModule('../lib/biometrics/shadow-benchmark.js')
 const biometricIndexModule = await importLocalModule('../lib/biometric-index.js')
@@ -127,6 +129,7 @@ const {
   filterAttendanceDaysByRange,
   getDtrCalendarDay,
 } = dtrModule
+const { buildDtrWorkbookFromTemplate } = dtrExcelModule
 const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
 const { buildEngineShadowBenchmark, buildShadowBenchmarkReport } = shadowBenchmarkModule
 const { matchBiometricIndexCandidates, matchBiometricIndexMultiDescriptor } = biometricIndexModule
@@ -1131,6 +1134,53 @@ await run('DTR document carries parsed name parts and office schedule details', 
   })
   assert.equal(dtr.officialHours.regularDays, 'Monday- Friday')
   assert.equal(dtr.officialHours.arrivalDeparture, '8:00-12:00 to 1:00-5:00')
+})
+
+await run('DTR Excel workbook fills official template cells dynamically', async () => {
+  const dtr = buildDtrDocument({
+    employee: { name: 'JAN ERIC LONARIO', employeeId: '12-254' },
+    office: {
+      name: 'DILG Region XII',
+      headName: 'MARIA THERESA D. BAUTISTA',
+      headPosition: 'Regional Director',
+      workPolicy: {
+        workingDays: [1, 2, 3, 4, 5],
+        morningIn: '08:00',
+        morningOut: '12:00',
+        afternoonIn: '13:00',
+        afternoonOut: '17:00',
+      },
+    },
+    month: 5,
+    year: 2026,
+    dayRecords: [
+      {
+        dateKey: '2026-05-04',
+        day: 4,
+        amIn: '9:02 AM',
+        amOut: '10:58 AM',
+        pmIn: '12:06 PM',
+        pmOut: '6:59 PM',
+      },
+    ],
+  })
+  const templateBytes = new Uint8Array(await readFile(new URL('../lib/templates/dtr-format.xlsx', import.meta.url)))
+  const workbookBytes = buildDtrWorkbookFromTemplate(templateBytes, [dtr])
+  const files = unzipSync(workbookBytes)
+  const sheetXml = strFromU8(files['xl/worksheets/sheet1.xml'])
+  const workbookXml = strFromU8(files['xl/workbook.xml'])
+  const relsXml = strFromU8(files['xl/_rels/workbook.xml.rels'])
+
+  assert.match(sheetXml, /<c r="C6" s="8" t="inlineStr"><is><t>LONARIO<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="G6" s="8" t="inlineStr"><is><t>JAN ERIC<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="G9" s="20" t="inlineStr"><is><t>MAY 1-31, 2026<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="E15" s="32" t="s"><v>15<\/v><\/c>/)
+  assert.match(sheetXml, /<c r="I15" s="32" t="s"><v>15<\/v><\/c>/)
+  assert.match(sheetXml, /<c r="E17" s="30" t="inlineStr"><is><t>9:02 AM<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="B56" s="51" t="inlineStr"><is><t>MARIA THERESA D. BAUTISTA<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="B57" s="56" t="inlineStr"><is><t>Regional Director<\/t><\/is><\/c>/)
+  assert.match(workbookXml, /<sheet name="12-254 JAN ERIC LONARIO" sheetId="1" r:id="rIdDtrSheet1"\/>/)
+  assert.equal(relsXml.includes('calcChain'), false)
 })
 
 await run('buildDtrDocument shades inactive half-month rows and preserves active day data', () => {

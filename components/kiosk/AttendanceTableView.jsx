@@ -1,19 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Form48Renderer } from '@/components/hr/Form48Dtr'
 import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
+import { downloadResponseBlob } from '@/lib/browser-download'
 import {
-  buildDtrDocument,
   buildDtrRangeSpec,
-  DTR_MONTH_NAMES,
   DTR_RANGE_OPTIONS,
   filterAttendanceDaysByRange,
-  formatDtrRangeForFilename,
   getDaysInMonth,
 } from '@/lib/dtr'
-import { downloadDtrPdf } from '@/lib/dtr-pdf'
 
 const ChevronLeftIcon = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -120,8 +116,6 @@ export default function AttendanceTableView({
   const [customStartDay, setCustomStartDay] = useState(1)
   const [customEndDay, setCustomEndDay] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate())
   const [downloading, setDownloading] = useState(false)
-  const [downloadRequest, setDownloadRequest] = useState(null)
-  const hiddenRenderRef = useRef(null)
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth)
   const yearOptions = buildYearOptions(currentYear)
@@ -185,66 +179,42 @@ export default function AttendanceTableView({
     fetchData()
   }, [currentMatch?.employeeId, currentMatch?.employeeViewSession, currentMonth, currentYear])
 
-  useEffect(() => {
-    if (!downloadRequest || !hiddenRenderRef.current) return
-
-    let cancelled = false
-
-    async function runDownload() {
-      try {
-        setDownloading(true)
-        await new Promise((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(resolve))
-        })
-
-        const target = hiddenRenderRef.current.querySelector('.form48-container')
-        if (!target) {
-          throw new Error('DTR render target not ready')
-        }
-
-        await downloadDtrPdf(downloadRequest.filename, target)
-      } catch (downloadError) {
-        console.error('DTR download failed:', downloadError)
-        if (!cancelled) {
-          setError('Failed to generate DTR')
-        }
-      } finally {
-        if (!cancelled) {
-          setDownloading(false)
-          setDownloadRequest(null)
-        }
-      }
-    }
-
-    runDownload()
-
-    return () => {
-      cancelled = true
-    }
-  }, [downloadRequest])
-
-  const handleGenerateDtr = useCallback(() => {
-    const dtr = buildDtrDocument({
-      employee: {
-        name: currentMatch.name || '',
-        employeeId: currentMatch.employeeId || '',
-        office: currentMatch.officeName || '',
-        position: currentMatch.position || '',
-      },
-      month: currentMonth,
-      year: currentYear,
-      range: selectedRange,
-      customStartDay,
-      customEndDay,
-      dayRecords: days,
-    })
-
-    const filenameRange = formatDtrRangeForFilename(dtr.rangeSpec)
-    const filename = `DTR_${currentMatch.employeeId}_${DTR_MONTH_NAMES[currentMonth - 1]}_${currentYear}_${filenameRange}`
-
+  const handleGenerateDtr = useCallback(async () => {
+    if (!currentMatch?.employeeId) return
     setError(null)
-    setDownloadRequest({ dtr, filename })
-  }, [currentMatch, currentMonth, currentYear, selectedRange, customStartDay, customEndDay, days])
+    setDownloading(true)
+
+    try {
+      const params = new URLSearchParams({
+        employeeId: currentMatch.employeeId,
+        month: String(currentMonth),
+        year: String(currentYear),
+        range: selectedRange,
+      })
+
+      if (selectedRange === 'custom') {
+        params.set('customStartDay', String(customStartDay))
+        params.set('customEndDay', String(customEndDay))
+      }
+
+      const response = await fetch(`/api/attendance/dtr?${params}`, {
+        headers: buildEmployeeViewHeaders(currentMatch),
+        cache: 'no-store',
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || 'Failed to generate DTR Excel workbook.')
+      }
+
+      await downloadResponseBlob(response, 'DTR.xlsx')
+    } catch (downloadError) {
+      console.error('DTR download failed:', downloadError)
+      setError(downloadError instanceof Error ? downloadError.message : 'Failed to generate DTR Excel workbook.')
+    } finally {
+      setDownloading(false)
+    }
+  }, [currentMatch, currentMonth, currentYear, selectedRange, customStartDay, customEndDay])
 
   return (
     <div className="absolute inset-0 z-[6] flex flex-col overflow-hidden bg-white">
@@ -436,14 +406,6 @@ export default function AttendanceTableView({
                 </div>
               </>
             )}
-          </div>
-
-          <div
-            ref={hiddenRenderRef}
-            aria-hidden="true"
-            style={{ position: 'fixed', left: '-200vw', top: 0 }}
-          >
-            {downloadRequest?.dtr ? <Form48Renderer dtr={downloadRequest.dtr} /> : null}
           </div>
         </motion.div>
       </AnimatePresence>
