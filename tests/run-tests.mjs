@@ -1168,15 +1168,26 @@ await run('DTR Excel workbook fills official template cells dynamically', async 
   const workbookBytes = buildDtrWorkbookFromTemplate(templateBytes, [dtr])
   const files = unzipSync(workbookBytes)
   const sheetXml = strFromU8(files['xl/worksheets/sheet1.xml'])
+  const stylesXml = strFromU8(files['xl/styles.xml'])
   const workbookXml = strFromU8(files['xl/workbook.xml'])
   const relsXml = strFromU8(files['xl/_rels/workbook.xml.rels'])
+  const dtrTimeFontId = Number.parseInt(stylesXml.match(/<fonts count="(\d+)"/)?.[1] || '1', 10) - 1
+  const dtrTimeStyleId = Number.parseInt(stylesXml.match(/<cellXfs count="(\d+)"/)?.[1] || '1', 10) - 1
 
   assert.match(sheetXml, /<c r="C6" s="8" t="inlineStr"><is><t>LONARIO<\/t><\/is><\/c>/)
   assert.match(sheetXml, /<c r="G6" s="8" t="inlineStr"><is><t>JAN ERIC<\/t><\/is><\/c>/)
   assert.match(sheetXml, /<c r="G9" s="20" t="inlineStr"><is><t>MAY 1-31, 2026<\/t><\/is><\/c>/)
   assert.match(sheetXml, /<c r="E15" s="32" t="s"><v>15<\/v><\/c>/)
   assert.match(sheetXml, /<c r="I15" s="32" t="s"><v>15<\/v><\/c>/)
-  assert.match(sheetXml, /<c r="E17" s="30" t="inlineStr"><is><t>9:02 AM<\/t><\/is><\/c>/)
+  assert.match(stylesXml, /<font><sz val="9"\/><color rgb="FFBFBFBF"\/><name val="Calibri"\/><family val="2"\/><scheme val="minor"\/><\/font>/)
+  assert.match(
+    stylesXml,
+    new RegExp(`<xf numFmtId="0" fontId="${dtrTimeFontId}" fillId="0" borderId="7" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/><\\/xf>`),
+  )
+  assert.match(sheetXml, new RegExp(`<c r="E17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>9:02 AM<\\/t><\\/is><\\/c>`))
+  assert.match(sheetXml, new RegExp(`<c r="G17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>10:58 AM<\\/t><\\/is><\\/c>`))
+  assert.match(sheetXml, new RegExp(`<c r="I17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>12:06 PM<\\/t><\\/is><\\/c>`))
+  assert.match(sheetXml, new RegExp(`<c r="K17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>6:59 PM<\\/t><\\/is><\\/c>`))
   assert.match(sheetXml, /<c r="B56" s="51" t="inlineStr"><is><t>MARIA THERESA D. BAUTISTA<\/t><\/is><\/c>/)
   assert.match(sheetXml, /<c r="B57" s="56" t="inlineStr"><is><t>Regional Director<\/t><\/is><\/c>/)
   assert.match(workbookXml, /<sheet name="12-254 JAN ERIC LONARIO" sheetId="1" r:id="rIdDtrSheet1"\/>/)
