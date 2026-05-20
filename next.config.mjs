@@ -20,6 +20,7 @@ const nextConfig = {
       './node_modules/@tensorflow/tfjs-backend-cpu/dist/**/*',
       './node_modules/@tensorflow/tfjs-backend-wasm/package.json',
       './node_modules/@tensorflow/tfjs-backend-wasm/dist/**/*',
+      './node_modules/@tensorflow/tfjs-backend-wasm/wasm-out/**/*',
     ],
   },
   outputFileTracingExcludes: includeOpenVinoRuntime
