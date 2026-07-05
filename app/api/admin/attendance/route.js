@@ -1,8 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
@@ -15,6 +13,9 @@ import { createOriginGuard } from '@/lib/csrf'
 import { kvDel } from '@/lib/kv-utils'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
 import { getOfficeRecord } from '@/lib/office-directory'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { insertLocalAttendanceEntry, getLocalAttendanceById, listLocalAttendanceLogs } from '@/lib/postgres/report-store'
+import { upsertLocalDailyAttendanceRecord } from '@/lib/postgres/attendance-store'
 
 // GET /api/admin/attendance?employeeId=EMP-001&date=2026-04-09
 export async function GET(request) {
@@ -34,10 +35,22 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
+    if (usePostgres) {
+      const logs = (await listLocalAttendanceLogs({
+        employeeId,
+        dateKey: date,
+        direction: 'asc',
+        limit: 500,
+      })).filter(log => adminSessionAllowsOffice(resolvedSession, log.officeId))
+
+      return NextResponse.json({ ok: true, logs })
     }
 
     const snapshot = await db
@@ -116,7 +129,8 @@ export async function POST(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -133,8 +147,10 @@ export async function POST(request) {
     // Use a collision-safe ID: employeeId_timestamp_override to avoid clashing with kiosk entries
     const attendanceId = `${employeeId}_${timestamp}_override`
 
-    const existing = await db.collection('attendance').doc(attendanceId).get()
-    if (existing.exists) {
+    const existing = usePostgres
+      ? await getLocalAttendanceById(attendanceId)
+      : await db.collection('attendance').doc(attendanceId).get()
+    if (usePostgres ? existing : existing.exists) {
       return NextResponse.json(
         { ok: false, message: 'A manual entry already exists at this exact time.' },
         { status: 409 },
@@ -159,8 +175,8 @@ export async function POST(request) {
       source: 'manual_override',
       overrideReason: reason,
       overriddenBy: resolvedSession.email || '',
-      overriddenAt: FieldValue.serverTimestamp(),
-      createdAt: FieldValue.serverTimestamp(),
+      overriddenAt: usePostgres ? new Date().toISOString() : FieldValue.serverTimestamp(),
+      createdAt: usePostgres ? new Date().toISOString() : FieldValue.serverTimestamp(),
       // Explicitly null out biometric fields — admin verification is by identity, not descriptor
       descriptor: null,
       landmarks: null,
@@ -168,21 +184,23 @@ export async function POST(request) {
       longitude: null,
     }
 
-    await db.collection('attendance').doc(attendanceId).set(entry)
+    if (usePostgres) await insertLocalAttendanceEntry(attendanceId, entry)
+    else await db.collection('attendance').doc(attendanceId).set(entry)
 
     // Invalidate the KV cache for this employee+date so the next summary fetch is fresh
     await kvDel(`attendance:logs:${employeeId}:${dateKey}`)
 
-    // Refresh the attendance_daily Firestore doc immediately so HR sees correct data
+    // Refresh attendance_daily immediately so HR sees correct data
     // without waiting for the next cron run or cache expiry.
     try {
-      const freshSnapshot = await db
-        .collection('attendance')
-        .where('employeeId', '==', employeeId)
-        .where('dateKey', '==', dateKey)
-        .orderBy('timestamp', 'asc')
-        .get()
-      const freshLogs = freshSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      const freshLogs = usePostgres
+        ? await listLocalAttendanceLogs({ employeeId, dateKey, direction: 'asc', limit: 500 })
+        : (await db
+            .collection('attendance')
+            .where('employeeId', '==', employeeId)
+            .where('dateKey', '==', dateKey)
+            .orderBy('timestamp', 'asc')
+            .get()).docs.map(doc => ({ id: doc.id, ...doc.data() }))
       const officeRecord = await getOfficeRecord(db, officeId)
       if (officeRecord) {
         const dailyRecord = deriveDailyAttendanceRecord({
@@ -191,10 +209,13 @@ export async function POST(request) {
           office: officeRecord,
           targetDateKey: dateKey,
         })
-        await db.collection('attendance_daily').doc(`${employeeId}_${dateKey}`).set({
-          ...dailyRecord,
-          updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true })
+        if (usePostgres) await upsertLocalDailyAttendanceRecord(dailyRecord)
+        else {
+          await db.collection('attendance_daily').doc(`${employeeId}_${dateKey}`).set({
+            ...dailyRecord,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true })
+        }
       }
     } catch (cacheErr) {
       console.error('[Admin] Failed to refresh attendance_daily:', cacheErr?.message)
@@ -220,3 +241,4 @@ export async function POST(request) {
     )
   }
 }
+

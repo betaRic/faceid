@@ -3,9 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue } from '@/lib/admin-auth'
 import { getHrSessionCookieName, parseHrSessionCookieValue } from '@/lib/hr-auth'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function POST(request) {
   const checkOrigin = createOriginGuard()
@@ -18,7 +18,7 @@ export async function POST(request) {
 
   if (session) {
     try {
-      const db = getAdminDb()
+      const db = null
       await writeAuditLog(db, {
         actorRole: session.role || 'hr',
         actorScope: session.scope,
@@ -56,3 +56,4 @@ export async function POST(request) {
   })
   return response
 }
+

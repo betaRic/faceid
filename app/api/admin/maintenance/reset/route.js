@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   isRegionalAdminSession,
@@ -11,6 +10,8 @@ import {
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { getLocalRuntimeCounts, resetLocalRuntimeData } from '@/lib/postgres/report-store'
 
 // Collections that are NEVER deleted
 const PROTECTED_COLLECTIONS = new Set([
@@ -66,7 +67,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
@@ -81,6 +83,32 @@ export async function GET(request) {
         { ok: false, message: 'Too many reset previews. Wait before trying again.' },
         { status: 429 },
       )
+    }
+
+    if (usePostgres) {
+      const counts = await getLocalRuntimeCounts()
+      const willDelete = {
+        biometric_index: Number(counts.biometric_index || 0),
+        attendance: Number(counts.attendance || 0),
+        attendance_daily: Number(counts.attendance_daily || 0),
+        scan_events: Number(counts.scan_events || 0),
+        audit_logs: Number(counts.audit_logs || 0),
+      }
+      const willKeep = {
+        offices: Number(counts.offices || 0),
+        persons: Number(counts.persons || 0),
+        admin_users: Number(counts.admin_users || 0),
+        hr_users: Number(counts.hr_users || 0),
+      }
+      const totalToDelete = Object.values(willDelete).reduce((s, c) => s + c, 0)
+      return NextResponse.json({
+        ok: true,
+        dryRun: true,
+        message: `This will delete ${totalToDelete} local rows and clear employee biometrics. POST with { "confirm": true } to execute.`,
+        willDelete,
+        willKeep,
+        protectedCollections: ['offices', 'admin_users', 'hr_users', 'persons'],
+      })
     }
 
     // Count documents in each collection
@@ -128,7 +156,8 @@ export async function POST(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
@@ -153,6 +182,38 @@ export async function POST(request) {
       )
     }
 
+    if (usePostgres) {
+      const results = await resetLocalRuntimeData({ includeEmployees: false, includeOffices: false })
+      const totalDeleted = Object.values(results).reduce((s, c) => s + Number(c || 0), 0)
+      await writeAuditLog(db, {
+        actorRole: resolvedSession.role,
+        actorScope: resolvedSession.scope,
+        actorOfficeId: resolvedSession.officeId,
+        action: 'system_reset',
+        targetType: 'system',
+        targetId: 'postgres',
+        officeId: '',
+        summary: `Local system reset: deleted ${totalDeleted} rows and returned employees to pending biometric review`,
+        metadata: {
+          deletedByTable: results,
+          totalDeleted,
+          protectedTables: ['offices', 'admin_users', 'hr_users', 'persons'],
+        },
+      })
+
+      return NextResponse.json({
+        ok: true,
+        message: `Local reset complete. Deleted ${totalDeleted} rows and returned employees to pending biometric review.`,
+        deleted: results,
+        totalDeleted,
+        kept: ['offices', 'admin_users', 'hr_users', 'persons'],
+        nextSteps: [
+          'Re-enroll employees at /registration',
+          'Approve enrollments in admin dashboard',
+        ],
+      })
+    }
+
     const results = {}
     let totalDeleted = 0
 
@@ -169,7 +230,7 @@ export async function POST(request) {
       actorOfficeId: resolvedSession.officeId,
       action: 'system_reset',
       targetType: 'system',
-      targetId: 'firestore',
+      targetId: 'postgres',
       officeId: '',
       summary: `System reset: deleted ${totalDeleted} documents across ${RESET_COLLECTIONS.length} collections`,
       metadata: {
@@ -198,3 +259,4 @@ export async function POST(request) {
     )
   }
 }
+

@@ -1,8 +1,9 @@
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { getLocalPersonById } from '@/lib/postgres/person-store'
 
 function serializePerson(doc) {
   const data = doc.data()
@@ -18,7 +19,10 @@ function serializePerson(doc) {
 }
 
 async function getPersonData(personId) {
-  const db = getAdminDb()
+  if (postgresEnabled()) {
+    return getLocalPersonById(personId)
+  }
+  const db = null
   const doc = await db.collection('persons').doc(personId).get()
   if (!doc.exists) return null
   return serializePerson(doc)
@@ -29,7 +33,7 @@ export default async function ReenrollPage({ params, searchParams }) {
 
   // Auth check first
   const cookieStore = await cookies()
-  const db = getAdminDb()
+  const db = null
 
   const adminSession = parseAdminSessionCookieValue(cookieStore.get(getAdminSessionCookieName())?.value)
   let resolvedSession = null
@@ -48,7 +52,6 @@ export default async function ReenrollPage({ params, searchParams }) {
     redirect('/admin/login')
   }
 
-  // Fetch person data from Firestore (always, not from URL param)
   const person = await getPersonData(personId)
 
   if (!person) {
@@ -62,7 +65,6 @@ export default async function ReenrollPage({ params, searchParams }) {
     )
   }
 
-  // Pass only needed fields to client component (no Firestore objects)
   const clientPerson = {
     id: person.id,
     name: person.name || '',
@@ -75,3 +77,4 @@ export default async function ReenrollPage({ params, searchParams }) {
 
   return <EmployeeReenrollPage person={clientPerson} />
 }
+

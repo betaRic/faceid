@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { listOfficeRecords } from '@/lib/office-directory'
 import { warmBiometricIndexCache } from '@/lib/biometric-index'
 
@@ -13,7 +12,7 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const db = getAdminDb()
+  const db = null
   const offices = await listOfficeRecords(db)
   const officeIds = offices.map(o => o.id)
 
@@ -21,3 +20,4 @@ export async function GET(request) {
 
   return NextResponse.json({ ok: true, warmed, officeCount: officeIds.length })
 }
+

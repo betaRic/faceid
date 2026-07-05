@@ -1,12 +1,17 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { getActiveRegionalAdminCount } from '@/lib/admin-directory'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled } from '@/lib/postgres/client'
+import {
+  deleteLocalAdminProfile,
+  getLocalAdminProfileById,
+  localEmailExists,
+  updateLocalAdminProfile,
+} from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
   return {
@@ -47,7 +52,8 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -56,18 +62,19 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const ref = db.collection('admins').doc(adminId)
-    const existing = await ref.get()
-    if (!existing.exists) {
+    const existing = usePostgres ? await getLocalAdminProfileById(adminId) : await db.collection('admins').doc(adminId).get()
+    if (usePostgres ? !existing : !existing.exists) {
       return NextResponse.json({ ok: false, message: 'Admin record was not found.' }, { status: 404 })
     }
 
-    const duplicate = await db.collection('admins').where('email', '==', body.email).limit(2).get()
-    if (duplicate.docs.some(record => record.id !== adminId)) {
+    const duplicate = usePostgres
+      ? await localEmailExists('admin_users', body.email, adminId)
+      : (await db.collection('admins').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== adminId)
+    if (duplicate) {
       return NextResponse.json({ ok: false, message: 'Another admin record already uses that email.' }, { status: 409 })
     }
 
-    const existingData = existing.data() || {}
+    const existingData = usePostgres ? existing : existing.data() || {}
     const wasActiveRegional = existingData.active !== false && String(existingData.scope || 'regional') !== 'office'
     const willBeActiveRegional = body.active !== false && body.scope !== 'office'
 
@@ -81,14 +88,18 @@ export async function PUT(request, { params }) {
       }
     }
 
-    await ref.set({
-      email: body.email,
-      displayName: body.displayName,
-      scope: body.scope,
-      officeId: body.scope === 'office' ? body.officeId : '',
-      active: body.active,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
+    if (usePostgres) {
+      await updateLocalAdminProfile(adminId, body)
+    } else {
+      await db.collection('admins').doc(adminId).set({
+        email: body.email,
+        displayName: body.displayName,
+        scope: body.scope,
+        officeId: body.scope === 'office' ? body.officeId : '',
+        active: body.active,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+    }
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -132,7 +143,8 @@ export async function DELETE(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -141,13 +153,12 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const ref = db.collection('admins').doc(adminId)
-    const existing = await ref.get()
-    if (!existing.exists) {
+    const existing = usePostgres ? await getLocalAdminProfileById(adminId) : await db.collection('admins').doc(adminId).get()
+    if (usePostgres ? !existing : !existing.exists) {
       return NextResponse.json({ ok: false, message: 'Admin record was not found.' }, { status: 404 })
     }
 
-    const existingData = existing.data() || {}
+    const existingData = usePostgres ? existing : existing.data() || {}
     const isActiveRegional = existingData.active !== false && String(existingData.scope || 'regional') !== 'office'
     if (isActiveRegional) {
       const remainingRegionalAdmins = await getActiveRegionalAdminCount(db, adminId)
@@ -159,7 +170,8 @@ export async function DELETE(request, { params }) {
       }
     }
 
-    await ref.delete()
+    if (usePostgres) await deleteLocalAdminProfile(adminId)
+    else await db.collection('admins').doc(adminId).delete()
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -183,3 +195,4 @@ export async function DELETE(request, { params }) {
     )
   }
 }
+

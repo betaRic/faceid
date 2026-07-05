@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { createHrSessionCookieValue, getHrSessionCookieName, getHrSessionMaxAge, parseHrSessionCookieValue, resolveHrSession, sessionNeedsRefresh, sessionTimeRemaining } from '@/lib/hr-auth'
 import { getHrProfileById } from '@/lib/hr-directory'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function GET(request) {
   const cookieValue = request.cookies.get(getHrSessionCookieName())?.value
@@ -14,7 +14,7 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const db = null
     const resolvedSession = await resolveHrSession(db, session)
 
     if (!resolvedSession) {
@@ -61,3 +61,4 @@ export async function GET(request) {
     )
   }
 }
+

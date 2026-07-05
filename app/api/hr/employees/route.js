@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalHrEmployees } from '@/lib/postgres/report-store'
 
 const PAGE_SIZE = 20
 
@@ -29,7 +30,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveHrSession(db, session)
 
     if (!resolvedSession || !resolvedSession.active) {
@@ -41,6 +43,29 @@ export async function GET(request) {
     const officeFilter = normalizeQueryParam(searchParams.get('officeId'))
     const statusFilter = normalizeQueryParam(searchParams.get('status'))
     const approvalFilter = normalizeQueryParam(searchParams.get('approval'))
+
+    if (usePostgres) {
+      const { employees, total } = await listLocalHrEmployees({
+        sessionOfficeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
+        officeId: officeFilter,
+        query,
+        status: statusFilter,
+        approval: approvalFilter,
+        page,
+        pageSize: PAGE_SIZE,
+      })
+
+      return NextResponse.json({
+        ok: true,
+        employees,
+        pagination: {
+          page,
+          pageSize: PAGE_SIZE,
+          total,
+          hasMore: page * PAGE_SIZE < total,
+        },
+      })
+    }
 
     let baseQuery = db.collection('persons')
 
@@ -122,3 +147,4 @@ export async function GET(request) {
     )
   }
 }
+

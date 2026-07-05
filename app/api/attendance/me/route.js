@@ -1,10 +1,11 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getEmployeeDailyAttendanceRecord } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { formatAttendanceDateKey, getAttendanceHour, toLegacyAttendanceDate } from '@/lib/attendance-time'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -16,7 +17,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const access = await resolveAttendanceViewer(request, db, employeeId)
     if (!access.viewer) {
       return NextResponse.json({ ok: false, message: access.message }, { status: access.status })
@@ -58,6 +60,23 @@ export async function GET(request) {
           status: cachedRecord.status || 'No Record',
         },
       })
+    }
+
+    if (usePostgres) {
+      const entries = (await listLocalAttendanceLogs({
+        employeeId,
+        dateKey: date,
+        direction: 'asc',
+        limit: 100,
+      })).map(entry => ({
+        ...entry,
+        timestamp: Number(entry?.timestamp ?? 0),
+        dateKey: entry?.dateKey || date,
+        dateLabel: entry?.dateLabel || entry?.date || legacyDateLabel,
+        officeName: access.person?.officeName || entry.officeName || 'Unknown Office',
+      }))
+
+      return buildAttendanceMeResponse({ date, employeeId, entries })
     }
 
     const snapshot = await db
@@ -122,3 +141,33 @@ export async function GET(request) {
     )
   }
 }
+
+function buildAttendanceMeResponse({ date, employeeId, entries }) {
+  const sortedEntries = entries.sort((a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0))
+  const amEntries = sortedEntries.filter(entry => Number(entry.timestamp ?? 0) > 0 && getAttendanceHour(Number(entry.timestamp)) < 12)
+  const pmEntries = sortedEntries.filter(entry => Number(entry.timestamp ?? 0) > 0 && getAttendanceHour(Number(entry.timestamp)) >= 12)
+  const amIn = amEntries[0] || null
+  const amOut = amEntries.length > 1 ? amEntries[amEntries.length - 1] : null
+  const pmIn = pmEntries[0] || null
+  const pmOut = pmEntries.length > 1 ? pmEntries[pmEntries.length - 1] : null
+  const hasAM = Boolean(amIn)
+  const hasPM = Boolean(pmIn)
+  let status = 'No Record'
+  if (hasAM && hasPM) status = 'Complete'
+  else if (hasAM || hasPM) status = 'Partial'
+
+  return NextResponse.json({
+    ok: true,
+    date,
+    employeeId,
+    entries: sortedEntries,
+    summary: {
+      amIn: amIn ? amIn.time : null,
+      amOut: amOut ? amOut.time : null,
+      pmIn: pmIn ? pmIn.time : null,
+      pmOut: pmOut ? pmOut.time : null,
+      status,
+    },
+  })
+}
+

@@ -2,10 +2,10 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { createOriginGuard } from '@/lib/csrf'
 import { touchKioskDevice } from '@/lib/kiosk-devices'
 import { prepareAttendanceChallenge } from '@/lib/attendance/process'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function POST(request) {
   const guard = createOriginGuard()
@@ -15,7 +15,7 @@ export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}))
     const kioskContext = body?.kioskContext && typeof body.kioskContext === 'object' ? body.kioskContext : {}
-    const db = getAdminDb()
+    const db = null
     touchKioskDevice(db, {
       ...kioskContext,
       userAgent: request.headers.get('user-agent') || '',
@@ -36,3 +36,4 @@ export async function POST(request) {
     )
   }
 }
+

@@ -1,13 +1,17 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import * as adminAuth from '@/lib/admin-auth'
-import { writeAuditLog } from '@/lib/audit-log'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enrollment'
+import { postgresEnabled } from '@/lib/postgres/client'
+import {
+  enrollLocalPerson,
+  listLocalPersons,
+  writeLocalEnrollmentAuditLog,
+} from '@/lib/postgres/person-store'
 import {
   normalizeBody,
   validateBody,
@@ -53,7 +57,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await adminAuth.resolveAdminSession(db, session)
     timer.mark('session')
     if (!resolvedSession) {
@@ -61,10 +66,39 @@ export async function GET(request) {
     }
 
     if (new URL(request.url).searchParams.get('mode') === 'directory') {
+      if (usePostgres) {
+        const persons = (await listLocalPersons({
+          officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
+        })).filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
+        const pending = persons.filter(person => person.approvalStatus === 'pending').length
+        const rejected = persons.filter(person => person.approvalStatus === 'rejected').length
+        const approved = persons.length - pending - rejected
+        return NextResponse.json({
+          ok: true,
+          persons,
+          page: {
+            limit: persons.length,
+            hasMore: false,
+            nextCursor: '',
+            total: persons.length,
+            approved,
+            pending,
+            rejected,
+            searchMode: 'name',
+          },
+        })
+      }
       const response = await handleDirectoryGet(request, db, resolvedSession)
       timer.mark('directory')
       timer.warnIfSlow()
       return response
+    }
+
+    if (usePostgres) {
+      const persons = (await listLocalPersons({
+        officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
+      })).filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
+      return NextResponse.json({ ok: true, persons })
     }
 
     const snapshot = resolvedSession.scope === 'office'
@@ -138,6 +172,7 @@ export async function POST(request) {
   const guard = createOriginGuard()
   const originError = await guard(request)
   if (originError) return originError
+  const usePostgres = postgresEnabled()
 
   let body = normalizeBody(await request.json().catch(() => null))
   const validationError = validateBody(body)
@@ -148,10 +183,12 @@ export async function POST(request) {
 
   let publicSubmission = true
   try {
-    const db = getAdminDb()
-    const session = adminAuth.parseAdminSessionCookieValue(
-      request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
-    )
+    const db = null
+    const session = usePostgres
+      ? null
+      : adminAuth.parseAdminSessionCookieValue(
+          request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
+        )
     const resolvedSession = session ? await adminAuth.resolveAdminSession(db, session) : null
     publicSubmission = !resolvedSession
     const office = await getOfficeRecord(db, body.officeId)
@@ -222,18 +259,28 @@ export async function POST(request) {
       biometricModelVersion: authoritativePayload.biometricModelVersion,
     }
 
-    const { transactionResult, sampleCount, indexSyncWarning, duplicateReviewRequired } = await enrollPerson(db, body, office, resolvedSession)
+    const { transactionResult, sampleCount, indexSyncWarning, duplicateReviewRequired } = usePostgres
+      ? await enrollLocalPerson(body, office, resolvedSession)
+      : await enrollPerson(db, body, office, resolvedSession)
     timer.mark('enroll-write')
 
-    await uploadEnrollmentPhotoIfPending(
-      db,
-      transactionResult.personId,
-      body.photoDataUrl,
-      transactionResult.nextPerson.approvalStatus,
-    )
+    if (usePostgres) {
+      const { saveLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
+      await saveLocalEnrollmentPhoto(transactionResult.personId, body.photoDataUrl)
+      await writeLocalEnrollmentAuditLog(transactionResult, body, office, resolvedSession)
+    } else {
+      await uploadEnrollmentPhotoIfPending(
+        db,
+        transactionResult.personId,
+        body.photoDataUrl,
+        transactionResult.nextPerson.approvalStatus,
+      )
+    }
     timer.mark('photo')
 
-    await writeEnrollmentAuditLog(db, transactionResult, body, office, resolvedSession)
+    if (!usePostgres) {
+      await writeEnrollmentAuditLog(db, transactionResult, body, office, resolvedSession)
+    }
     timer.mark('audit')
 
     const baseMessage = transactionResult.nextPerson.approvalStatus === 'pending'
@@ -277,3 +324,4 @@ export async function POST(request) {
     )
   }
 }
+

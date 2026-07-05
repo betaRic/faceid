@@ -1,9 +1,5 @@
 import './globals.css'
-import { Analytics } from '@vercel/analytics/react'
-import { SpeedInsights } from '@vercel/speed-insights/next'
 import AppProviders from '@/components/AppProviders'
-
-const isVercelRuntime = process.env.VERCEL === '1'
 
 export const metadata = {
   title: 'FaceAttend — DILG Region XII',
@@ -18,12 +14,6 @@ export default function RootLayout({ children }) {
     <html lang="en" data-scroll-behavior="smooth">
       <body className="font-sans">
         <AppProviders>{children}</AppProviders>
-        {isVercelRuntime ? (
-          <>
-            <Analytics />
-            <SpeedInsights />
-          </>
-        ) : null}
       </body>
     </html>
   )

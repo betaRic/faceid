@@ -1,13 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
 import { recalculateDailyAttendanceMetrics } from '@/lib/daily-attendance'
 import { toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 function hasSegmentTimestamp(record) {
   return Boolean(
@@ -37,7 +38,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -57,6 +59,30 @@ export async function GET(request) {
     }
 
     const legacyDateLabel = toLegacyAttendanceDate(date)
+
+    if (usePostgres) {
+      const attendance = (await listLocalAttendanceLogs({
+        dateKey: date,
+        direction: 'asc',
+        limit: 2000,
+      }))
+        .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+        .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
+
+      const summary = buildAttendanceSummary({
+        attendance,
+        persons: [],
+        offices,
+        targetDate: date,
+      })
+
+      const records = summary.map(row => ({
+        id: row.employeeId ? `${row.employeeId}_${date}` : `${row.name}_${date}`,
+        ...row,
+      }))
+
+      return NextResponse.json({ ok: true, records })
+    }
 
     const snapshot = await db
       .collection('attendance')
@@ -105,4 +131,5 @@ export async function GET(request) {
     )
   }
 }
+
 

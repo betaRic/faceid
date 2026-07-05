@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   isRegionalAdminSession,
@@ -10,6 +9,8 @@ import {
 } from '@/lib/admin-auth'
 import { createOriginGuard } from '@/lib/csrf'
 import { writeAuditLog } from '@/lib/audit-log'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { countLocalRowsBefore, deleteLocalRowsBefore } from '@/lib/postgres/report-store'
 
 function toNumber(value, fallback) {
   const numeric = Number(value)
@@ -47,7 +48,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
@@ -57,18 +59,20 @@ export async function GET(request) {
     const retentionDays = Math.max(7, Math.min(365, toNumber(url.searchParams.get('days'), 30)))
     const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000)
 
-    const [scanEvents, attendanceChallenges] = await Promise.all([
-      countOlderThan(db, 'scan_events', 'timestamp', cutoff),
-      countOlderThan(db, 'attendance_challenges', 'expiresAtMs', cutoff),
-    ])
+    const counts = usePostgres
+      ? await countLocalRowsBefore(cutoff)
+      : {
+          scan_events: await countOlderThan(db, 'scan_events', 'timestamp', cutoff),
+          attendance_challenges: await countOlderThan(db, 'attendance_challenges', 'expiresAtMs', cutoff),
+        }
 
     return NextResponse.json({
       ok: true,
       retentionDays,
       cutoff,
       deletable: {
-        scanEvents,
-        attendanceChallenges,
+        scanEvents: Number(counts.scan_events || 0),
+        attendanceChallenges: Number(counts.attendance_challenges || 0),
       },
     })
   } catch (error) {
@@ -92,7 +96,8 @@ export async function POST(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
@@ -106,10 +111,14 @@ export async function POST(request) {
     const retentionDays = Math.max(7, Math.min(365, toNumber(body?.days, 30)))
     const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000)
 
-    const [deletedScanEvents, deletedChallenges] = await Promise.all([
-      deleteOlderThan(db, 'scan_events', 'timestamp', cutoff),
-      deleteOlderThan(db, 'attendance_challenges', 'expiresAtMs', cutoff),
-    ])
+    const deleted = usePostgres
+      ? await deleteLocalRowsBefore(cutoff)
+      : {
+          scanEventsDeleted: await deleteOlderThan(db, 'scan_events', 'timestamp', cutoff),
+          attendanceChallengesDeleted: await deleteOlderThan(db, 'attendance_challenges', 'expiresAtMs', cutoff),
+        }
+    const deletedScanEvents = Number(deleted.scanEventsDeleted || 0)
+    const deletedChallenges = Number(deleted.attendanceChallengesDeleted || 0)
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -140,3 +149,4 @@ export async function POST(request) {
     )
   }
 }
+

@@ -1,7 +1,8 @@
-import { getAdminDb } from '@/lib/firebase-admin'
 import { listEmployeeDailyAttendanceRecords, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { getAttendanceHour, getAttendanceMinutesOfDay, ATTENDANCE_TIME_ZONE } from '@/lib/attendance-time'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const access = await resolveAttendanceViewer(request, db, employeeId)
     if (!access.viewer) {
       return Response.json({ ok: false, message: access.message }, { status: access.status })
@@ -63,6 +65,40 @@ export async function GET(request) {
     const startDate = new Date(`${targetYear}-${monthLabel}-01T00:00:00+08:00`)
     const endDate = new Date(`${targetYear}-${monthLabel}-${lastDay}T23:59:59.999+08:00`)
 
+    const logs = usePostgres
+      ? await listLocalAttendanceLogs({
+          employeeId,
+          startMs: startDate.getTime(),
+          endMs: endDate.getTime(),
+          direction: 'asc',
+          limit: 3000,
+        })
+      : null
+
+    if (usePostgres) {
+      const logsByDate = {}
+      logs.forEach(log => {
+        const dateKey = log.dateKey
+        if (!logsByDate[dateKey]) logsByDate[dateKey] = []
+        logsByDate[dateKey].push(log)
+      })
+
+      const days = Object.keys(logsByDate).sort().map(dateKey => {
+        const dayLogs = logsByDate[dateKey].sort((a, b) => a.timestamp - b.timestamp)
+        return deriveDailyRecord(dayLogs, dateKey)
+      })
+
+      return Response.json({
+        ok: true,
+        employeeId,
+        month: targetMonth,
+        year: targetYear,
+        totalDays: days.length,
+        totalLogs: logs.length,
+        days,
+      })
+    }
+
     const snapshot = await db.collection('attendance')
       .where('employeeId', '==', employeeId)
       .where('timestamp', '>=', startDate.getTime())
@@ -70,10 +106,10 @@ export async function GET(request) {
       .orderBy('timestamp', 'asc')
       .get()
 
-    const logs = snapshot.docs.map(doc => doc.data())
+    const fallbackLogs = snapshot.docs.map(doc => doc.data())
 
     const logsByDate = {}
-    logs.forEach(log => {
+    fallbackLogs.forEach(log => {
       const dateKey = log.dateKey
       if (!logsByDate[dateKey]) logsByDate[dateKey] = []
       logsByDate[dateKey].push(log)
@@ -90,7 +126,7 @@ export async function GET(request) {
       month: targetMonth,
       year: targetYear,
       totalDays: days.length,
-      totalLogs: logs.length,
+      totalLogs: fallbackLogs.length,
       days,
     })
   } catch (error) {
@@ -180,3 +216,4 @@ function formatUndertime(minutes) {
   const m = minutes % 60
   return `${h}h ${m}m`
 }
+

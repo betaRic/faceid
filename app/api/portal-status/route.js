@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
@@ -13,6 +12,7 @@ import {
   parseHrSessionCookieValue,
   resolveHrSession,
 } from '@/lib/hr-auth'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function GET(request) {
   try {
@@ -26,7 +26,7 @@ export async function GET(request) {
       return NextResponse.json({ role: null })
     }
 
-    const db = getAdminDb()
+    const db = null
 
     if (adminSession) {
       const resolved = await resolveAdminSession(db, adminSession)
@@ -44,3 +44,4 @@ export async function GET(request) {
     return NextResponse.json({ role: null })
   }
 }
+

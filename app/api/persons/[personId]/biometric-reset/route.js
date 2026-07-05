@@ -1,8 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
@@ -14,6 +12,8 @@ import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import { PERSON_APPROVAL_PENDING } from '@/lib/person-approval'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { getLocalPersonById, resetLocalPersonBiometrics } from '@/lib/postgres/person-store'
 
 /**
  * Admin-initiated biometric reset for a single employee.
@@ -41,24 +41,48 @@ export async function POST(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
-    const personRef = db.collection('persons').doc(personId)
-    const personDoc = await personRef.get()
-    if (!personDoc.exists) {
+    const personRef = usePostgres ? null : db.collection('persons').doc(personId)
+    const personDoc = usePostgres ? await getLocalPersonById(personId) : await personRef.get()
+    if (usePostgres ? !personDoc : !personDoc.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record not found.' }, { status: 404 })
     }
 
-    const person = personDoc.data()
+    const person = usePostgres ? personDoc : personDoc.data()
     if (!adminSessionAllowsOffice(resolvedSession, person.officeId)) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot reset that employee.' }, { status: 403 })
     }
 
     const previousSampleCount = Array.isArray(person.descriptors) ? person.descriptors.length : 0
+
+    if (usePostgres) {
+      await resetLocalPersonBiometrics(personId)
+      await writeAuditLog(db, {
+        actorRole: resolvedSession.role,
+        actorScope: resolvedSession.scope,
+        actorOfficeId: resolvedSession.officeId,
+        action: 'person_biometric_reset',
+        targetType: 'person',
+        targetId: personId,
+        officeId: person.officeId || '',
+        summary: `Biometric reset for ${person.name} — ${previousSampleCount} sample(s) cleared, set to pending re-enrollment`,
+        metadata: {
+          employeeId: person.employeeId || '',
+          previousSampleCount,
+          officeName: person.officeName || '',
+        },
+      })
+      return NextResponse.json({
+        ok: true,
+        message: `Face data cleared. ${person.name} must re-enroll in admin or at /registration and be re-approved.`,
+      })
+    }
 
     await personRef.update({
       descriptors: [],
@@ -109,3 +133,4 @@ export async function POST(request, { params }) {
     )
   }
 }
+

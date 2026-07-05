@@ -1,14 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { Timestamp } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
 import { resolveReportWindow } from '@/lib/report-window'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAuditLogs } from '@/lib/postgres/report-store'
 
 function safeSerialize(value) {
   if (value === null || value === undefined) return value
@@ -32,7 +32,8 @@ export async function GET(request) {
   const summary = searchParams.get('summary') === 'true'
   const requireAuth = !summary
 
-  const db = getAdminDb()
+  const usePostgres = postgresEnabled()
+  const db = null
 
   if (requireAuth) {
     const session = parseAdminSessionCookieValue(
@@ -51,6 +52,75 @@ export async function GET(request) {
   const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500)
   const offset = searchParams.get('offset')
   const window = resolveReportWindow(searchParams, { now: Date.now(), defaultDays: 14, maxDays: 62 })
+
+  if (usePostgres) {
+    const logs = await listLocalAuditLogs({
+      action: decisionCode ? '' : '',
+      officeId: officeId || '',
+      limit,
+      offset,
+      startMs: window.startMs,
+      endMs: window.endMs,
+    })
+    let filtered = logs
+    if (decisionCode) {
+      filtered = filtered.filter(log => String(log.metadata?.decisionCode || log.action || '') === decisionCode)
+    }
+
+    if (summary) {
+      const byDecision = {}
+      const byDate = {}
+      const byHour = {}
+      filtered.forEach(log => {
+        const code = log.metadata?.decisionCode || log.action
+        byDecision[code] = (byDecision[code] || 0) + 1
+        if (log.createdAt) {
+          const date = log.createdAt.split('T')[0]
+          byDate[date] = (byDate[date] || 0) + 1
+          const hour = log.createdAt.slice(0, 13) + ':00:00'
+          byHour[hour] = (byHour[hour] || 0) + 1
+        }
+      })
+
+      return NextResponse.json({
+        total: filtered.length,
+        window: {
+          mode: window.mode,
+          label: window.label,
+          fromDateKey: window.fromDateKey,
+          toDateKey: window.toDateKey,
+          startUtc: window.startUtc,
+          endUtcExclusive: window.endUtcExclusive,
+        },
+        byDecisionCode: byDecision,
+        byDate,
+        byHour,
+        recentLogs: filtered.slice(0, 20).map(log => ({
+          id: log.id,
+          action: log.action,
+          summary: log.summary,
+          decisionCode: log.metadata?.decisionCode,
+          reason: log.metadata?.reason,
+          createdAt: log.createdAt,
+        })),
+      })
+    }
+
+    return NextResponse.json({
+      logs: filtered,
+      nextOffset: filtered.length > 0 ? String(Number(offset || 0) + filtered.length) : null,
+      total: filtered.length,
+      window: {
+        mode: window.mode,
+        label: window.label,
+        fromDateKey: window.fromDateKey,
+        toDateKey: window.toDateKey,
+        startUtc: window.startUtc,
+        endUtcExclusive: window.endUtcExclusive,
+      },
+    })
+  }
+
   const query = db.collection('audit_logs')
     .where('createdAt', '>=', Timestamp.fromMillis(window.startMs))
     .where('createdAt', '<', Timestamp.fromMillis(window.endMs))
@@ -142,3 +212,4 @@ export async function GET(request) {
     },
   })
 }
+

@@ -1,10 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { Timestamp } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { resolveReportWindow } from '@/lib/report-window'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAuditLogs } from '@/lib/postgres/report-store'
 
 function safeTimestamp(value) {
   if (!value) return null
@@ -35,7 +35,8 @@ export async function GET(request) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
@@ -45,6 +46,36 @@ export async function GET(request) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100)
     const action = searchParams.get('action') || ''
     const window = resolveReportWindow(searchParams, { now: Date.now(), defaultDays: 14, maxDays: 62 })
+
+    if (usePostgres) {
+      const logs = await listLocalAuditLogs({
+        action,
+        limit,
+        startMs: window.startMs,
+        endMs: window.endMs,
+      })
+      const byAction = {}
+      const byDecisionCode = {}
+      for (const log of logs) {
+        byAction[log.action] = (byAction[log.action] || 0) + 1
+        const dc = log.metadata?.decisionCode
+        if (dc) byDecisionCode[dc] = (byDecisionCode[dc] || 0) + 1
+      }
+      return NextResponse.json({
+        total: logs.length,
+        window: {
+          mode: window.mode,
+          label: window.label,
+          fromDateKey: window.fromDateKey,
+          toDateKey: window.toDateKey,
+          startUtc: window.startUtc,
+          endUtcExclusive: window.endUtcExclusive,
+        },
+        byAction,
+        byDecisionCode,
+        logs,
+      })
+    }
 
     let query = db.collection('audit_logs')
       .where('createdAt', '>=', Timestamp.fromMillis(window.startMs))
@@ -103,3 +134,4 @@ export async function GET(request) {
     )
   }
 }
+

@@ -1,7 +1,6 @@
 import 'server-only'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { DESCRIPTOR_LENGTH } from '@/lib/config'
 import { createOriginGuard } from '@/lib/csrf'
@@ -43,7 +42,7 @@ export async function POST(request) {
   const originError = await guard(request)
   if (originError) return originError
 
-  const db = getAdminDb()
+  const db = null
   const ip = getRequestIp(request)
 
   const rateCheck = await enforceRateLimit(db, {

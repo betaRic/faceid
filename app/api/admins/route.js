@@ -1,12 +1,12 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listAdminProfiles } from '@/lib/admin-directory'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { createLocalAdminProfile, localEmailExists } from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
   return {
@@ -14,6 +14,7 @@ function normalizeBody(body) {
     displayName: String(body?.displayName || '').trim(),
     scope: String(body?.scope || 'office').trim().toLowerCase() === 'regional' ? 'regional' : 'office',
     officeId: String(body?.officeId || '').trim(),
+    pin: String(body?.pin || '').trim(),
     active: body?.active !== false,
   }
 }
@@ -21,6 +22,7 @@ function normalizeBody(body) {
 function validateBody(body) {
   if (!body.email) return 'Email is required.'
   if (body.scope === 'office' && !body.officeId) return 'Office-scoped admins require an office.'
+  if (body.pin && !/^\d{4,8}$/.test(body.pin)) return 'PIN must be 4 to 8 digits.'
   return null
 }
 
@@ -31,7 +33,7 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -67,7 +69,8 @@ export async function POST(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -75,21 +78,28 @@ export async function POST(request) {
     if (!isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
+    if (usePostgres && !body.pin) {
+      return NextResponse.json({ ok: false, message: 'PIN is required for local admin users.' }, { status: 400 })
+    }
 
-    const existing = await db.collection('admins').where('email', '==', body.email).limit(1).get()
-    if (!existing.empty) {
+    const exists = usePostgres
+      ? await localEmailExists('admin_users', body.email)
+      : !(await db.collection('admins').where('email', '==', body.email).limit(1).get()).empty
+    if (exists) {
       return NextResponse.json({ ok: false, message: 'An admin record already exists for that email.' }, { status: 409 })
     }
 
-    const record = await db.collection('admins').add({
-      email: body.email,
-      displayName: body.displayName,
-      scope: body.scope,
-      officeId: body.scope === 'office' ? body.officeId : '',
-      active: body.active,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    })
+    const recordId = usePostgres
+      ? await createLocalAdminProfile(body)
+      : (await db.collection('admins').add({
+          email: body.email,
+          displayName: body.displayName,
+          scope: body.scope,
+          officeId: body.scope === 'office' ? body.officeId : '',
+          active: body.active,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        })).id
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -97,7 +107,7 @@ export async function POST(request) {
       actorOfficeId: resolvedSession.officeId,
       action: 'admin_create',
       targetType: 'admin',
-      targetId: record.id,
+      targetId: recordId,
       officeId: body.scope === 'office' ? body.officeId : '',
       summary: `Created admin record for ${body.email}`,
       metadata: {
@@ -106,7 +116,7 @@ export async function POST(request) {
       },
     })
 
-    return NextResponse.json({ ok: true, id: record.id })
+    return NextResponse.json({ ok: true, id: recordId })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to create admin record.' },
@@ -114,4 +124,5 @@ export async function POST(request) {
     )
   }
 }
+
 

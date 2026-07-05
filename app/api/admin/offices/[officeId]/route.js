@@ -1,13 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { adminSessionAllowsOffice, isRegionalAdminSession, parseAdminSessionCookieValue, getAdminSessionCookieName, resolveAdminSession } from '@/lib/admin-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { clearOfficeRecordCache } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { normalizeDivisionList, REGIONAL_OFFICE_TYPE } from '@/lib/offices'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { deleteLocalOffice, getLocalOfficeReferenceCounts, localOfficeExists, upsertLocalOffice } from '@/lib/postgres/report-store'
 
 function normalizeOfficePayload(officeId, payload) {
   return {
@@ -118,7 +118,8 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -127,10 +128,13 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot edit that office.' }, { status: 403 })
     }
 
-    await db.collection('offices').doc(office.id).set({
-      ...office,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
+    if (usePostgres) await upsertLocalOffice(office)
+    else {
+      await db.collection('offices').doc(office.id).set({
+        ...office,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+    }
     await clearOfficeRecordCache()
 
     await writeAuditLog(db, {
@@ -177,31 +181,27 @@ export async function DELETE(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const officeRef = db.collection('offices').doc(officeId)
-    const officeSnapshot = await officeRef.get()
-    if (!officeSnapshot.exists) {
+    const officeRef = usePostgres ? null : db.collection('offices').doc(officeId)
+    const officeSnapshot = usePostgres ? await localOfficeExists(officeId) : await officeRef.get()
+    if (usePostgres ? !officeSnapshot : !officeSnapshot.exists) {
       return NextResponse.json({ ok: false, message: 'Office not found.' }, { status: 404 })
     }
 
-    const [personCount, adminCount, attendanceCount, dailyCount] = await Promise.all([
-      db.collection('persons').where('officeId', '==', officeId).count().get(),
-      db.collection('admins').where('officeId', '==', officeId).count().get(),
-      db.collection('attendance').where('officeId', '==', officeId).count().get(),
-      db.collection('attendance_daily').where('officeId', '==', officeId).count().get(),
-    ])
-
-    const references = {
-      persons: personCount.data().count,
-      admins: adminCount.data().count,
-      attendance: attendanceCount.data().count,
-      attendanceDaily: dailyCount.data().count,
-    }
+    const references = usePostgres
+      ? await getLocalOfficeReferenceCounts(officeId)
+      : {
+          persons: (await db.collection('persons').where('officeId', '==', officeId).count().get()).data().count,
+          admins: (await db.collection('admins').where('officeId', '==', officeId).count().get()).data().count,
+          attendance: (await db.collection('attendance').where('officeId', '==', officeId).count().get()).data().count,
+          attendanceDaily: (await db.collection('attendance_daily').where('officeId', '==', officeId).count().get()).data().count,
+        }
 
     if (Object.values(references).some(count => Number(count) > 0)) {
       return NextResponse.json({
@@ -211,8 +211,9 @@ export async function DELETE(request, { params }) {
       }, { status: 409 })
     }
 
-    const office = officeSnapshot.data() || {}
-    await officeRef.delete()
+    const office = usePostgres ? { name: officeId } : (officeSnapshot.data() || {})
+    if (usePostgres) await deleteLocalOffice(officeId)
+    else await officeRef.delete()
     await clearOfficeRecordCache()
 
     await writeAuditLog(db, {
@@ -235,3 +236,4 @@ export async function DELETE(request, { params }) {
     )
   }
 }
+

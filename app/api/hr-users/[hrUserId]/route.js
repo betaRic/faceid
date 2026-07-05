@@ -1,12 +1,17 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { hashPin } from '@/lib/hr-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled } from '@/lib/postgres/client'
+import {
+  deleteLocalHrProfile,
+  getLocalHrProfileById,
+  localEmailExists,
+  updateLocalHrProfile,
+} from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
   return {
@@ -48,7 +53,8 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -57,31 +63,36 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const ref = db.collection('hr_users').doc(hrUserId)
-    const existing = await ref.get()
-    if (!existing.exists) {
+    const existing = usePostgres ? await getLocalHrProfileById(hrUserId) : await db.collection('hr_users').doc(hrUserId).get()
+    if (usePostgres ? !existing : !existing.exists) {
       return NextResponse.json({ ok: false, message: 'HR user record was not found.' }, { status: 404 })
     }
 
-    const duplicate = await db.collection('hr_users').where('email', '==', body.email).limit(2).get()
-    if (duplicate.docs.some(record => record.id !== hrUserId)) {
+    const duplicate = usePostgres
+      ? await localEmailExists('hr_users', body.email, hrUserId)
+      : (await db.collection('hr_users').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== hrUserId)
+    if (duplicate) {
       return NextResponse.json({ ok: false, message: 'Another HR user record already uses that email.' }, { status: 409 })
     }
 
-    const updateData = {
-      email: body.email,
-      displayName: body.displayName,
-      scope: body.scope,
-      officeId: body.scope === 'office' ? body.officeId : '',
-      active: body.active,
-      updatedAt: FieldValue.serverTimestamp(),
-    }
+    if (usePostgres) {
+      await updateLocalHrProfile(hrUserId, body)
+    } else {
+      const updateData = {
+        email: body.email,
+        displayName: body.displayName,
+        scope: body.scope,
+        officeId: body.scope === 'office' ? body.officeId : '',
+        active: body.active,
+        updatedAt: FieldValue.serverTimestamp(),
+      }
 
-    if (body.pin) {
-      updateData.pinHash = hashPin(body.pin)
-    }
+      if (body.pin) {
+        updateData.pinHash = hashPin(body.pin)
+      }
 
-    await ref.set(updateData, { merge: true })
+      await db.collection('hr_users').doc(hrUserId).set(updateData, { merge: true })
+    }
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -124,7 +135,8 @@ export async function DELETE(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -133,15 +145,15 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const ref = db.collection('hr_users').doc(hrUserId)
-    const existing = await ref.get()
-    if (!existing.exists) {
+    const existing = usePostgres ? await getLocalHrProfileById(hrUserId) : await db.collection('hr_users').doc(hrUserId).get()
+    if (usePostgres ? !existing : !existing.exists) {
       return NextResponse.json({ ok: false, message: 'HR user record was not found.' }, { status: 404 })
     }
 
-    const existingData = existing.data() || {}
+    const existingData = usePostgres ? existing : existing.data() || {}
 
-    await ref.delete()
+    if (usePostgres) await deleteLocalHrProfile(hrUserId)
+    else await db.collection('hr_users').doc(hrUserId).delete()
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -165,3 +177,4 @@ export async function DELETE(request, { params }) {
     )
   }
 }
+

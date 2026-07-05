@@ -1,8 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
@@ -17,6 +15,12 @@ import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/emp
 import { deletePersonBiometricsRecord, syncPersonBiometricsRecord } from '@/lib/person-biometrics'
 import { kvDel, kvKeys } from '@/lib/kv-utils'
 import { deleteEnrollmentPhoto } from '@/lib/storage'
+import { postgresEnabled } from '@/lib/postgres/client'
+import {
+  deleteLocalPerson,
+  getLocalPersonById,
+  updateLocalPersonProfile,
+} from '@/lib/postgres/person-store'
 import {
   getEffectivePersonApprovalStatus,
   PERSON_APPROVAL_APPROVED,
@@ -113,14 +117,15 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
-    const existing = await db.collection('persons').doc(personId).get()
-    if (!existing.exists) {
+    const existing = usePostgres ? await getLocalPersonById(personId) : await db.collection('persons').doc(personId).get()
+    if (usePostgres ? !existing : !existing.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
 
@@ -134,9 +139,42 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: divisionError }, { status: 400 })
     }
 
-    const existingData = existing.data()
+    const existingData = usePostgres ? existing : existing.data()
     if (!adminSessionAllowsOffice(resolvedSession, existingData.officeId) || !adminSessionAllowsOffice(resolvedSession, office.id)) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot update that employee.' }, { status: 403 })
+    }
+
+    if (usePostgres) {
+      const updateResult = await updateLocalPersonProfile(personId, body, office, resolvedSession)
+      if (!updateResult) {
+        return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
+      }
+      const action = updateResult.approvalChanged
+        ? updateResult.nextPerson.approvalStatus === PERSON_APPROVAL_APPROVED
+          ? 'person_approve'
+          : updateResult.nextPerson.approvalStatus === PERSON_APPROVAL_REJECTED
+            ? 'person_reject'
+            : 'person_review_reset'
+        : updateResult.officeChanged
+          ? 'person_transfer'
+          : 'person_update'
+      await writeAuditLog(db, {
+        actorRole: resolvedSession.role,
+        actorScope: resolvedSession.scope,
+        actorOfficeId: resolvedSession.officeId,
+        action,
+        targetType: 'person',
+        targetId: personId,
+        officeId: office.id,
+        summary: `Updated employee record for ${body.name}`,
+        metadata: {
+          employeeId: updateResult.existing.employeeId || '',
+          officeName: office.name,
+          active: body.active,
+          approvalStatus: updateResult.nextPerson.approvalStatus,
+        },
+      })
+      return NextResponse.json({ ok: true })
     }
 
     const previousApprovalStatus = getEffectivePersonApprovalStatus(existingData)
@@ -323,18 +361,19 @@ export async function DELETE(request, { params }) {
   const confirmName = String(searchParams.get('confirm') || '').trim().toLowerCase()
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveEmployeeManagementSession(request, db)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin or HR login with employee access is required to delete employees.' }, { status: 401 })
     }
 
-    const existing = await db.collection('persons').doc(personId).get()
-    if (!existing.exists) {
+    const existing = usePostgres ? await getLocalPersonById(personId) : await db.collection('persons').doc(personId).get()
+    if (usePostgres ? !existing : !existing.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
 
-    const personData = existing.data()
+    const personData = usePostgres ? existing : existing.data()
     if (!personData) {
       return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
     }
@@ -352,13 +391,42 @@ export async function DELETE(request, { params }) {
         return NextResponse.json({ ok: false, message: 'Employee name does not match. Hard delete requires exact name confirmation.' }, { status: 400 })
       }
 
+      if (usePostgres) {
+        const deleted = await deleteLocalPerson(personId, { hardDelete: true })
+        const { deleteLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
+        const photoDeleted = await deleteLocalEnrollmentPhoto(personData)
+        await writeAuditLog(db, {
+          actorRole: resolvedSession.role,
+          actorScope: resolvedSession.scope,
+          actorOfficeId: resolvedSession.officeId,
+          action: 'person_hard_delete',
+          targetType: 'person',
+          targetId: personId,
+          officeId: personData.officeId || '',
+          summary: `Hard deleted employee ${personData.name || personId} and all related data`,
+          metadata: {
+            employeeId: personData.employeeId || '',
+            officeName: personData.officeName || '',
+            ...(deleted?.counts || {}),
+            photoDeleted,
+          },
+        })
+        return NextResponse.json({ ok: true, hardDeleted: true, deletedCounts: { ...(deleted?.counts || {}), photoDeleted } })
+      }
+
       const deletedCounts = await hardDeleteEmployee(db, resolvedSession, personId, personData)
       return NextResponse.json({ ok: true, hardDeleted: true, deletedCounts })
     }
 
-    await db.collection('persons').doc(personId).delete()
-    await deletePersonBiometricIndex(db, personId, { officeIds: [personData.officeId] })
-    await deletePersonBiometricsRecord(db, personId)
+    if (usePostgres) {
+      await deleteLocalPerson(personId, { hardDelete: false })
+      const { deleteLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
+      await deleteLocalEnrollmentPhoto(personData)
+    } else {
+      await db.collection('persons').doc(personId).delete()
+      await deletePersonBiometricIndex(db, personId, { officeIds: [personData.officeId] })
+      await deletePersonBiometricsRecord(db, personId)
+    }
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
       actorScope: resolvedSession.scope,
@@ -381,3 +449,4 @@ export async function DELETE(request, { params }) {
     )
   }
 }
+

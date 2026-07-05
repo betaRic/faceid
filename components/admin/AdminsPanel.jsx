@@ -41,6 +41,7 @@ function AdminsPanelInner() {
         displayName: data.displayName,
         scope: data.scope,
         officeId: data.officeId,
+        pin: data.pin,
         role: 'admin',
       })
     } else if (data.type === 'hr') {

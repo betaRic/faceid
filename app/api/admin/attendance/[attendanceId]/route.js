@@ -1,8 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
@@ -14,6 +12,9 @@ import { createOriginGuard } from '@/lib/csrf'
 import { kvDel } from '@/lib/kv-utils'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
 import { getOfficeRecord } from '@/lib/office-directory'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { deleteLocalAttendanceById, getLocalAttendanceById, listLocalAttendanceLogs } from '@/lib/postgres/report-store'
+import { upsertLocalDailyAttendanceRecord } from '@/lib/postgres/attendance-store'
 
 // DELETE /api/admin/attendance/[attendanceId]
 export async function DELETE(request, { params }) {
@@ -34,20 +35,21 @@ export async function DELETE(request, { params }) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
     }
 
-    const ref = db.collection('attendance').doc(attendanceId)
-    const doc = await ref.get()
+    const ref = usePostgres ? null : db.collection('attendance').doc(attendanceId)
+    const doc = usePostgres ? await getLocalAttendanceById(attendanceId) : await ref.get()
 
-    if (!doc.exists) {
+    if (usePostgres ? !doc : !doc.exists) {
       return NextResponse.json({ ok: false, message: 'Attendance entry not found.' }, { status: 404 })
     }
 
-    const data = doc.data()
+    const data = usePostgres ? doc : doc.data()
 
     if (!adminSessionAllowsOffice(resolvedSession, data.officeId)) {
       return NextResponse.json(
@@ -56,22 +58,24 @@ export async function DELETE(request, { params }) {
       )
     }
 
-    await ref.delete()
+    if (usePostgres) await deleteLocalAttendanceById(attendanceId)
+    else await ref.delete()
 
     // Invalidate the KV cache so the summary panel refreshes correctly
     if (data.employeeId && data.dateKey) {
       await kvDel(`attendance:logs:${data.employeeId}:${data.dateKey}`)
 
-      // Refresh attendance_daily Firestore doc so HR sees correct data immediately
+      // Refresh attendance_daily so HR sees correct data immediately
       // (fetch AFTER delete so the removed entry is excluded from the fresh logs)
       try {
-        const freshSnapshot = await db
-          .collection('attendance')
-          .where('employeeId', '==', data.employeeId)
-          .where('dateKey', '==', data.dateKey)
-          .orderBy('timestamp', 'asc')
-          .get()
-        const freshLogs = freshSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        const freshLogs = usePostgres
+          ? await listLocalAttendanceLogs({ employeeId: data.employeeId, dateKey: data.dateKey, direction: 'asc', limit: 500 })
+          : (await db
+              .collection('attendance')
+              .where('employeeId', '==', data.employeeId)
+              .where('dateKey', '==', data.dateKey)
+              .orderBy('timestamp', 'asc')
+              .get()).docs.map(doc => ({ id: doc.id, ...doc.data() }))
         const officeRecord = await getOfficeRecord(db, data.officeId)
         if (officeRecord) {
           const dailyRecord = deriveDailyAttendanceRecord({
@@ -80,10 +84,13 @@ export async function DELETE(request, { params }) {
             office: officeRecord,
             targetDateKey: data.dateKey,
           })
-          await db.collection('attendance_daily').doc(`${data.employeeId}_${data.dateKey}`).set({
-            ...dailyRecord,
-            updatedAt: FieldValue.serverTimestamp(),
-          }, { merge: true })
+          if (usePostgres) await upsertLocalDailyAttendanceRecord(dailyRecord)
+          else {
+            await db.collection('attendance_daily').doc(`${data.employeeId}_${data.dateKey}`).set({
+              ...dailyRecord,
+              updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true })
+          }
         }
       } catch (cacheErr) {
         console.error('[Admin] Failed to refresh attendance_daily after delete:', cacheErr?.message)
@@ -117,3 +124,4 @@ export async function DELETE(request, { params }) {
     )
   }
 }
+

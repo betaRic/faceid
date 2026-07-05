@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
@@ -15,18 +14,19 @@ import {
 import { getActiveThresholds, setActiveThresholds, resetThresholdsToDefaults, DEFAULTS, THRESHOLD_META } from '@/lib/thresholds'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 async function resolveSession(request) {
   const adminCookie = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (adminCookie) {
-    const db = getAdminDb()
+    const db = null
     const resolved = await resolveAdminSession(db, adminCookie)
     if (resolved) return { role: 'admin', resolved, db }
   }
 
   const hrCookie = parseHrSessionCookieValue(request.cookies.get(getHrSessionCookieName())?.value)
   if (hrCookie) {
-    const db = getAdminDb()
+    const db = null
     const resolved = await resolveHrSession(db, hrCookie)
     if (resolved) return { role: 'hr', resolved, db }
   }
@@ -157,3 +157,4 @@ export async function POST(request) {
     )
   }
 }
+

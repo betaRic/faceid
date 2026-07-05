@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { parseAdminSessionCookieValue, createAdminSessionCookieValue, getAdminSessionCookieName, getAdminSessionMaxAge, sessionNeedsRefresh, sessionTimeRemaining, resolveAdminSession } from '@/lib/admin-auth'
-import { getAdminDb } from '@/lib/firebase-admin'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function GET(request) {
   const session = parseAdminSessionCookieValue(
@@ -11,7 +11,7 @@ export async function GET(request) {
     return NextResponse.json({ ok: false, message: 'No active session.' }, { status: 401 })
   }
 
-  const db = getAdminDb()
+  const db = null
   const resolvedSession = await resolveAdminSession(db, session)
 
   if (!resolvedSession) {
@@ -55,3 +55,4 @@ export async function GET(request) {
 
   return response
 }
+

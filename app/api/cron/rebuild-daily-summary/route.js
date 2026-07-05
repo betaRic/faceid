@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
 import { formatAttendanceDateKey } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
@@ -14,7 +13,7 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const db = getAdminDb()
+  const db = null
   const yesterday = new Date(Date.now() - 86400000)
   const dateKey = formatAttendanceDateKey(yesterday)
 
@@ -55,3 +54,4 @@ export async function GET(request) {
 
   return NextResponse.json({ ok: true, dateKey, rebuilt })
 }
+

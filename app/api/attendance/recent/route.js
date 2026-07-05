@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
@@ -11,10 +12,21 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    }
+
+    if (usePostgres) {
+      const attendance = (await listLocalAttendanceLogs({
+        officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
+        limit: 500,
+        direction: 'desc',
+      })).filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+
+      return NextResponse.json({ ok: true, attendance })
     }
 
     const snapshot = resolvedSession.scope === 'office'
@@ -60,4 +72,5 @@ export async function GET(request) {
     )
   }
 }
+
 

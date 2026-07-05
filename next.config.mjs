@@ -1,7 +1,4 @@
-const includeOpenVinoRuntime = (
-  process.env.INCLUDE_OPENVINO_RUNTIME === 'true'
-  || Boolean(process.env.RAILWAY_SERVICE_ID)
-)
+const includeOpenVinoRuntime = process.env.INCLUDE_OPENVINO_RUNTIME === 'true'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

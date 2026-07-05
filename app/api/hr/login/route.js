@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   createHrSessionCookieValue,
   getHrSessionCookieName,
@@ -14,6 +13,8 @@ import { getHrProfileByEmail, getHrCount } from '@/lib/hr-directory'
 import { writeAuditLog } from '@/lib/audit-log'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { findLocalHrByPin } from '@/lib/postgres/user-store'
 
 function getAllowedEmails() {
   return String(process.env.HR_ALLOWED_EMAILS || '')
@@ -27,7 +28,8 @@ export async function POST(request) {
   const originError = await checkOrigin(request)
   if (originError) return originError
 
-  const db = getAdminDb()
+  const usePostgres = postgresEnabled()
+  const db = null
   const ip = getRequestIp(request)
 
   const ipLimit = await enforceRateLimit(db, {
@@ -55,6 +57,12 @@ export async function POST(request) {
     let hrProfile = null
 
     if (pin) {
+      if (usePostgres) {
+        hrProfile = await findLocalHrByPin(pin)
+        if (!hrProfile) {
+          return NextResponse.json({ ok: false, message: 'Invalid PIN.' }, { status: 401 })
+        }
+      } else {
       const snapshots = await db
         .collection('hr_users')
         .where('active', '==', true)
@@ -77,6 +85,7 @@ export async function POST(request) {
 
       if (!hrProfile) {
         return NextResponse.json({ ok: false, message: 'Invalid PIN.' }, { status: 401 })
+      }
       }
     } else if (email) {
       const emailLimit = await enforceRateLimit(db, {
@@ -188,3 +197,4 @@ export async function POST(request) {
     )
   }
 }
+

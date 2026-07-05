@@ -9,11 +9,24 @@ import { useKioskLoop } from '@/hooks/useKioskLoop'
 import { useKioskMetrics } from '@/hooks/useKioskMetrics'
 import AppShell from './AppShell'
 import { useKioskClock } from '@/hooks/useKioskClock'
-import AttendanceTableView from './kiosk/AttendanceTableView'
 import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
 import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
 import { clearAttendanceMatch, saveAttendanceMatch } from '@/lib/attendance-match'
+
+const CLAIMED_EMPLOYEE_ID_STORAGE_KEY = 'faceattend:claimed-employee-id'
+
+function normalizeEmployeeIdInput(value) {
+  return String(value || '').trim().replace(/\s+/g, '')
+}
+
+function validateEmployeeIdInput(value) {
+  if (!value) return 'Employee ID is required.'
+  if (value.length < 3) return 'Employee ID must be at least 3 characters.'
+  if (value.length > 20) return 'Employee ID must be 20 characters or fewer.'
+  if (!/^[A-Za-z0-9-]+$/.test(value)) return 'Use letters, numbers, and dashes only.'
+  return ''
+}
 
 export default function KioskView({
   camera,
@@ -27,7 +40,9 @@ export default function KioskView({
   const { recordScan, recordVerification, recordNetwork } = useKioskMetrics()
   const previousStateRef = useRef('idle')
   const resultKeyRef = useRef('')
-  const [postScanView, setPostScanView] = useState('success')
+  const [employeeIdInput, setEmployeeIdInput] = useState('')
+  const [employeeIdError, setEmployeeIdError] = useState('')
+  const [claimedEmployeeId, setClaimedEmployeeId] = useState('')
 
   const {
     kioskState,
@@ -56,6 +71,13 @@ export default function KioskView({
 
   const { captureVerificationBurst } = useVerificationBurst(camera)
 
+  useEffect(() => {
+    try {
+      const saved = window.sessionStorage.getItem(CLAIMED_EMPLOYEE_ID_STORAGE_KEY) || ''
+      if (saved) setEmployeeIdInput(saved)
+    } catch {}
+  }, [])
+
   const { runScan, startLoop, stopLoop } = useKioskLoop({
     camera,
     modelsReady,
@@ -77,6 +99,7 @@ export default function KioskView({
     recordScan,
     recordVerification,
     recordNetwork,
+    claimedEmployeeId,
   })
 
   const { clock, dateStr } = useKioskClock()
@@ -90,11 +113,46 @@ export default function KioskView({
   }, [runScan, captureVerificationBurst])
 
   useEffect(() => {
-    if (!workspaceReady || !modelsReady || !camera.camOn) return () => {}
+    if (!claimedEmployeeId || !workspaceReady || !modelsReady || !camera.camOn) {
+      stopLoop()
+      return () => {}
+    }
     stopLoop()
     startLoop(handleRunScan)
     return stopLoop
-  }, [camera.camOn, modelsReady, resumeKey, startLoop, stopLoop, workspaceReady, handleRunScan])
+  }, [camera.camOn, claimedEmployeeId, modelsReady, resumeKey, startLoop, stopLoop, workspaceReady, handleRunScan])
+
+  const handleEmployeeIdChange = useCallback(event => {
+    setEmployeeIdInput(String(event.target.value || '').replace(/\s+/g, '').slice(0, 20))
+    if (employeeIdError) setEmployeeIdError('')
+  }, [employeeIdError])
+
+  const handleConfirmEmployeeId = useCallback(event => {
+    event?.preventDefault?.()
+    const normalized = normalizeEmployeeIdInput(employeeIdInput)
+    const validation = validateEmployeeIdInput(normalized)
+    if (validation) {
+      setEmployeeIdError(validation)
+      return
+    }
+
+    setEmployeeIdError('')
+    setClaimedEmployeeId(normalized)
+    try {
+      window.sessionStorage.setItem(CLAIMED_EMPLOYEE_ID_STORAGE_KEY, normalized)
+    } catch {}
+  }, [employeeIdInput])
+
+  const handleChangeEmployeeId = useCallback(() => {
+    pauseScanning()
+    clearAttendanceMatch()
+    setCurrentMatch(null)
+    setCapturedFrameUrl(null)
+    setAlertState(null)
+    setKioskState('idle')
+    setClaimedEmployeeId('')
+    if (camera?.clearOverlay) camera.clearOverlay()
+  }, [camera, pauseScanning, setAlertState, setCapturedFrameUrl, setCurrentMatch, setKioskState])
 
   useEffect(() => {
     const previous = previousStateRef.current
@@ -136,7 +194,6 @@ export default function KioskView({
 
   useEffect(() => {
     if (!showResultScreen) {
-      setPostScanView('success')
       resultKeyRef.current = ''
       return
     }
@@ -144,22 +201,73 @@ export default function KioskView({
     const resultKey = `${currentMatch?.employeeId || ''}:${currentMatch?.timestamp || ''}:${currentMatch?.resultState || 'confirmed'}`
     if (resultKey && resultKey !== resultKeyRef.current) {
       resultKeyRef.current = resultKey
-      setPostScanView('success')
     }
   }, [currentMatch?.employeeId, currentMatch?.resultState, currentMatch?.timestamp, showResultScreen])
 
   const handleBackToKiosk = useCallback(() => {
     clearAttendanceMatch()
-    setPostScanView('success')
     scheduleResume(250)
   }, [scheduleResume])
 
-  const handleViewAttendanceTable = useCallback(() => {
-    setPostScanView('table')
-  }, [])
+  if (!claimedEmployeeId) {
+    return (
+      <AppShell
+        fitViewport
+        contentClassName="px-4 py-4 sm:px-6 lg:px-8"
+        onBeforeNavigate={pauseScanning}
+        showFooter={false}
+      >
+        <div className="page-frame h-full min-h-0">
+          <motion.section
+            animate={{ opacity: 1, y: 0 }}
+            className="grid h-full min-h-0 place-items-center overflow-hidden rounded-[1.4rem] border border-black/5 bg-white px-4 py-6 shadow-glow sm:rounded-[1.75rem]"
+            initial={{ opacity: 0, y: 18 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+          >
+            <form className="grid w-full max-w-sm gap-4" onSubmit={handleConfirmEmployeeId}>
+              <div className="text-center">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Face Scan</div>
+                <h1 className="mt-2 font-display text-3xl font-bold text-ink">Employee ID</h1>
+              </div>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Employee ID</span>
+                <input
+                  autoCapitalize="characters"
+                  autoComplete="username"
+                  autoFocus
+                  className={`input h-14 text-center font-display text-xl tracking-[0.08em] ${employeeIdError ? 'border-amber-400' : ''}`}
+                  inputMode="text"
+                  onChange={handleEmployeeIdChange}
+                  placeholder="EMP-001"
+                  type="text"
+                  value={employeeIdInput}
+                />
+                {employeeIdError ? <span className="text-center text-xs font-medium text-amber-600">{employeeIdError}</span> : null}
+              </label>
+
+              <button className="btn btn-primary h-12 w-full" type="submit">
+                Continue to Scan
+              </button>
+            </form>
+          </motion.section>
+        </div>
+      </AppShell>
+    )
+  }
 
   return (
     <AppShell
+      actions={(
+        <div className="flex items-center gap-2">
+          <span className="hidden max-w-[8rem] truncate rounded-full border border-navy/10 bg-white px-3 py-1.5 text-xs font-semibold text-navy sm:inline">
+            {claimedEmployeeId}
+          </span>
+          <button className="btn btn-ghost px-3 py-2 text-xs" onClick={handleChangeEmployeeId} type="button">
+            Change ID
+          </button>
+        </div>
+      )}
       fitViewport
       contentClassName="px-4 py-4 sm:px-6 lg:px-8"
       onBeforeNavigate={pauseScanning}
@@ -173,18 +281,10 @@ export default function KioskView({
           className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] ${showResultScreen ? 'bg-white' : 'bg-black'}`}
         >
           {showResultScreen ? (
-            postScanView === 'table' ? (
-              <AttendanceTableView
-                currentMatch={currentMatch}
-                onBack={handleBackToKiosk}
-              />
-            ) : (
-              <KioskSuccessScreen
-                currentMatch={currentMatch}
-                onBack={handleBackToKiosk}
-                onViewTable={handleViewAttendanceTable}
-              />
-            )
+            <KioskSuccessScreen
+              currentMatch={currentMatch}
+              onBack={handleBackToKiosk}
+            />
           ) : (
             <KioskScanningOverlay
               camera={camera}

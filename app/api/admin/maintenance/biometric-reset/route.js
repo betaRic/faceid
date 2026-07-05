@@ -1,8 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   getAdminSessionCookieName,
   isRegionalAdminSession,
@@ -15,6 +13,8 @@ import { PERSON_APPROVAL_PENDING } from '@/lib/person-approval'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { getLocalBiometricResetPreview, resetLocalBiometrics } from '@/lib/postgres/report-store'
 
 /**
  * Biometric-only reset: clears all face descriptors and biometric index
@@ -52,7 +52,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
@@ -67,6 +68,17 @@ export async function GET(request) {
         { ok: false, message: 'Too many biometric reset previews. Wait before trying again.' },
         { status: 429 },
       )
+    }
+
+    if (usePostgres) {
+      const preview = await getLocalBiometricResetPreview()
+      return NextResponse.json({
+        ok: true,
+        dryRun: true,
+        message: `Will clear face data for ${preview.personsWithDescriptors} employees (${preview.totalSamples} samples) and ${preview.biometricIndexEntries} index entries. Person records, attendance, and offices are preserved. POST with { "confirm": true } to execute.`,
+        affected: preview,
+        preserved: ['persons (name, employeeId, officeId, etc.)', 'attendance', 'offices', 'admin_users', 'hr_users'],
+      })
     }
 
     const personsSnapshot = await db.collection('persons').get()
@@ -115,7 +127,8 @@ export async function POST(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
@@ -138,6 +151,35 @@ export async function POST(request) {
         { ok: false, message: 'Send { "confirm": true } to confirm biometric reset. Use GET to preview.' },
         { status: 400 },
       )
+    }
+
+    if (usePostgres) {
+      const result = await resetLocalBiometrics()
+      await writeAuditLog(db, {
+        actorRole: resolvedSession.role,
+        actorScope: resolvedSession.scope,
+        actorOfficeId: resolvedSession.officeId,
+        action: 'biometric_reset',
+        targetType: 'system',
+        targetId: 'biometric_index',
+        officeId: '',
+        summary: `Local biometric reset: updated ${result.personsUpdated} persons and deleted ${result.biometricIndexDeleted} index rows`,
+        metadata: result,
+      })
+
+      return NextResponse.json({
+        ok: true,
+        message: `Biometric reset complete. ${result.personsUpdated} employees now require re-enrollment and admin approval.`,
+        clearedPersons: result.personsUpdated,
+        pendingReviewCount: result.personsUpdated,
+        biometricsMirrorSynced: 0,
+        deletedIndexEntries: result.biometricIndexDeleted,
+        clearedBiometricCacheKeys: 0,
+        nextSteps: [
+          'All employees must re-enroll at /registration',
+          'Approve enrollments in admin dashboard',
+        ],
+      })
     }
 
     // Step 1: Clear descriptors from all person records and return everyone to pending review.
@@ -216,3 +258,4 @@ export async function POST(request) {
     )
   }
 }
+

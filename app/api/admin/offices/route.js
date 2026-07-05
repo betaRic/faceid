@@ -1,13 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { clearOfficeRecordCache } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { normalizeDivisionList, REGIONAL_OFFICE_TYPE } from '@/lib/offices'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { localOfficeExists, upsertLocalOffice } from '@/lib/postgres/report-store'
 
 function slugify(value) {
   return String(value || '')
@@ -124,22 +124,28 @@ export async function POST(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const existing = await db.collection('offices').doc(office.id).get()
-    if (existing.exists) {
+    const existing = usePostgres
+      ? await localOfficeExists(office.id)
+      : await db.collection('offices').doc(office.id).get()
+    if (usePostgres ? existing : existing.exists) {
       return NextResponse.json({ ok: false, message: 'An office with the same generated ID already exists. Change the code, short name, or name.' }, { status: 409 })
     }
 
-    await db.collection('offices').doc(office.id).set({
-      ...office,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    })
+    if (usePostgres) await upsertLocalOffice(office)
+    else {
+      await db.collection('offices').doc(office.id).set({
+        ...office,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+    }
     await clearOfficeRecordCache()
 
     await writeAuditLog(db, {
@@ -166,3 +172,4 @@ export async function POST(request) {
     )
   }
 }
+

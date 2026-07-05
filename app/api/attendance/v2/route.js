@@ -2,12 +2,12 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { createOriginGuard } from '@/lib/csrf'
 import { consumeAttendanceChallenge } from '@/lib/attendance-challenge'
 import { processAttendanceSubmission } from '@/lib/attendance/process'
 import { warmServerAttendanceEmbedding } from '@/lib/biometrics/server-embedding'
 import { getRequestIp } from '@/lib/rate-limit'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function POST(request) {
   try {
@@ -20,7 +20,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, message: 'Invalid request body.' }, { status: 400 })
     }
 
-    const db = getAdminDb()
+    const db = null
     warmServerAttendanceEmbedding().catch(() => {})
     const challengeResult = await consumeAttendanceChallenge(db, body.challenge, {
       kioskId: body?.kioskContext?.kioskId,
@@ -28,6 +28,7 @@ export async function POST(request) {
       userAgent: request.headers.get('user-agent') || '',
       clientIp: getRequestIp(request),
       clientKey: body?.kioskContext?.clientKey || body?.captureContext?.clientKey || '',
+      employeeId: body?.employeeId || '',
     })
 
     if (!challengeResult.ok) {
@@ -62,3 +63,4 @@ export async function POST(request) {
     )
   }
 }
+

@@ -1,13 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listHrProfiles } from '@/lib/hr-directory'
 import { hashPin } from '@/lib/hr-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { createLocalHrProfile, localEmailExists } from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
   return {
@@ -34,7 +34,7 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -70,7 +70,8 @@ export async function POST(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -79,23 +80,25 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const existing = await db.collection('hr_users').where('email', '==', body.email).limit(1).get()
-    if (!existing.empty) {
+    const exists = usePostgres
+      ? await localEmailExists('hr_users', body.email)
+      : !(await db.collection('hr_users').where('email', '==', body.email).limit(1).get()).empty
+    if (exists) {
       return NextResponse.json({ ok: false, message: 'An HR user record already exists for that email.' }, { status: 409 })
     }
 
-    const pinHash = body.pin ? hashPin(body.pin) : null
-
-    const record = await db.collection('hr_users').add({
-      email: body.email,
-      displayName: body.displayName,
-      scope: body.scope,
-      officeId: body.scope === 'office' ? body.officeId : '',
-      pinHash,
-      active: body.active,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    })
+    const recordId = usePostgres
+      ? await createLocalHrProfile(body)
+      : (await db.collection('hr_users').add({
+          email: body.email,
+          displayName: body.displayName,
+          scope: body.scope,
+          officeId: body.scope === 'office' ? body.officeId : '',
+          pinHash: body.pin ? hashPin(body.pin) : null,
+          active: body.active,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        })).id
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -103,7 +106,7 @@ export async function POST(request) {
       actorOfficeId: resolvedSession.officeId,
       action: 'hr_user_create',
       targetType: 'hr_user',
-      targetId: record.id,
+      targetId: recordId,
       officeId: body.scope === 'office' ? body.officeId : '',
       summary: `Created HR user record for ${body.email}`,
       metadata: {
@@ -112,7 +115,7 @@ export async function POST(request) {
       },
     })
 
-    return NextResponse.json({ ok: true, id: record.id })
+    return NextResponse.json({ ok: true, id: recordId })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to create HR user record.' },
@@ -120,3 +123,4 @@ export async function POST(request) {
     )
   }
 }
+

@@ -17,6 +17,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
   const [adminDisplayName, setAdminDisplayName] = useState('')
   const [adminScope, setAdminScope] = useState('office')
   const [adminOfficeId, setAdminOfficeId] = useState('')
+  const [adminPin, setAdminPin] = useState('')
 
   const [hrDisplayName, setHrDisplayName] = useState('')
   const [hrOfficeId, setHrOfficeId] = useState('')
@@ -33,6 +34,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
             : '',
         adminDisplayName: !adminDisplayName.trim() ? 'Display name is required.' : '',
         adminOfficeId: adminScope === 'office' && !adminOfficeId ? 'Choose an office.' : '',
+        adminPin: !/^\d{4,8}$/.test(adminPin) ? 'PIN must be 4 to 8 digits.' : '',
       }
     }
 
@@ -47,6 +49,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
     adminDisplayName,
     adminEmail,
     adminOfficeId,
+    adminPin,
     adminScope,
     hrDisplayName,
     hrOfficeId,
@@ -68,6 +71,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
         displayName: adminDisplayName.trim(),
         scope: adminScope,
         officeId: adminScope === 'office' ? adminOfficeId : '',
+        pin: adminPin,
       })
     } else {
       onSubmit({
@@ -86,6 +90,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
     setAdminDisplayName('')
     setAdminScope('office')
     setAdminOfficeId('')
+    setAdminPin('')
     setHrDisplayName('')
     setHrOfficeId('')
     setHrPin('')
@@ -186,6 +191,23 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
                 <option value="office">Office (can manage only their office)</option>
                 <option value="regional">Regional (can manage all offices)</option>
               </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">PIN</label>
+              <input
+                autoComplete="new-password"
+                type="password"
+                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-navy"
+                placeholder="4-8 digit PIN"
+                maxLength={8}
+                value={adminPin}
+                onChange={(e) => {
+                  const next = e.target.value.replace(/\D/g, '')
+                  setAdminPin(next)
+                  setErrors((current) => ({ ...current, adminPin: '' }))
+                }}
+              />
+              {errors.adminPin ? <p className="mt-1 text-xs text-red-600">{errors.adminPin}</p> : null}
             </div>
           </div>
         ) : (

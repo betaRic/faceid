@@ -35,14 +35,6 @@ export default function OfficeLocationPicker({
 
       const L = mod.default ?? mod
 
-      // Fix broken default icon paths in webpack/turbopack bundled environments
-      delete L.Icon.Default.prototype._getIconUrl
-      L.Icon.Default.mergeOptions({
-        iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-      })
-
       const center = hasLocation ? [latitude, longitude] : REGION_XII_CENTER
       const zoom   = hasLocation ? PINNED_ZOOM : DEFAULT_ZOOM
 
@@ -50,13 +42,8 @@ export default function OfficeLocationPicker({
         center,
         zoom,
         zoomControl: true,
-        attributionControl: true,
+        attributionControl: false,
       })
-
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19,
-      }).addTo(map)
 
       // Click anywhere on the map → place / move the pin
       map.on('click', e => {
@@ -103,7 +90,15 @@ export default function OfficeLocationPicker({
     const latlng = [latitude, longitude]
 
     // Draggable pin
-    const marker = L.marker(latlng, { draggable: true }).addTo(map)
+    const marker = L.marker(latlng, {
+      draggable: true,
+      icon: L.divIcon({
+        className: '',
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+        html: '<span class="block h-[22px] w-[22px] rounded-full border-[3px] border-white bg-navy shadow-[0_2px_10px_rgba(0,0,0,0.35)]"></span>',
+      }),
+    }).addTo(map)
     marker.on('dragend', e => {
       const pos = e.target.getLatLng()
       onChange({
@@ -147,14 +142,23 @@ export default function OfficeLocationPicker({
 
       {/* Map canvas */}
       <div className="relative">
-        <div ref={containerRef} style={{ height: 340, width: '100%' }} />
+        <div
+          ref={containerRef}
+          className="bg-stone-100"
+          style={{
+            height: 340,
+            width: '100%',
+            backgroundImage: 'linear-gradient(rgba(3,45,87,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(3,45,87,0.08) 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
+          }}
+        />
 
         {/* Loading skeleton shown until Leaflet boots */}
         {!mapReady && (
           <div className="absolute inset-0 flex items-center justify-center bg-stone-100">
             <div className="flex items-center gap-2 text-sm text-muted">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-              Loading map…
+              Loading map...
             </div>
           </div>
         )}
@@ -162,7 +166,7 @@ export default function OfficeLocationPicker({
         {/* Hint banner — sits above Leaflet controls (z-[1000]) */}
         {mapReady && (
           <div className="pointer-events-none absolute bottom-8 left-1/2 z-[1000] -translate-x-1/2 whitespace-nowrap rounded-full bg-navy/80 px-4 py-1.5 text-xs font-medium text-white backdrop-blur">
-            Click map to place pin · Drag pin to reposition
+            Click map to place pin - drag pin to reposition
           </div>
         )}
       </div>
@@ -187,7 +191,7 @@ export default function OfficeLocationPicker({
             )}
           </div>
         ) : (
-          <span className="text-xs text-muted">No pin placed yet — click the map to set a location</span>
+          <span className="text-xs text-muted">No pin placed yet - click the map to set a location</span>
         )}
       </div>
     </div>

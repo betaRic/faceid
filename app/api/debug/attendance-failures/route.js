@@ -1,10 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { Timestamp } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { resolveReportWindow } from '@/lib/report-window'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAuditLogs } from '@/lib/postgres/report-store'
 
 function safeTimestamp(value) {
   if (!value) return null
@@ -35,7 +35,8 @@ export async function GET(request) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
@@ -44,6 +45,45 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100)
     const window = resolveReportWindow(searchParams, { now: Date.now(), defaultDays: 14, maxDays: 62 })
+
+    if (usePostgres) {
+      const logs = await listLocalAuditLogs({
+        action: 'attendance_scan_failed',
+        limit,
+        startMs: window.startMs,
+        endMs: window.endMs,
+      })
+      const diagnosed = logs.map(log => ({
+        ...log,
+        _diagnosis: {
+          decisionCode: log.metadata?.decisionCode,
+          bestDistance: log.metadata?.bestDistance ?? 'NOT_RECORDED',
+          candidatesFound: log.metadata?.candidatesFound ?? 'NOT_RECORDED',
+          candidateCount: log.metadata?.candidateCount ?? 'NOT_RECORDED',
+          threshold: log.metadata?.threshold,
+          storedMagnitude: log.metadata?.storedMagnitude,
+          queryMagnitude: log.metadata?.queryMagnitude,
+        },
+      }))
+      const byDecision = {}
+      for (const log of logs) {
+        const dc = log.metadata?.decisionCode || 'unknown'
+        byDecision[dc] = (byDecision[dc] || 0) + 1
+      }
+      return NextResponse.json({
+        total: logs.length,
+        window: {
+          mode: window.mode,
+          label: window.label,
+          fromDateKey: window.fromDateKey,
+          toDateKey: window.toDateKey,
+          startUtc: window.startUtc,
+          endUtcExclusive: window.endUtcExclusive,
+        },
+        byDecisionCode: byDecision,
+        logs: diagnosed,
+      })
+    }
 
     const snapshot = await db.collection('audit_logs')
       .where('action', '==', 'attendance_scan_failed')
@@ -105,3 +145,4 @@ export async function GET(request) {
     )
   }
 }
+

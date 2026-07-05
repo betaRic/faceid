@@ -1,12 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
 import { toLegacyAttendanceDate } from '@/lib/attendance-time'
 import { listOfficeRecords } from '@/lib/office-directory'
 import { isPublicAttendanceEnabled } from '@/lib/public-features'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
   if (!isPublicAttendanceEnabled()) {
@@ -22,7 +23,8 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const cachedRecords = await listDailyAttendanceRecordsForDate(db, date)
     if (cachedRecords.length > 0) {
       const records = cachedRecords
@@ -34,6 +36,29 @@ export async function GET(request) {
 
     const offices = await listOfficeRecords(db)
     const legacyDateLabel = toLegacyAttendanceDate(date)
+
+    if (usePostgres) {
+      const attendance = (await listLocalAttendanceLogs({
+        dateKey: date,
+        direction: 'asc',
+        limit: 2000,
+      }))
+        .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
+
+      const summary = buildAttendanceSummary({
+        attendance,
+        persons: [],
+        offices,
+        targetDate: date,
+      })
+
+      const records = summary.map(row => ({
+        id: row.employeeId ? `${row.employeeId}_${date}` : `${row.name}_${date}`,
+        ...row,
+      }))
+
+      return NextResponse.json({ ok: true, records })
+    }
 
     const snapshot = await db
       .collection('attendance')
@@ -81,3 +106,4 @@ export async function GET(request) {
     )
   }
 }
+

@@ -3,11 +3,11 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
-import { getAdminDb } from '@/lib/firebase-admin'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export default async function AdminPage() {
   const cookieStore = await cookies()
-  const db = getAdminDb()
+  const db = null
 
   // Check admin session first
   const adminSession = parseAdminSessionCookieValue(cookieStore.get(getAdminSessionCookieName())?.value)
@@ -38,3 +38,4 @@ export default async function AdminPage() {
   // No valid session
   redirect('/admin/login')
 }
+

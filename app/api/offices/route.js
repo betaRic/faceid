@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listOfficeRecords, getOfficeEmployeeCounts } from '@/lib/office-directory'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function GET(request) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
@@ -12,7 +12,7 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
@@ -35,4 +35,5 @@ export async function GET(request) {
     )
   }
 }
+
 

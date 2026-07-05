@@ -1,8 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase-admin'
 import {
   adminSessionAllowsOffice,
   getAdminSessionCookieName,
@@ -29,6 +27,12 @@ import {
 import { getBiometricReenrollmentAssessment } from '@/lib/biometrics/descriptor-utils'
 import { checkDuplicateFace, deduplicateDescriptors, serializeDescriptorSample } from '@/lib/persons/enrollment'
 import { uploadEnrollmentPhoto } from '@/lib/storage'
+import { postgresEnabled } from '@/lib/postgres/client'
+import {
+  checkLocalDuplicateFace,
+  getLocalPersonById,
+  replaceLocalPersonDescriptors,
+} from '@/lib/postgres/person-store'
 
 function toHttpStatus(value) {
   const status = Number(value)
@@ -59,7 +63,8 @@ export async function POST(request, { params }) {
   )
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const employeeSession = await resolveEmployeeViewSessionRequest(request, db)
 
     if (!adminSession && !employeeSession) {
@@ -74,13 +79,13 @@ export async function POST(request, { params }) {
       }
     }
 
-    const personRef = db.collection('persons').doc(personId)
-    const personDoc = await personRef.get()
-    if (!personDoc.exists) {
+    const personRef = usePostgres ? null : db.collection('persons').doc(personId)
+    const personDoc = usePostgres ? await getLocalPersonById(personId) : await personRef.get()
+    if (usePostgres ? !personDoc : !personDoc.exists) {
       return NextResponse.json({ ok: false, message: 'Employee record not found.' }, { status: 404 })
     }
 
-    const person = personDoc.data()
+    const person = usePostgres ? personDoc : personDoc.data()
     const employeeOwnsSession = Boolean(
       employeeSession
       && (
@@ -128,7 +133,9 @@ export async function POST(request, { params }) {
       ? Number(captureMetadata.qualityScore)
       : (Number.isFinite(person.biometricQualityScore) ? Number(person.biometricQualityScore) : null)
 
-    const duplicateFace = await checkDuplicateFace(db, accepted, personId)
+    const duplicateFace = usePostgres
+      ? await checkLocalDuplicateFace(accepted, personId)
+      : await checkDuplicateFace(db, accepted, personId)
     if (duplicateFace?.duplicate) {
       return NextResponse.json(
         {
@@ -137,6 +144,52 @@ export async function POST(request, { params }) {
         },
         { status: 409 },
       )
+    }
+
+    if (usePostgres) {
+      const replaceResult = await replaceLocalPersonDescriptors(personId, accepted, {
+        approvalStatus: nextApprovalStatus,
+        captureMetadata,
+        biometricModelVersion,
+        biometricQualityScore,
+        reenrollSource: resolvedSession ? 'admin' : 'employee-kiosk',
+      })
+      if (body.photoDataUrl) {
+        const { saveLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
+        await saveLocalEnrollmentPhoto(personId, body.photoDataUrl)
+      }
+      await writeAuditLog(db, {
+        actorRole: resolvedSession?.role || 'employee-view',
+        actorScope: resolvedSession?.scope || 'employee-view',
+        actorOfficeId: resolvedSession?.officeId || person.officeId || '',
+        action: resolvedSession ? 'person_admin_reenroll' : 'person_self_reenroll',
+        targetType: 'person',
+        targetId: personId,
+        officeId: person.officeId || '',
+        summary: resolvedSession
+          ? `Admin re-enrolled face for ${person.name} — ${previousSampleCount} old sample(s) replaced with ${accepted.length} new`
+          : `Employee refreshed their face data after kiosk attendance — ${previousSampleCount} old sample(s) replaced with ${accepted.length} new`,
+        metadata: {
+          employeeId: person.employeeId || '',
+          officeName: person.officeName || '',
+          previousSampleCount,
+          newSampleCount: accepted.length,
+          droppedSamples: rejected.length,
+          reenrollSource: resolvedSession ? 'admin' : 'employee-kiosk',
+          approvalStatus: nextApprovalStatus,
+        },
+      })
+      const reenrollmentAssessment = getBiometricReenrollmentAssessment(replaceResult.person)
+      return NextResponse.json({
+        ok: true,
+        sampleCount: accepted.length,
+        needsReenrollment: reenrollmentAssessment.needed,
+        reenrollmentReason: reenrollmentAssessment.reasonCode,
+        reenrollmentMessage: reenrollmentAssessment.message,
+        message: reenrollmentAssessment.needed
+          ? `Face data updated, but another refresh is still recommended. ${reenrollmentAssessment.message}`
+          : `Face data updated. ${person.name} ${nextApprovalStatus === PERSON_APPROVAL_APPROVED ? 'is active on the kiosk.' : 'still requires explicit admin approval before kiosk activation.'}`,
+      })
     }
 
     const updatePayload = {
@@ -256,3 +309,4 @@ export async function POST(request, { params }) {
     )
   }
 }
+

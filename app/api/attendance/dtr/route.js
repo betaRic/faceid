@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { buildEmployeeDtrDocument } from '@/lib/dtr-server'
+import { postgresEnabled } from '@/lib/postgres/client'
 import {
   buildDtrWorkbookBytes,
   buildDtrWorkbookFilename,
@@ -28,7 +28,7 @@ export async function GET(request) {
   }
 
   try {
-    const db = getAdminDb()
+    const db = null
     const access = await resolveAttendanceViewer(request, db, employeeId)
     if (!access.viewer) {
       return NextResponse.json({ ok: false, message: access.message }, { status: access.status })
@@ -59,3 +59,4 @@ export async function GET(request) {
     )
   }
 }
+

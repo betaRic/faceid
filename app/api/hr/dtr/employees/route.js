@@ -1,12 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { postgresEnabled } from '@/lib/postgres/client'
+import { listLocalDtrEmployees } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
-  const db = getAdminDb()
+  const usePostgres = postgresEnabled()
+  const db = null
 
   const adminSession = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   const hrSession = parseHrSessionCookieValue(request.cookies.get(getHrSessionCookieName())?.value)
@@ -23,6 +25,20 @@ export async function GET(request) {
   }
 
   try {
+    if (usePostgres) {
+      const employees = (await listLocalDtrEmployees(resolvedSession)).map(person => ({
+        id: person.id,
+        name: person.name || '',
+        employeeId: person.employeeId || '',
+        officeId: person.officeId || '',
+        officeName: person.officeName || '',
+        active: person.active !== false,
+        approvalStatus: person.approvalStatus || 'pending',
+      }))
+
+      return NextResponse.json({ ok: true, employees })
+    }
+
     let query = db.collection('persons').orderBy('nameLower', 'asc')
 
     if (resolvedSession.scope === 'office' && resolvedSession.officeId) {
@@ -55,3 +71,4 @@ export async function GET(request) {
     )
   }
 }
+

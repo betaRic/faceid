@@ -74,7 +74,6 @@ const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
 const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
-const firebaseServiceAccountModule = await importLocalModule('../lib/firebase-service-account.js')
 const reportWindowModule = await importLocalModule('../lib/report-window.js')
 
 const {
@@ -147,7 +146,7 @@ const {
   isStrongUnambiguousSingleSampleSupport,
 } = attendanceMatchPolicyModule
 const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
-const { normalizeEntry } = attendanceNormalizeModule
+const { normalizeEntry, validateClaimedEmployeeId } = attendanceNormalizeModule
 const {
   getScanCapturePolicyAssessment,
   MIN_SCAN_STRICT_FRAMES,
@@ -166,10 +165,7 @@ const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
 const { validateOrigin } = csrfModule
 const { syncPersonBiometricsRecord } = personBiometricsModule
-const { parseFirebaseServiceAccount } = firebaseServiceAccountModule
 const { resolveReportWindow } = reportWindowModule
-const firestoreIndexAdminModule = await importLocalModule('../lib/firestore-index-admin.js')
-const { loadFirestoreIndexManifest } = firestoreIndexAdminModule
 
 function createMinimalFaceMesh({
   leftEye = { x: 100, y: 100 },
@@ -190,15 +186,6 @@ function translateMesh(mesh, dx, dy) {
     point ? { x: point.x + dx, y: point.y + dy } : point
   ))
 }
-
-await run('Firebase service account parser accepts escaped JSON env values', () => {
-  const escaped = '{\\"type\\":\\"service_account\\",\\"project_id\\":\\"faceattend-test\\",\\"private_key\\":\\"line1\\\\nline2\\",\\"client_email\\":\\"svc@example.test\\"}'
-  const parsed = parseFirebaseServiceAccount(escaped)
-
-  assert.equal(parsed.project_id, 'faceattend-test')
-  assert.equal(parsed.client_email, 'svc@example.test')
-  assert.equal(parsed.private_key, 'line1\nline2')
-})
 
 await run('calculateDistanceMeters returns zero for same coordinates', () => {
   const point = { latitude: 6.4971, longitude: 124.8466 }
@@ -635,27 +622,8 @@ await run('person approval defaults legacy records to approved and blocks pendin
   assert.equal(isPersonBiometricActive({ active: true, approvalStatus: PERSON_APPROVAL_PENDING }), false)
 })
 
-await run('person biometrics mirror wraps descriptor embeddings for Firestore', async () => {
-  let writtenPayload = null
-  let writtenOptions = null
-  const db = {
-    collection(name) {
-      assert.equal(name, 'person_biometrics')
-      return {
-        doc(id) {
-          assert.equal(id, 'person-1')
-          return {
-            async set(payload, options) {
-              writtenPayload = payload
-              writtenOptions = options
-            },
-          }
-        },
-      }
-    },
-  }
-
-  await syncPersonBiometricsRecord(db, 'person-1', {
+await run('person biometrics summary wraps descriptor embeddings for local indexing', async () => {
+  const payload = await syncPersonBiometricsRecord(null, 'person-1', {
     employeeId: 'EMP-001',
     name: 'Test Employee',
     officeId: 'office-a',
@@ -669,13 +637,12 @@ await run('person biometrics mirror wraps descriptor embeddings for Firestore', 
     ],
   })
 
-  assert.deepEqual(writtenOptions, { merge: true })
-  assert.equal(writtenPayload.descriptorCount, 2)
-  assert.deepEqual(writtenPayload.embeddings, [
+  assert.equal(payload.descriptorCount, 2)
+  assert.deepEqual(payload.embeddings, [
     { vector: [1, 0, 0] },
     { vector: [0, 1, 0] },
   ])
-  assert.equal(writtenPayload.embeddings.some(Array.isArray), false)
+  assert.equal(payload.embeddings.some(Array.isArray), false)
 })
 
 await run('enrollment descriptor batch wraps a single descriptor and validates multiple samples', () => {
@@ -1350,7 +1317,7 @@ await run('biometric benchmark report exposes operational gate and honest realit
     matchDebug: { bestDistance: 0.52, threshold: 0.78 },
     scanDiagnostics: { deviceClass: 'mobile', bestFaceAreaRatio: 0.54, serverMatchMode: 'single_frame_fast', serverEmbeddingAverageMs: 720 },
     captureContext: { userAgent: 'Mozilla/5.0 Chrome/124.0', burstQualityScore: 4.1, mobile: true },
-    performance: { totalMeasuredMs: 1600, serverEmbeddingMs: 820, matchingMs: 90, firestoreReadMs: 120, firestoreWriteMs: 180 },
+    performance: { totalMeasuredMs: 1600, serverEmbeddingMs: 820, matchingMs: 90, databaseReadMs: 120, databaseWriteMs: 180 },
   }
 
   const events = [
@@ -1363,7 +1330,7 @@ await run('biometric benchmark report exposes operational gate and honest realit
       timestamp: now - (index * 1000),
       scanDiagnostics: { deviceClass: 'desktop', bestFaceAreaRatio: 0.55, serverMatchMode: 'two_frame_fallback', serverEmbeddingAverageMs: 950 },
       captureContext: { userAgent: 'Mozilla/5.0 Safari/605.1.15', burstQualityScore: 4.0, mobile: false },
-      performance: { totalMeasuredMs: 2600, serverEmbeddingMs: 1900, matchingMs: 110, firestoreReadMs: 150, firestoreWriteMs: 220 },
+      performance: { totalMeasuredMs: 2600, serverEmbeddingMs: 1900, matchingMs: 110, databaseReadMs: 150, databaseWriteMs: 220 },
     })),
   ]
 
@@ -1529,15 +1496,16 @@ await run('OpenVINO shadow enrollment only collects from strong accepted Human m
   assert.equal(shouldCollectOpenVinoProfileSample({ personMatch, entry: noFrames }, config).reason, 'missing_scan_frames')
 })
 
-await run('OpenVINO shadow defaults on for Railway but remains opt-out', () => {
+await run('OpenVINO shadow defaults on only when local runtime is included', () => {
   const previousShadow = process.env.OPENVINO_SHADOW_ENABLED
-  const previousRailway = process.env.RAILWAY_SERVICE_ID
   const previousInclude = process.env.INCLUDE_OPENVINO_RUNTIME
 
   try {
     delete process.env.OPENVINO_SHADOW_ENABLED
     delete process.env.INCLUDE_OPENVINO_RUNTIME
-    process.env.RAILWAY_SERVICE_ID = 'railway-service-fixture'
+    assert.equal(getOpenVinoShadowProfileConfig().enabled, false)
+
+    process.env.INCLUDE_OPENVINO_RUNTIME = 'true'
     assert.equal(getOpenVinoShadowProfileConfig().enabled, true)
     assert.equal(getOpenVinoShadowProfileConfig().framesPerScan, 2)
 
@@ -1546,8 +1514,6 @@ await run('OpenVINO shadow defaults on for Railway but remains opt-out', () => {
   } finally {
     if (previousShadow === undefined) delete process.env.OPENVINO_SHADOW_ENABLED
     else process.env.OPENVINO_SHADOW_ENABLED = previousShadow
-    if (previousRailway === undefined) delete process.env.RAILWAY_SERVICE_ID
-    else process.env.RAILWAY_SERVICE_ID = previousRailway
     if (previousInclude === undefined) delete process.env.INCLUDE_OPENVINO_RUNTIME
     else process.env.INCLUDE_OPENVINO_RUNTIME = previousInclude
   }
@@ -1740,20 +1706,15 @@ await run('raw attendance workbook files contain worksheet XML for each employee
   assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /EMP-002 Beta Employee/)
 })
 
-await run('origin guard accepts Railway public domain when site URL is not set', () => {
+await run('origin guard rejects unconfigured production remote host', () => {
   const previousNodeEnv = process.env.NODE_ENV
   const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
-  const previousRailwayHost = process.env.RAILWAY_PUBLIC_DOMAIN
 
   process.env.NODE_ENV = 'production'
   delete process.env.NEXT_PUBLIC_SITE_URL
-  process.env.RAILWAY_PUBLIC_DOMAIN = 'faceattend-one-month-bridge.up.railway.app'
 
   try {
-    assert.equal(validateOrigin(new Request('https://faceattend-one-month-bridge.up.railway.app/api/attendance/v2', {
-      headers: { origin: 'https://faceattend-one-month-bridge.up.railway.app' },
-    })), true)
-    assert.equal(validateOrigin(new Request('https://faceattend-one-month-bridge.up.railway.app/api/attendance/v2', {
+    assert.equal(validateOrigin(new Request('https://local-attendance.example/api/attendance/v2', {
       headers: { origin: 'https://example.com' },
     })), false)
   } finally {
@@ -1761,8 +1722,6 @@ await run('origin guard accepts Railway public domain when site URL is not set',
     else process.env.NODE_ENV = previousNodeEnv
     if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
     else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl
-    if (previousRailwayHost === undefined) delete process.env.RAILWAY_PUBLIC_DOMAIN
-    else process.env.RAILWAY_PUBLIC_DOMAIN = previousRailwayHost
   }
 })
 
@@ -2231,6 +2190,13 @@ await run('single-descriptor match enforces a safer ambiguity floor', () => {
   assert.equal(result.debug.ambiguousMargin, 0.04)
 })
 
+await run('attendance claimed employee ID validation matches enrollment rules', () => {
+  assert.equal(validateClaimedEmployeeId('EMP-001'), null)
+  assert.match(validateClaimedEmployeeId(''), /required/i)
+  assert.match(validateClaimedEmployeeId('AB'), /at least 3/i)
+  assert.match(validateClaimedEmployeeId('EMP 001'), /letters, numbers, and dashes/i)
+})
+
 await run('multi-descriptor match accepts corroborated uncertain support for the same person', () => {
   const candidateSamples = [
     {
@@ -2435,14 +2401,6 @@ await run('pending profiles can trigger review but cannot hard-block enrollment'
   assert.equal(evaluation?.duplicate, false)
   assert.equal(evaluation?.reviewRequired, true)
   assert.equal(evaluation?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
-})
-
-await run('firestore index manifest loads from repo root', async () => {
-  const manifest = await loadFirestoreIndexManifest()
-
-  assert.ok(Array.isArray(manifest.indexes))
-  assert.ok(Array.isArray(manifest.fieldOverrides))
-  assert.ok(manifest.indexes.length > 0)
 })
 
 if (process.exitCode && process.exitCode !== 0) {

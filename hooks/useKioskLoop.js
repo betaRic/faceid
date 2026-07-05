@@ -116,6 +116,7 @@ export function useKioskLoop({
   recordScan,
   recordVerification,
   recordNetwork,
+  claimedEmployeeId,
 }) {
   const scanRef = useRef(null)
   const busyRef = useRef(false)
@@ -124,6 +125,7 @@ export function useKioskLoop({
 
   const runScan = useCallback(async (captureVerificationBurst) => {
     if (busyRef.current || pausedRef.current || !camera.camOn || !modelsReady) return
+    if (!String(claimedEmployeeId || '').trim()) return
 
     busyRef.current = true
     const scanStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -249,6 +251,7 @@ export function useKioskLoop({
           },
           verificationMode: 'challenge_v2',
           verificationStage: 'passive',
+          employeeId: claimedEmployeeId,
           timestamp: timing.timestamp,
           dateKey: timing.dateKey,
           dateLabel: timing.dateLabel,
@@ -353,7 +356,7 @@ export function useKioskLoop({
         const baseAttendanceEntry = {
           id: `${now}`,
           name: '',
-          employeeId: '',
+          employeeId: claimedEmployeeId,
           officeId: '',
           officeName: '',
           attendanceMode: '',
@@ -558,7 +561,7 @@ export function useKioskLoop({
       recordScan?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - scanStartedAt)
       busyRef.current = false
     }
-  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork])
+  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork, claimedEmployeeId])
 
   const startLoop = useCallback((runScanFn) => {
     if (scanRef.current) return

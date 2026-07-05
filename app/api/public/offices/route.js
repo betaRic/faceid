@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { listOfficeRecords } from '@/lib/office-directory'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 function toPublicOffice(office) {
   return {
@@ -26,7 +26,7 @@ function toPublicOffice(office) {
 
 export async function GET() {
   try {
-    const db = getAdminDb()
+    const db = null
     const offices = await listOfficeRecords(db)
 
     return NextResponse.json({
@@ -42,5 +42,6 @@ export async function GET() {
     )
   }
 }
+
 
 

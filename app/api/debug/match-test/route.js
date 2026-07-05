@@ -1,12 +1,12 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { normalizeDescriptor, euclideanDistance } from '@/lib/biometrics/descriptor-utils'
 import { buildDescriptorBuckets } from '@/lib/biometric-index'
 import { getActiveThresholds } from '@/lib/thresholds'
 import { createOriginGuard } from '@/lib/csrf'
+import { postgresEnabled, queryPostgres } from '@/lib/postgres/client'
 
 /**
  * POST /api/debug/match-test
@@ -19,30 +19,51 @@ import { createOriginGuard } from '@/lib/csrf'
  * Also available as GET to show index health without a descriptor.
  */
 
+async function loadBiometricIndexEntries(usePostgres, db) {
+  if (usePostgres) {
+    const result = await queryPostgres("SELECT * FROM biometric_index WHERE active = true AND approval_status = 'approved'")
+    return result.rows.map(row => ({
+      id: row.id,
+      personId: row.person_id,
+      name: row.name,
+      officeId: row.office_id,
+      biometricEnabled: row.biometric_enabled === true,
+      active: row.active !== false,
+      approvalStatus: row.approval_status,
+      bucketA: row.bucket_a,
+      bucketB: row.bucket_b,
+      normalizedDescriptor: row.normalized_descriptor,
+    }))
+  }
+
+  const snapshot = await db.collection('biometric_index')
+    .where('active', '==', true)
+    .where('approvalStatus', '==', 'approved')
+    .get()
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+}
+
 export async function GET(request) {
   const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
     }
 
-    const [snapshot, thresholds] = await Promise.all([
-      db.collection('biometric_index')
-        .where('active', '==', true)
-        .where('approvalStatus', '==', 'approved')
-        .get(),
+    const [indexEntries, thresholds] = await Promise.all([
+      loadBiometricIndexEntries(usePostgres, db),
       getActiveThresholds(db),
     ])
 
-    const entries = snapshot.docs.map(doc => {
-      const data = doc.data()
+    const entries = indexEntries.map(data => {
       const nd = Array.isArray(data.normalizedDescriptor) ? data.normalizedDescriptor : []
       const magnitude = Math.sqrt(nd.reduce((s, v) => s + Number(v) * Number(v), 0))
       return {
-        id: doc.id,
+        id: data.id,
         personId: data.personId,
         name: data.name,
         officeId: data.officeId,
@@ -93,7 +114,8 @@ export async function POST(request) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const db = getAdminDb()
+    const usePostgres = postgresEnabled()
+    const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ error: 'Regional admin access required' }, { status: 403 })
@@ -113,24 +135,20 @@ export async function POST(request) {
     const queryMagnitude = Math.sqrt(rawDescriptor.reduce((s, v) => s + v * v, 0))
     const { bucketA: queryBucketA, bucketB: queryBucketB } = buildDescriptorBuckets(rawDescriptor)
 
-    const [snapshot, thresholds] = await Promise.all([
-      db.collection('biometric_index')
-        .where('active', '==', true)
-        .where('approvalStatus', '==', 'approved')
-        .get(),
+    const [indexEntries, thresholds] = await Promise.all([
+      loadBiometricIndexEntries(usePostgres, db),
       getActiveThresholds(db),
     ])
 
     const results = []
-    for (const doc of snapshot.docs) {
-      const data = doc.data()
+    for (const data of indexEntries) {
       const storedNd = Array.isArray(data.normalizedDescriptor)
         ? data.normalizedDescriptor.map(Number)
         : []
 
       if (storedNd.length !== 1024) {
         results.push({
-          id: doc.id,
+          id: data.id,
           personId: data.personId,
           name: data.name,
           distance: null,
@@ -144,7 +162,7 @@ export async function POST(request) {
       const storedMagnitude = Math.sqrt(storedNd.reduce((s, v) => s + v * v, 0))
 
       results.push({
-        id: doc.id,
+        id: data.id,
         personId: data.personId,
         name: data.name,
         distance: Math.round(distance * 10000) / 10000,
@@ -182,7 +200,7 @@ export async function POST(request) {
         threshold: thresholds.kioskMatchDistance,
         ambiguousMargin: thresholds.ambiguousMargin,
       },
-      totalCandidates: snapshot.docs.length,
+      totalCandidates: indexEntries.length,
       matchesWithinThreshold: ranked.filter(r => r.withinThreshold).length,
       rankedByPerson: ranked,
       allSampleDistances: results,
@@ -191,3 +209,4 @@ export async function POST(request) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
+
