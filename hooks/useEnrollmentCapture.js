@@ -584,7 +584,8 @@ export function useEnrollmentCapture(camera) {
         return null
       }
 
-      const primary = selected[0]
+      const centerSamples = selected.filter(c => c.phaseId === 'center')
+      const primary = centerSamples[0] || selected[0]
       const quality = summarizeEnrollmentCaptureQuality(primary.metrics)
       const phaseIds = Array.from(new Set(selected.map(c => c.phaseId)))
       const captureMetadata = {

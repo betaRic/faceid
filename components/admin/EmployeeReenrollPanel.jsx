@@ -95,7 +95,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
         body: JSON.stringify({
           sampleFrames: captureResult.sampleFrames,
           captureMetadata: captureResult.captureMetadata || null,
-          ...(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? { photoDataUrl: captureResult.previewUrl || null } : {}),
+          photoDataUrl: captureResult.previewUrl || null,
         }),
       })
 

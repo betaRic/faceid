@@ -13,6 +13,7 @@ import CaptureStep from './register/CaptureStep'
 import DetailsStep from './register/DetailsStep'
 import ReviewStep from './register/ReviewStep'
 import RegisterStepRail from './register/RegisterStepRail'
+import { buildEmployeeDisplayName } from '@/lib/person-name'
 
 const STEPS = [
   { id: 'details', number: '1', title: 'Employee details', description: 'Name, ID, and assigned office.' },
@@ -31,7 +32,9 @@ export default function RegisterView({
   onBack,
   manageOwnCamera = false,
 }) {
-  const [name, setName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [middleName, setMiddleName] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [employeeIdError, setEmployeeIdError] = useState('')
   const [position, setPosition] = useState('')
@@ -51,7 +54,7 @@ export default function RegisterView({
   const [toast, setToast] = useState(null)
 
   const playAudioCue = useAudioCue()
-  const nameRef = useRef(null)
+  const lastNameRef = useRef(null)
 
   const {
     capturePhase,
@@ -71,7 +74,7 @@ export default function RegisterView({
   const stepIndex = STEPS.findIndex(item => item.id === step)
   const currentStep = STEPS[stepIndex] || STEPS[0]
   const detailsReady = Boolean(
-    name.trim() && employeeId.trim() && position.trim() && officeId
+    lastName.trim() && firstName.trim() && employeeId.trim() && position.trim() && officeId
     && (!isRegionalOffice || divisionId),
   )
 
@@ -208,9 +211,13 @@ export default function RegisterView({
   }, [camera.camOn, handleCaptureComplete, modelsReady, startDetect, step, stopDetect, workspaceReady])
 
   const handleContinueFromDetails = useCallback(() => {
-    if (!name.trim()) {
-      showToast('Enter the employee name')
-      nameRef.current?.focus()
+    if (!lastName.trim()) {
+      showToast('Enter the last name')
+      lastNameRef.current?.focus()
+      return
+    }
+    if (!firstName.trim()) {
+      showToast('Enter the first name')
       return
     }
     if (!employeeId.trim()) {
@@ -236,12 +243,16 @@ export default function RegisterView({
     }
 
     setStep('capture')
-  }, [employeeId, name, officeId, position, isRegionalOffice, divisionId, pendingSampleCount, previewUrl])
+  }, [employeeId, firstName, lastName, officeId, position, isRegionalOffice, divisionId, pendingSampleCount, previewUrl])
 
   const handleRegister = useCallback(async () => {
-    if (!name.trim()) {
-      showToast('Enter the employee name')
-      nameRef.current?.focus()
+    if (!lastName.trim()) {
+      showToast('Enter the last name')
+      lastNameRef.current?.focus()
+      return
+    }
+    if (!firstName.trim()) {
+      showToast('Enter the first name')
       return
     }
     if (!employeeId.trim()) {
@@ -269,10 +280,11 @@ export default function RegisterView({
     let result = null
 
     try {
-      const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
       result = await onEnrollPerson(
         {
-          name: name.trim(),
+          lastName: lastName.trim(),
+          firstName: firstName.trim(),
+          middleName: middleName.trim(),
           employeeId: employeeId.trim(),
           position: position.trim(),
           officeId,
@@ -280,7 +292,7 @@ export default function RegisterView({
           divisionId: isRegionalOffice ? divisionId : '',
           sampleFrames: pendingSampleFrames,
           captureMetadata,
-          ...(storageBucket ? { photoDataUrl: previewUrl } : {}),
+          photoDataUrl: previewUrl || null,
         },
         pendingDescriptors,
       )
@@ -296,7 +308,14 @@ export default function RegisterView({
     const totalCount = Number(result?.sampleCount || savedCount)
     const approvalStatus = result?.approvalStatus || PERSON_APPROVAL_PENDING
     setLastSavedSummary({
-      name: name.trim(),
+      name: buildEmployeeDisplayName({
+        lastName,
+        firstName,
+        middleName,
+      }),
+      lastName: lastName.trim(),
+      firstName: firstName.trim(),
+      middleName: middleName.trim(),
       employeeId: employeeId.trim(),
       officeName: selectedOffice?.name || 'Unassigned',
       sampleCount: totalCount,
@@ -309,10 +328,12 @@ export default function RegisterView({
     })
     setStep('complete')
     playAudioCue('success')
-  }, [captureMetadata, employeeId, name, officeId, position, isRegionalOffice, divisionId, onEnrollPerson, pendingDescriptors, pendingSampleCount, pendingSampleFrames, previewUrl, selectedOffice, playAudioCue])
+  }, [captureMetadata, employeeId, firstName, lastName, middleName, officeId, position, isRegionalOffice, divisionId, onEnrollPerson, pendingDescriptors, pendingSampleCount, pendingSampleFrames, previewUrl, selectedOffice, playAudioCue])
 
   const handleNewPerson = useCallback(() => {
-    setName('')
+    setLastName('')
+    setFirstName('')
+    setMiddleName('')
     setEmployeeId('')
     setPosition('')
     setOfficeId(offices[0]?.id || '')
@@ -320,7 +341,7 @@ export default function RegisterView({
     clearPendingCapture()
     setLastSavedSummary(null)
     setStep('details')
-    window.setTimeout(() => nameRef.current?.focus(), 80)
+    window.setTimeout(() => lastNameRef.current?.focus(), 80)
   }, [clearPendingCapture, offices])
 
   return (
@@ -365,7 +386,7 @@ export default function RegisterView({
           errorMessage={errorMessage}
           faceFound={faceFound}
           faceSizeGuidance={faceSizeGuidance}
-          name={name}
+          name={[lastName, firstName].filter(Boolean).join(', ')}
           onBack={() => setStep('details')}
           onExit={onBack}
           poseOk={poseOk}
@@ -412,8 +433,10 @@ export default function RegisterView({
                 divisionId={divisionId}
                 employeeId={employeeId}
                 employeeIdError={employeeIdError}
-                name={name}
-                nameRef={nameRef}
+                firstName={firstName}
+                lastName={lastName}
+                middleName={middleName}
+                nameRef={lastNameRef}
                 officeId={officeId}
                 offices={offices}
                 position={position}
@@ -421,7 +444,9 @@ export default function RegisterView({
                 onContinue={handleContinueFromDetails}
                 onDivisionChange={setDivisionId}
                 onEmployeeIdChange={handleEmployeeIdChange}
-                onNameChange={setName}
+                onFirstNameChange={setFirstName}
+                onLastNameChange={setLastName}
+                onMiddleNameChange={setMiddleName}
                 onOfficeChange={setOfficeId}
                 onPositionChange={setPosition}
                 onRetake={handleRetake}

@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useAdminStore } from '@/lib/admin/store'
 import { updatePersonRecord } from '@/lib/data-store'
 import { Field } from '@/components/shared/ui'
+import { buildEmployeeDisplayName } from '@/lib/person-name'
 import {
   getEffectivePersonApprovalStatus,
   PERSON_APPROVAL_APPROVED,
@@ -30,6 +31,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     isPending: state.isPending,
   })))
   const [officeId, setOfficeId] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [middleName, setMiddleName] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
   const [position, setPosition] = useState('')
   const [divisionId, setDivisionId] = useState('')
   const [active, setActive] = useState(true)
@@ -39,6 +44,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
 
   useEffect(() => {
     if (!person) return
+    setLastName(person.lastName || '')
+    setFirstName(person.firstName || '')
+    setMiddleName(person.middleName || '')
+    setEmployeeId(person.employeeId || '')
     setOfficeId(person.officeId || '')
     setPosition(person.position || '')
     setDivisionId(person.divisionId || '')
@@ -130,6 +139,22 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
 
   async function handleSave() {
     if (!officeId) return
+    const trimmedLastName = lastName.trim()
+    const trimmedFirstName = firstName.trim()
+    const trimmedMiddleName = middleName.trim()
+    const trimmedEmployeeId = employeeId.trim().replace(/[^A-Za-z0-9-]/g, '')
+    if (!trimmedLastName) {
+      addToast('Last name is required.', 'error')
+      return
+    }
+    if (!trimmedFirstName) {
+      addToast('First name is required.', 'error')
+      return
+    }
+    if (!trimmedEmployeeId) {
+      addToast('Employee ID is required.', 'error')
+      return
+    }
     const isRegional = String(selectedOffice?.officeType || '') === 'Regional Office'
     if (isRegional && !divisionId) {
       addToast('Select a division for Regional Office staff.', 'error')
@@ -146,6 +171,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     setPending(`employee-update-${person.id}`, true)
     try {
       await updatePersonRecord(person, {
+        lastName: trimmedLastName,
+        firstName: trimmedFirstName,
+        middleName: trimmedMiddleName,
+        employeeId: trimmedEmployeeId,
         officeId,
         officeName: selectedOffice?.name || person.officeName,
         position: trimmedPosition,
@@ -155,7 +184,22 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         approvalStatus,
       })
       refreshEmployees()
-      onSave(person, { officeId, active, approvalStatus, position: trimmedPosition, divisionId: isRegional ? divisionId : '' })
+      onSave(person, {
+        lastName: trimmedLastName,
+        firstName: trimmedFirstName,
+        middleName: trimmedMiddleName,
+        employeeId: trimmedEmployeeId,
+        name: buildEmployeeDisplayName({
+          lastName: trimmedLastName,
+          firstName: trimmedFirstName,
+          middleName: trimmedMiddleName,
+        }),
+        officeId,
+        active,
+        approvalStatus,
+        position: trimmedPosition,
+        divisionId: isRegional ? divisionId : '',
+      })
     } catch (err) {
       addToast(err?.message || 'Update failed', 'error')
     }
@@ -198,6 +242,15 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   }
 
   const submittedLabel = formatSubmittedDate()
+  const phaseSampleCounts = person.captureMetadata?.phaseSampleCounts && typeof person.captureMetadata.phaseSampleCounts === 'object'
+    ? person.captureMetadata.phaseSampleCounts
+    : null
+  const phaseLabels = [
+    ['center', 'Front'],
+    ['side_a', 'Side A'],
+    ['side_b', 'Side B'],
+    ['chin_down', 'Chin down'],
+  ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
@@ -226,6 +279,35 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
               <p className="mt-1 text-xs text-amber-600">{submittedLabel}</p>
             )}
           </div>
+        </div>
+
+        {person.photoUrl ? (
+          <div className="mt-5 overflow-hidden rounded-2xl border border-black/5 bg-stone-950">
+            <img
+              alt={`Enrollment photo for ${person.name}`}
+              className="max-h-[22rem] w-full object-contain"
+              src={person.photoUrl}
+            />
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            No enrollment photo is saved for this employee yet.
+          </div>
+        )}
+
+        <div className="mt-4 rounded-xl border border-black/5 bg-stone-50 px-3 py-3 text-sm text-muted">
+          {(person.sampleCount ?? 0) > 0
+            ? `${person.sampleCount} biometric sample(s) saved.`
+            : 'No biometric samples saved yet.'}
+          {phaseSampleCounts ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {phaseLabels.map(([phaseId, label]) => (
+                <span key={phaseId} className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-muted">
+                  {label}: {Number(phaseSampleCounts[phaseId] || 0)}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {currentApproval === PERSON_APPROVAL_PENDING && (
@@ -303,11 +385,51 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             </div>
 
             <div className="grid gap-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Field label="Last name">
+                  <input
+                    className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Last name"
+                    type="text"
+                    value={lastName}
+                  />
+                </Field>
+                <Field label="First name">
+                  <input
+                    className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="First name"
+                    type="text"
+                    value={firstName}
+                  />
+                </Field>
+                <Field label="Middle name">
+                  <input
+                    className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                    onChange={(e) => setMiddleName(e.target.value)}
+                    placeholder="Middle name"
+                    type="text"
+                    value={middleName}
+                  />
+                </Field>
+              </div>
+
+              <Field label="Employee ID">
+                <input
+                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                  onChange={(e) => setEmployeeId(e.target.value.replace(/[^A-Za-z0-9-]/g, ''))}
+                  placeholder="Employee ID"
+                  type="text"
+                  value={employeeId}
+                />
+              </Field>
+
               <Field label="Position">
                 <input
-                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm uppercase outline-none transition focus:border-navy"
-                  onChange={(e) => setPosition(e.target.value.toUpperCase())}
-                  placeholder="e.g. LGOO II"
+                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
+                  onChange={(e) => setPosition(e.target.value)}
+                  placeholder="Complete position title"
                   type="text"
                   value={position}
                 />
@@ -341,6 +463,15 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 {(person.sampleCount ?? 0) > 0
                   ? `${person.sampleCount} biometric sample(s) enrolled.`
                   : 'No biometric samples — employee must enroll face.'}
+                {phaseSampleCounts ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {phaseLabels.map(([phaseId, label]) => (
+                      <span key={phaseId} className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-muted">
+                        {label}: {Number(phaseSampleCounts[phaseId] || 0)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <button

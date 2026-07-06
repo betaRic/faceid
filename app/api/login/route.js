@@ -21,6 +21,7 @@ import {
   findLocalAdminByPin,
   findLocalHrByPin,
 } from '@/lib/postgres/user-store'
+import { postgresEnabled } from '@/lib/postgres/client'
 
 function safeEqual(left, right) {
   const leftBuffer = Buffer.isBuffer(left) ? left : Buffer.from(left)
@@ -38,6 +39,7 @@ export async function POST(request) {
   if (originError) return originError
 
   const db = null
+  const usePostgres = postgresEnabled()
   const ip = getRequestIp(request)
 
   const ipLimit = await enforceRateLimit(db, {

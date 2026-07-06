@@ -4,7 +4,9 @@ export default function DetailsStep({
   detailsReady,
   employeeId,
   employeeIdError,
-  name,
+  firstName,
+  lastName,
+  middleName,
   nameRef,
   officeId,
   offices,
@@ -13,7 +15,9 @@ export default function DetailsStep({
   onBack,
   onContinue,
   onEmployeeIdChange,
-  onNameChange,
+  onFirstNameChange,
+  onLastNameChange,
+  onMiddleNameChange,
   onOfficeChange,
   onPositionChange,
   onDivisionChange,
@@ -27,19 +31,47 @@ export default function DetailsStep({
   return (
     <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
       <div className="grid content-start gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-3 sm:p-4">
-        <Field label="Full name">
-          <input
-            ref={nameRef}
-            className="input uppercase"
-            onChange={event => onNameChange(event.target.value.toUpperCase())}
-            onKeyDown={event => {
-              if (event.key === 'Enter') onContinue()
-            }}
-            placeholder="Enter full name"
-            type="text"
-            value={name}
-          />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Last name">
+            <input
+              ref={nameRef}
+              className="input"
+              onChange={event => onLastNameChange(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') onContinue()
+              }}
+              placeholder="Enter last name"
+              type="text"
+              value={lastName}
+            />
+          </Field>
+
+          <Field label="First name">
+            <input
+              className="input"
+              onChange={event => onFirstNameChange(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') onContinue()
+              }}
+              placeholder="Enter first name"
+              type="text"
+              value={firstName}
+            />
+          </Field>
+
+          <Field label="Middle name">
+            <input
+              className="input"
+              onChange={event => onMiddleNameChange(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') onContinue()
+              }}
+              placeholder="Enter middle name"
+              type="text"
+              value={middleName}
+            />
+          </Field>
+        </div>
 
         <Field label="Employee ID">
           <input
@@ -57,12 +89,12 @@ export default function DetailsStep({
 
         <Field label="Position">
           <input
-            className="input uppercase"
-            onChange={event => onPositionChange(event.target.value.toUpperCase())}
+            className="input"
+            onChange={event => onPositionChange(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'Enter') onContinue()
             }}
-            placeholder="e.g. LGOO II, Administrative Aide IV"
+            placeholder="Enter complete position title"
             type="text"
             value={position}
           />

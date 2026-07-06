@@ -28,10 +28,13 @@ import {
   PERSON_APPROVAL_REJECTED,
   normalizePersonApprovalStatus,
 } from '@/lib/person-approval'
+import { normalizeEmployeeNameFields } from '@/lib/person-name'
 
 function normalizeBody(body) {
+  const names = normalizeEmployeeNameFields(body || {})
   return {
-    name: String(body?.name || '').trim(),
+    ...names,
+    employeeId: String(body?.employeeId || '').trim(),
     position: String(body?.position || '').trim(),
     officeId: String(body?.officeId || '').trim(),
     officeName: String(body?.officeName || '').trim(),
@@ -45,7 +48,11 @@ function normalizeBody(body) {
 }
 
 function validateBody(body) {
-  if (!body.name) return 'Employee name is required.'
+  if (!body.lastName) return 'Last name is required.'
+  if (!body.firstName) return 'First name is required.'
+  if (!body.employeeId) return 'Employee ID is required.'
+  if (body.employeeId.length < 3 || body.employeeId.length > 20) return 'Employee ID must be 3-20 characters.'
+  if (!/^[A-Za-z0-9-]+$/.test(body.employeeId)) return 'Employee ID must contain only letters, numbers, and dashes (-).'
   if (!body.position) return 'Position is required.'
   if (body.position.length < 2 || body.position.length > 80) return 'Position must be 2-80 characters.'
   if (!body.officeId) return 'Assigned office is required.'
@@ -272,9 +279,10 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
+    const status = Number(error?.status)
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to update employee.' },
-      { status: 500 },
+      { status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500 },
     )
   }
 }
