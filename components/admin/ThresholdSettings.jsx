@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { useThresholds } from '@/lib/admin/hooks/useThresholds'
 import { MaintenancePanel } from './MaintenancePanel'
 
@@ -46,6 +46,41 @@ function SliderField({ fieldKey, meta, value, onChange }) {
       {meta.zeroNote && numVal === 0 && (
         <p className="mt-1 text-xs text-amber-600">{meta.zeroNote}</p>
       )}
+    </div>
+  )
+}
+
+function RegionalPinAccess() {
+  const [state, setState] = useState({ loading: true, configured: false, enabled: false, saving: false, error: '' })
+
+  useEffect(() => {
+    fetch('/api/admin/regional-pin').then(response => response.json()).then(data => {
+      setState(current => ({ ...current, loading: false, configured: Boolean(data.configured), enabled: Boolean(data.enabled), error: data.ok ? '' : data.message || 'Unable to load regional PIN status.' }))
+    }).catch(() => setState(current => ({ ...current, loading: false, error: 'Unable to load regional PIN status.' })))
+  }, [])
+
+  const setEnabled = async (enabled) => {
+    setState(current => ({ ...current, saving: true, error: '' }))
+    try {
+      const response = await fetch('/api/admin/regional-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) })
+      const data = await response.json()
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Unable to update regional PIN access.')
+      setState(current => ({ ...current, enabled: Boolean(data.enabled), saving: false }))
+    } catch (error) {
+      setState(current => ({ ...current, saving: false, error: error.message }))
+    }
+  }
+
+  if (state.loading) return null
+  return (
+    <div className="rounded-2xl border border-black/10 bg-stone-50 p-5">
+      <h3 className="font-semibold text-ink">Regional Bootstrap PIN</h3>
+      <p className="mt-1 text-sm text-muted">Controls whether the <code>ADMIN_REGIONAL_PIN</code> environment PIN can sign in. Managed admin PINs continue to work.</p>
+      {!state.configured ? <p className="mt-3 text-sm text-amber-700">No ADMIN_REGIONAL_PIN is configured on the server.</p> : null}
+      {state.error ? <p className="mt-3 text-sm text-red-600">{state.error}</p> : null}
+      <button type="button" disabled={!state.configured || state.saving} onClick={() => setEnabled(!state.enabled)} className="mt-4 rounded-xl bg-navy px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+        {state.saving ? 'Saving…' : state.enabled ? 'Disable Regional PIN' : 'Enable Regional PIN'}
+      </button>
     </div>
   )
 }
@@ -309,9 +344,13 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
                 saving={saving}
               />
             )}
+            {sections.location && (
+              <SectionCard sectionKey="location" section={sections.location} onFieldChange={handleFieldChange} onSave={handleSave} onReset={handleReset} saving={saving} />
+            )}
           </div>
 
           <MaintenancePanel />
+          <RegionalPinAccess />
         </div>
       </div>
     </section>

@@ -14,17 +14,17 @@ import KioskAlert from './kiosk/KioskAlert'
 import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
 import { clearAttendanceMatch, saveAttendanceMatch } from '@/lib/attendance-match'
 
-const CLAIMED_EMPLOYEE_ID_STORAGE_KEY = 'faceattend:claimed-employee-id'
+const FIELD_DUTY_REASONS = ['Official Meeting', 'Field Work', 'Training / Seminar', 'Official Travel', 'Emergency / Other']
+
+const CLAIMED_EMPLOYEE_ID_STORAGE_KEY = 'faceattend:claimed-access-code'
 
 function normalizeEmployeeIdInput(value) {
-  return String(value || '').trim().replace(/\s+/g, '')
+  return String(value || '').replace(/\D/g, '')
 }
 
 function validateEmployeeIdInput(value) {
-  if (!value) return 'Employee ID is required.'
-  if (value.length < 3) return 'Employee ID must be at least 3 characters.'
-  if (value.length > 20) return 'Employee ID must be 20 characters or fewer.'
-  if (!/^[A-Za-z0-9-]+$/.test(value)) return 'Use letters, numbers, and dashes only.'
+  if (!value) return 'Access code is required.'
+  if (!/^\d{4}$/.test(value)) return 'Enter exactly four digits.'
   return ''
 }
 
@@ -43,6 +43,9 @@ export default function KioskView({
   const [employeeIdInput, setEmployeeIdInput] = useState('')
   const [employeeIdError, setEmployeeIdError] = useState('')
   const [claimedEmployeeId, setClaimedEmployeeId] = useState('')
+  const [fieldDutyOpen, setFieldDutyOpen] = useState(false)
+  const [fieldDutyReason, setFieldDutyReason] = useState('')
+  const [fieldDutyRemarks, setFieldDutyRemarks] = useState('')
 
   const {
     kioskState,
@@ -100,6 +103,9 @@ export default function KioskView({
     recordVerification,
     recordNetwork,
     claimedEmployeeId,
+    fieldDuty: fieldDutyReason && fieldDutyRemarks.trim()
+      ? { requested: true, reason: fieldDutyReason, remarks: fieldDutyRemarks.trim() }
+      : null,
   })
 
   const { clock, dateStr } = useKioskClock()
@@ -123,7 +129,7 @@ export default function KioskView({
   }, [camera.camOn, claimedEmployeeId, modelsReady, resumeKey, startLoop, stopLoop, workspaceReady, handleRunScan])
 
   const handleEmployeeIdChange = useCallback(event => {
-    setEmployeeIdInput(String(event.target.value || '').replace(/\s+/g, '').slice(0, 20))
+    setEmployeeIdInput(String(event.target.value || '').replace(/\D/g, '').slice(0, 20))
     if (employeeIdError) setEmployeeIdError('')
   }, [employeeIdError])
 
@@ -143,6 +149,15 @@ export default function KioskView({
     } catch {}
   }, [employeeIdInput])
 
+  const clearClaimedEmployeeId = useCallback(() => {
+    setClaimedEmployeeId('')
+    setEmployeeIdInput('')
+    setEmployeeIdError('')
+    try {
+      window.sessionStorage.removeItem(CLAIMED_EMPLOYEE_ID_STORAGE_KEY)
+    } catch {}
+  }, [])
+
   const handleChangeEmployeeId = useCallback(() => {
     pauseScanning()
     clearAttendanceMatch()
@@ -150,9 +165,12 @@ export default function KioskView({
     setCapturedFrameUrl(null)
     setAlertState(null)
     setKioskState('idle')
-    setClaimedEmployeeId('')
+    clearClaimedEmployeeId()
+    setFieldDutyOpen(false)
+    setFieldDutyReason('')
+    setFieldDutyRemarks('')
     if (camera?.clearOverlay) camera.clearOverlay()
-  }, [camera, pauseScanning, setAlertState, setCapturedFrameUrl, setCurrentMatch, setKioskState])
+  }, [camera, clearClaimedEmployeeId, pauseScanning, setAlertState, setCapturedFrameUrl, setCurrentMatch, setKioskState])
 
   useEffect(() => {
     const previous = previousStateRef.current
@@ -206,8 +224,9 @@ export default function KioskView({
 
   const handleBackToKiosk = useCallback(() => {
     clearAttendanceMatch()
+    clearClaimedEmployeeId()
     scheduleResume(250)
-  }, [scheduleResume])
+  }, [clearClaimedEmployeeId, scheduleResume])
 
   if (!claimedEmployeeId) {
     return (
@@ -227,11 +246,11 @@ export default function KioskView({
             <form className="grid w-full max-w-sm gap-4" onSubmit={handleConfirmEmployeeId}>
               <div className="text-center">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Face Scan</div>
-                <h1 className="mt-2 font-display text-3xl font-bold text-ink">Employee ID</h1>
+                <h1 className="mt-2 font-display text-3xl font-bold text-ink">VeriFace Access Code</h1>
               </div>
 
               <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Employee ID</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Four-digit access code</span>
                 <input
                   autoCapitalize="characters"
                   autoComplete="username"
@@ -239,7 +258,7 @@ export default function KioskView({
                   className={`input h-14 text-center font-display text-xl tracking-[0.08em] ${employeeIdError ? 'border-amber-400' : ''}`}
                   inputMode="text"
                   onChange={handleEmployeeIdChange}
-                  placeholder="EMP-001"
+                  placeholder="0000"
                   type="text"
                   value={employeeIdInput}
                 />
@@ -264,7 +283,10 @@ export default function KioskView({
             {claimedEmployeeId}
           </span>
           <button className="btn btn-ghost px-3 py-2 text-xs" onClick={handleChangeEmployeeId} type="button">
-            Change ID
+            Change code
+          </button>
+          <button className={`btn px-3 py-2 text-xs ${fieldDutyReason && fieldDutyRemarks.trim() ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFieldDutyOpen(true)} type="button">
+            {fieldDutyReason ? 'Field Duty set' : 'Offsite / Field Duty'}
           </button>
         </div>
       )}
@@ -309,6 +331,25 @@ export default function KioskView({
           ) : null}
         </motion.section>
       </div>
+      {fieldDutyOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/45 p-4 sm:items-center sm:justify-center">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h2 className="text-lg font-bold text-navy">Offsite / Field Duty</h2>
+            <p className="mt-1 text-sm text-slate">Use only for official work outside a DILG office. Your scan time and actual GPS location will be recorded and sent to HR/Admin for approval.</p>
+            <label className="mt-4 block text-xs font-semibold uppercase tracking-wider text-muted">Reason</label>
+            <select className="input mt-1 w-full" value={fieldDutyReason} onChange={event => setFieldDutyReason(event.target.value)}>
+              <option value="">Select reason</option>
+              {FIELD_DUTY_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+            </select>
+            <label className="mt-3 block text-xs font-semibold uppercase tracking-wider text-muted">Remarks</label>
+            <textarea className="input mt-1 min-h-24 w-full" maxLength={500} placeholder="State the meeting, assignment, or official activity." value={fieldDutyRemarks} onChange={event => setFieldDutyRemarks(event.target.value)} />
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="btn btn-ghost" onClick={() => setFieldDutyOpen(false)} type="button">Cancel</button>
+              <button className="btn btn-primary" disabled={!fieldDutyReason || !fieldDutyRemarks.trim()} onClick={() => setFieldDutyOpen(false)} type="button">Use for scan</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   )
 }

@@ -47,7 +47,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
     setLoading(true)
     try {
       const res = await fetch(
-        `/api/admin/attendance?employeeId=${encodeURIComponent(row.employeeId)}&date=${encodeURIComponent(row.dateKey)}`,
+        `/api/admin/attendance?employeeId=${encodeURIComponent(row.employeeId)}&personId=${encodeURIComponent(row.personId || '')}&date=${encodeURIComponent(row.dateKey)}`,
       )
       const data = await res.json()
       if (data.ok) setLogs(data.logs || [])
@@ -68,6 +68,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId: row.employeeId,
+          personId: row.personId || '',
           name: row.name,
           officeId: row.officeId,
           officeName: row.officeName,
@@ -107,6 +108,25 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
       }
     } catch {
       store.addToast('Failed to delete.', 'error')
+    }
+    setBusy(false)
+  }
+
+  async function handleFieldDutyReview(log, fieldDutyStatus) {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/admin/attendance/${log.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fieldDutyStatus }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message || 'Failed to review field-duty request.')
+      store.addToast(`Field-duty request ${fieldDutyStatus}.`, 'success')
+      await fetchLogs()
+      onSaved?.()
+    } catch (error) {
+      store.addToast(error?.message || 'Failed to review field-duty request.', 'error')
     }
     setBusy(false)
   }
@@ -177,15 +197,30 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
                         &ldquo;{log.overrideReason}&rdquo;
                       </span>
                     )}
+                    {log.fieldDutyStatus && (
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        log.fieldDutyStatus === 'approved' ? 'bg-emerald-100 text-emerald-700' : log.fieldDutyStatus === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        FIELD DUTY · {log.fieldDutyStatus.toUpperCase()}
+                      </span>
+                    )}
                   </div>
-                  <button
-                    className="ml-3 shrink-0 rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-40"
-                    disabled={busy}
-                    onClick={() => handleDelete(log)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
+                  <div className="ml-3 flex shrink-0 gap-2">
+                    {log.fieldDutyStatus === 'pending' ? (
+                      <>
+                        <button className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40" disabled={busy} onClick={() => handleFieldDutyReview(log, 'approved')} type="button">Approve</button>
+                        <button className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 disabled:opacity-40" disabled={busy} onClick={() => handleFieldDutyReview(log, 'rejected')} type="button">Reject</button>
+                      </>
+                    ) : null}
+                    <button
+                      className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-40"
+                      disabled={busy}
+                      onClick={() => handleDelete(log)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

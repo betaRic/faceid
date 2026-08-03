@@ -29,7 +29,8 @@ export async function GET(request) {
     const targetYear = year ? parseInt(year) : now.getFullYear()
     const targetMonth = month ? parseInt(month) : now.getMonth() + 1
 
-    const dailyRecords = await listEmployeeDailyAttendanceRecords(db, employeeId)
+    const personId = String(access.person?.id || '').trim()
+    const dailyRecords = await listEmployeeDailyAttendanceRecords(db, personId, employeeId)
     if (dailyRecords.length > 0) {
       const days = dailyRecords
         .filter(record => {
@@ -67,7 +68,7 @@ export async function GET(request) {
 
     const logs = usePostgres
       ? await listLocalAttendanceLogs({
-          employeeId,
+          personId,
           startMs: startDate.getTime(),
           endMs: endDate.getTime(),
           direction: 'asc',
@@ -91,6 +92,7 @@ export async function GET(request) {
       return Response.json({
         ok: true,
         employeeId,
+        personId,
         month: targetMonth,
         year: targetYear,
         totalDays: days.length,

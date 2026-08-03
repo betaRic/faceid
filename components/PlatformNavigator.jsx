@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import AppShell from './AppShell'
 import BrandMark from './BrandMark'
 import { usePortalDestination } from './usePortalDestination'
+import AddToHomeScreenButton from './AddToHomeScreenButton'
 
 /* ─── Animation variants ─────────────────────────────────── */
 const stagger = {
@@ -148,7 +149,7 @@ export default function PlatformNavigator() {
               variants={fadeUp}
               className="text-4xl font-bold leading-tight text-white sm:text-5xl lg:text-6xl"
             >
-              Face Attendance<br />
+              VeriFace Attendance<br />
               <span className="text-amber">Made Simple.</span>
             </motion.h1>
 
@@ -161,6 +162,7 @@ export default function PlatformNavigator() {
             </motion.p>
 
             <motion.div variants={fadeUp} className="mt-10 flex flex-wrap items-center justify-center gap-3">
+              <AddToHomeScreenButton className="border border-sky/30 text-sky hover:bg-sky/10" />
               <Link href="/scan" className="btn btn-amber text-base px-7 py-3.5 shadow-glow-orange">
                 Open Kiosk
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

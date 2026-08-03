@@ -13,6 +13,7 @@ function SummaryPanelInner() {
     summaryDate, setSummaryDate,
     summaryOfficeFilter, setSummaryOfficeFilter,
     summaryEmployeeFilter, setSummaryEmployeeFilter,
+    summaryQuery, setSummaryQuery,
     summaryRows, summaryLoading,
     summaryEmployeeOptions,
     reloadSummary,
@@ -33,12 +34,14 @@ function SummaryPanelInner() {
         summaryEmployeeFilter={summaryEmployeeFilter}
         summaryEmployeeOptions={summaryEmployeeOptions}
         summaryLoading={summaryLoading}
+        summaryQuery={summaryQuery}
         summaryOfficeFilter={summaryOfficeFilter}
         summaryRows={summaryRows}
         visibleOffices={visibleOffices}
         onOpenDtr={() => setShowDtr(true)}
         onSetSummaryDate={setSummaryDate}
         onSetSummaryEmployeeFilter={setSummaryEmployeeFilter}
+        onSetSummaryQuery={setSummaryQuery}
         onSetSummaryOfficeFilter={setSummaryOfficeFilter}
       />
 
@@ -59,7 +62,6 @@ function SummaryPanelInner() {
       <AnimatePresence>
         {showDtr ? (
           <DtrModal
-            summaryRows={summaryRows}
             onClose={() => setShowDtr(false)}
           />
         ) : null}

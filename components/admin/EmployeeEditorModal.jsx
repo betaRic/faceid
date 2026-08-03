@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
@@ -8,6 +8,7 @@ import { useAdminStore } from '@/lib/admin/store'
 import { updatePersonRecord } from '@/lib/data-store'
 import { Field } from '@/components/shared/ui'
 import { buildEmployeeDisplayName } from '@/lib/person-name'
+import { normalizeEmployeeWfhDays } from '@/lib/employee-wfh'
 import {
   getEffectivePersonApprovalStatus,
   PERSON_APPROVAL_APPROVED,
@@ -39,8 +40,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   const [divisionId, setDivisionId] = useState('')
   const [active, setActive] = useState(true)
   const [approvalStatus, setApprovalStatus] = useState(PERSON_APPROVAL_PENDING)
+  const [individualWfhDays, setIndividualWfhDays] = useState([])
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [panelMode, setPanelMode] = useState('details')
+  const [photoUrl, setPhotoUrl] = useState('')
+  const [accessCode, setAccessCode] = useState('')
+  const photoInputRef = useRef(null)
 
   useEffect(() => {
     if (!person) return
@@ -53,14 +58,19 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     setDivisionId(person.divisionId || '')
     setActive(person.active !== false)
     setApprovalStatus(getEffectivePersonApprovalStatus(person))
+    setIndividualWfhDays(normalizeEmployeeWfhDays(person.individualWfhDays))
     setResetConfirmOpen(false)
     setPanelMode('details')
+    setPhotoUrl(person.photoUrl || '')
+    setAccessCode(person.accessCode || '')
   }, [person])
 
   if (!person) return null
 
   const selectedOffice = offices.find((o) => o.id === officeId)
   const isSaving = isPending(`employee-update-${person.id}`)
+  const isUploadingPhoto = isPending(`employee-photo-${person.id}`)
+  const isRegeneratingAccessCode = isPending(`employee-access-code-${person.id}`)
   const currentApproval = getEffectivePersonApprovalStatus(person)
 
   async function handleQuickApprove() {
@@ -142,7 +152,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     const trimmedLastName = lastName.trim()
     const trimmedFirstName = firstName.trim()
     const trimmedMiddleName = middleName.trim()
-    const trimmedEmployeeId = employeeId.trim().replace(/[^A-Za-z0-9-]/g, '')
+    const trimmedEmployeeId = employeeId.trim().replace(/\D/g, '')
     if (!trimmedLastName) {
       addToast('Last name is required.', 'error')
       return
@@ -180,6 +190,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         position: trimmedPosition,
         divisionId: isRegional ? divisionId : '',
         divisionName: isRegional ? (division?.name || '') : '',
+        individualWfhDays,
         active,
         approvalStatus,
       })
@@ -199,6 +210,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         approvalStatus,
         position: trimmedPosition,
         divisionId: isRegional ? divisionId : '',
+        individualWfhDays,
       })
     } catch (err) {
       addToast(err?.message || 'Update failed', 'error')
@@ -217,6 +229,72 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     }
     const encoded = encodeURIComponent(JSON.stringify(personData))
     router.push(`/admin/employee/${person.id}/reenroll?person=${encoded}`)
+  }
+
+  async function handleRegenerateAccessCode() {
+    if (!window.confirm('Generate a new VeriFace access code? The current code will stop working immediately.')) return
+    setPending(`employee-access-code-${person.id}`, true)
+    try {
+      const response = await fetch(`/api/persons/${person.id}/access-code`, { method: 'POST' })
+      const result = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(result?.message || 'Failed to generate a new access code.')
+
+      setAccessCode(result.accessCode || '')
+      refreshEmployees()
+      onSave(person, { accessCode: result.accessCode || '' })
+      addToast('New VeriFace access code generated.', 'success')
+    } catch (error) {
+      addToast(error?.message || 'Failed to generate a new access code.', 'error')
+    }
+    setPending(`employee-access-code-${person.id}`, false)
+  }
+
+  async function handleProfilePhotoSelected(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      addToast('Choose a JPEG, PNG, or WebP image.', 'error')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      addToast('Profile photo must be 5 MB or smaller.', 'error')
+      return
+    }
+
+    setPending(`employee-photo-${person.id}`, true)
+    try {
+      const photoDataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result || ''))
+        reader.onerror = () => reject(new Error('Could not read the selected image.'))
+        reader.readAsDataURL(file)
+      })
+      const response = await fetch(`/api/persons/${person.id}/photo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photoDataUrl }),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(result?.message || 'Failed to save profile photo.')
+
+      const nextPhotoUrl = `${result.photoUrl}?v=${Date.now()}`
+      setPhotoUrl(nextPhotoUrl)
+      refreshEmployees()
+      onSave(person, { photoPath: result.photoPath, photoUrl: nextPhotoUrl })
+      addToast('Profile photo saved. Biometric enrollment was not changed.', 'success')
+    } catch (error) {
+      addToast(error?.message || 'Failed to save profile photo.', 'error')
+    }
+    setPending(`employee-photo-${person.id}`, false)
+  }
+
+  function toggleIndividualWfhDay(day) {
+    setIndividualWfhDays(current => (
+      current.includes(day)
+        ? current.filter(item => item !== day)
+        : normalizeEmployeeWfhDays([...current, day])
+    ))
   }
 
   const formatSubmittedDate = () => {
@@ -261,11 +339,11 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
         <div className="flex items-start gap-4">
-          {person.photoUrl ? (
+          {photoUrl ? (
             <img
               alt={person.name}
               className="h-16 w-16 shrink-0 rounded-2xl object-cover"
-              src={person.photoUrl}
+              src={photoUrl}
             />
           ) : (
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-navy/10 text-xl font-bold text-navy-dark">
@@ -275,25 +353,53 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-bold text-ink">{person.name}</h2>
             <p className="mt-0.5 text-sm text-muted">{person.employeeId}</p>
+            {accessCode ? <p className="mt-1 text-xs font-semibold text-navy">VeriFace access code: {accessCode}</p> : null}
             {submittedLabel && currentApproval === PERSON_APPROVAL_PENDING && (
               <p className="mt-1 text-xs text-amber-600">{submittedLabel}</p>
             )}
           </div>
+          <button
+            aria-label="Close employee record"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-xl leading-none text-muted transition hover:bg-stone-100 hover:text-ink"
+            onClick={onCancel}
+            type="button"
+          >
+            ×
+          </button>
         </div>
 
-        {person.photoUrl ? (
+        {photoUrl ? (
           <div className="mt-5 overflow-hidden rounded-2xl border border-black/5 bg-stone-950">
             <img
               alt={`Enrollment photo for ${person.name}`}
               className="max-h-[22rem] w-full object-contain"
-              src={person.photoUrl}
+              src={photoUrl}
             />
           </div>
         ) : (
           <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            No enrollment photo is saved for this employee yet.
+            No profile photo is saved for this employee yet. You may add one without changing the biometric enrollment.
           </div>
         )}
+
+        <div className="mt-3">
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={handleProfilePhotoSelected}
+            ref={photoInputRef}
+            type="file"
+          />
+          <button
+            className="w-full rounded-xl border border-navy/20 bg-white px-4 py-2.5 text-sm font-semibold text-navy-dark transition hover:bg-navy/5 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isUploadingPhoto}
+            onClick={() => photoInputRef.current?.click()}
+            type="button"
+          >
+            {isUploadingPhoto ? 'Saving profile photo...' : (photoUrl ? 'Replace profile photo' : 'Upload profile photo')}
+          </button>
+          <p className="mt-1.5 text-center text-xs text-muted">JPEG, PNG, or WebP up to 5 MB. This does not change biometric enrollment.</p>
+        </div>
 
         <div className="mt-4 rounded-xl border border-black/5 bg-stone-50 px-3 py-3 text-sm text-muted">
           {(person.sampleCount ?? 0) > 0
@@ -418,7 +524,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
               <Field label="Employee ID">
                 <input
                   className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
-                  onChange={(e) => setEmployeeId(e.target.value.replace(/[^A-Za-z0-9-]/g, ''))}
+                  onChange={(e) => setEmployeeId(e.target.value.replace(/\D/g, ''))}
                   placeholder="Employee ID"
                   type="text"
                   value={employeeId}
@@ -458,6 +564,33 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                   </select>
                 </Field>
               ) : null}
+
+              <Field label="Individual WFH days">
+                <p className="mb-2 text-xs text-muted">A repeating weekly schedule for this employee. Office-wide WFH days still apply to everyone.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {[['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6], ['Sun', 0]].map(([label, day]) => {
+                    const activeDay = individualWfhDays.includes(day)
+                    return <button className={`rounded-full border px-3 py-1 text-sm font-semibold transition ${activeDay ? 'border-amber/40 bg-amber/15 text-amber-dark' : 'border-black/10 bg-white text-muted hover:bg-stone-100'}`} key={day} onClick={() => toggleIndividualWfhDay(day)} type="button">{label}</button>
+                  })}
+                </div>
+              </Field>
+
+              <div className="rounded-xl border border-navy/15 bg-navy/5 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-navy-dark">VeriFace access code</p>
+                    <p className="mt-0.5 text-xs text-muted">{accessCode || 'Not assigned'}. This unique 4-digit code is used at the kiosk.</p>
+                  </div>
+                  <button
+                    className="shrink-0 rounded-lg border border-navy/20 bg-white px-3 py-2 text-xs font-semibold text-navy-dark transition hover:bg-navy/5 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isRegeneratingAccessCode}
+                    onClick={handleRegenerateAccessCode}
+                    type="button"
+                  >
+                    {isRegeneratingAccessCode ? 'Generating...' : 'Generate new code'}
+                  </button>
+                </div>
+              </div>
 
               <div className="rounded-xl border border-black/5 bg-stone-50 px-3 py-2 text-sm text-muted">
                 {(person.sampleCount ?? 0) > 0
@@ -527,7 +660,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                   type="button"
                 >
                   {isSaving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : null}
-                  {isSaving ? 'Saving...' : 'Transfer'}
+                  {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>

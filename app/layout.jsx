@@ -2,11 +2,13 @@ import './globals.css'
 import AppProviders from '@/components/AppProviders'
 
 export const metadata = {
-  title: 'FaceAttend — DILG Region XII',
-  description: 'Biometric face attendance system for DILG Region XII government offices. GPS-validated, server-enforced attendance tracking.',
+  title: 'VeriFace Attendance Management System — DILG Region XII',
+  description: 'DILG Region XII biometric attendance system with GPS-validated, server-enforced attendance tracking.',
   icons: {
-    icon: '/favicon.ico',
+    icon: '/veriface-icon-192.png',
+    apple: '/veriface-icon-192.png',
   },
+  manifest: '/manifest.webmanifest',
 }
 
 export default function RootLayout({ children }) {

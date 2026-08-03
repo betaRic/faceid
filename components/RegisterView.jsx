@@ -14,6 +14,7 @@ import DetailsStep from './register/DetailsStep'
 import ReviewStep from './register/ReviewStep'
 import RegisterStepRail from './register/RegisterStepRail'
 import { buildEmployeeDisplayName } from '@/lib/person-name'
+import { PRIVACY_NOTICE_VERSION } from '@/lib/privacy-consent'
 
 const STEPS = [
   { id: 'details', number: '1', title: 'Employee details', description: 'Name, ID, and assigned office.' },
@@ -40,6 +41,7 @@ export default function RegisterView({
   const [position, setPosition] = useState('')
   const [officeId, setOfficeId] = useState(offices[0]?.id || '')
   const [divisionId, setDivisionId] = useState('')
+  const [privacyConsent, setPrivacyConsent] = useState(false)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [pendingDescriptors, setPendingDescriptors] = useState([])
   const [pendingSampleFrames, setPendingSampleFrames] = useState([])
@@ -55,6 +57,7 @@ export default function RegisterView({
 
   const playAudioCue = useAudioCue()
   const lastNameRef = useRef(null)
+  const enrollmentSubmitRef = useRef(false)
 
   const {
     capturePhase,
@@ -75,7 +78,7 @@ export default function RegisterView({
   const currentStep = STEPS[stepIndex] || STEPS[0]
   const detailsReady = Boolean(
     lastName.trim() && firstName.trim() && employeeId.trim() && position.trim() && officeId
-    && (!isRegionalOffice || divisionId),
+    && (!isRegionalOffice || divisionId) && privacyConsent,
   )
 
   useEffect(() => {
@@ -122,9 +125,9 @@ export default function RegisterView({
   }
 
   function handleEmployeeIdChange(value) {
-    const sanitized = value.replace(/[^A-Za-z0-9-]/g, '')
+    const sanitized = value.replace(/\D/g, '')
     setEmployeeId(sanitized)
-    setEmployeeIdError(value !== sanitized ? 'Only letters, numbers, and dashes (-)' : '')
+    setEmployeeIdError(value !== sanitized ? 'Employee ID accepts digits only.' : '')
   }
 
   const clearPendingCapture = useCallback(() => {
@@ -236,6 +239,10 @@ export default function RegisterView({
       showToast('Select the division or unit for Regional Office staff')
       return
     }
+    if (!privacyConsent) {
+      showToast('Please read and accept the Data Privacy Notice to continue')
+      return
+    }
 
     if (pendingSampleCount > 0 && previewUrl) {
       setStep('review')
@@ -243,9 +250,10 @@ export default function RegisterView({
     }
 
     setStep('capture')
-  }, [employeeId, firstName, lastName, officeId, position, isRegionalOffice, divisionId, pendingSampleCount, previewUrl])
+  }, [employeeId, firstName, lastName, officeId, position, isRegionalOffice, divisionId, pendingSampleCount, previewUrl, privacyConsent])
 
   const handleRegister = useCallback(async () => {
+    if (enrollmentSubmitRef.current) return
     if (!lastName.trim()) {
       showToast('Enter the last name')
       lastNameRef.current?.focus()
@@ -275,7 +283,12 @@ export default function RegisterView({
       showToast('Capture a face first')
       return
     }
+    if (!privacyConsent) {
+      showToast('Data Privacy Notice consent is required before submitting registration')
+      return
+    }
 
+    enrollmentSubmitRef.current = true
     setSavingEnrollment(true)
     let result = null
 
@@ -293,12 +306,15 @@ export default function RegisterView({
           sampleFrames: pendingSampleFrames,
           captureMetadata,
           photoDataUrl: previewUrl || null,
+          privacyConsent,
+          privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
         },
         pendingDescriptors,
       )
     } catch (error) {
       showToast(error.message || 'Failed to save enrollment')
       setSavingEnrollment(false)
+      enrollmentSubmitRef.current = false
       return
     }
 
@@ -328,7 +344,8 @@ export default function RegisterView({
     })
     setStep('complete')
     playAudioCue('success')
-  }, [captureMetadata, employeeId, firstName, lastName, middleName, officeId, position, isRegionalOffice, divisionId, onEnrollPerson, pendingDescriptors, pendingSampleCount, pendingSampleFrames, previewUrl, selectedOffice, playAudioCue])
+    enrollmentSubmitRef.current = false
+  }, [captureMetadata, employeeId, firstName, lastName, middleName, officeId, position, isRegionalOffice, divisionId, onEnrollPerson, pendingDescriptors, pendingSampleCount, pendingSampleFrames, previewUrl, privacyConsent, selectedOffice, playAudioCue])
 
   const handleNewPerson = useCallback(() => {
     setLastName('')
@@ -338,6 +355,7 @@ export default function RegisterView({
     setPosition('')
     setOfficeId(offices[0]?.id || '')
     setDivisionId('')
+    setPrivacyConsent(false)
     clearPendingCapture()
     setLastSavedSummary(null)
     setStep('details')
@@ -440,6 +458,7 @@ export default function RegisterView({
                 officeId={officeId}
                 offices={offices}
                 position={position}
+                privacyConsent={privacyConsent}
                 onBack={onBack}
                 onContinue={handleContinueFromDetails}
                 onDivisionChange={setDivisionId}
@@ -449,6 +468,7 @@ export default function RegisterView({
                 onMiddleNameChange={setMiddleName}
                 onOfficeChange={setOfficeId}
                 onPositionChange={setPosition}
+                onPrivacyConsentChange={setPrivacyConsent}
                 onRetake={handleRetake}
                 pendingSampleCount={pendingSampleCount}
                 previewUrl={previewUrl}

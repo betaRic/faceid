@@ -47,6 +47,7 @@ async function run(name, fn) {
 }
 
 const officesModule = await importLocalModule('../lib/offices.js')
+const attendanceContextModule = await importLocalModule('../lib/attendance/context.js')
 const dailyAttendanceModule = await importLocalModule('../lib/daily-attendance.js')
 const attendanceTimeModule = await importLocalModule('../lib/attendance-time.js')
 const personDirectoryModule = await importLocalModule('../lib/person-directory.js')
@@ -72,6 +73,7 @@ const openVinoShadowProfileModule = await importLocalModule('../lib/biometrics/o
 const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-daily-store.js')
 const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
+const employeeWfhModule = await importLocalModule('../lib/employee-wfh.js')
 const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 const reportWindowModule = await importLocalModule('../lib/report-window.js')
@@ -82,6 +84,7 @@ const {
   resolveOfficeSignatory,
   normalizeDivisionList,
 } = officesModule
+const { checkAttendanceLocation } = attendanceContextModule
 const { deriveDailyAttendanceRecord, getNextAttendanceAction } = dailyAttendanceModule
 const {
   buildAttendanceEntryTiming,
@@ -163,6 +166,7 @@ const {
 } = attendanceDailyStoreModule
 const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
+const { isEmployeeWfhDay, normalizeEmployeeWfhDays } = employeeWfhModule
 const { validateOrigin } = csrfModule
 const { syncPersonBiometricsRecord } = personBiometricsModule
 const { resolveReportWindow } = reportWindowModule
@@ -206,6 +210,40 @@ await run('isOfficeWfhDay respects configured work-from-home days', () => {
 
   assert.equal(isOfficeWfhDay(office, wednesday), true)
   assert.equal(isOfficeWfhDay(office, thursday), false)
+})
+
+await run('individual employee WFH days are weekly and unique', () => {
+  const days = normalizeEmployeeWfhDays([1, '1', 3, 7, 'invalid'])
+  assert.deepEqual(days, [1, 3])
+  assert.equal(isEmployeeWfhDay({ individualWfhDays: days }, new Date('2026-07-26T16:30:00.000Z')), true)
+  assert.equal(isEmployeeWfhDay({ individualWfhDays: days }, new Date('2026-07-27T16:30:00.000Z')), false)
+})
+
+await run('employee and office WFH schedules combine without overriding on-site attendance', () => {
+  const office = {
+    id: 'office-fixture',
+    workPolicy: { wfhDays: [3] },
+    gps: { latitude: 6.5, longitude: 124.8, radiusMeters: 100 },
+  }
+  const outsideEntry = { timestamp: new Date('2026-07-26T16:30:00.000Z').getTime(), latitude: 7, longitude: 125 }
+  const employeeScheduleResult = checkAttendanceLocation(
+    { officeId: 'office-fixture', individualWfhDays: [1] }, office, outsideEntry, [office],
+  )
+  assert.equal(employeeScheduleResult.decisionCode, 'accepted_wfh')
+  assert.match(employeeScheduleResult.geofenceStatus, /employee WFH/i)
+
+  const officeScheduleResult = checkAttendanceLocation(
+    { officeId: 'office-fixture', individualWfhDays: [] }, office,
+    { ...outsideEntry, timestamp: new Date('2026-07-28T16:30:00.000Z').getTime() }, [office],
+  )
+  assert.equal(officeScheduleResult.decisionCode, 'accepted_wfh')
+  assert.match(officeScheduleResult.geofenceStatus, /office WFH/i)
+
+  const onsiteResult = checkAttendanceLocation(
+    { officeId: 'office-fixture', individualWfhDays: [1] }, office,
+    { ...outsideEntry, latitude: 6.5, longitude: 124.8 }, [office],
+  )
+  assert.equal(onsiteResult.attendanceMode, 'On-site')
 })
 
 await run('deriveDailyAttendanceRecord computes late and undertime from actual worked minutes', () => {
@@ -1097,12 +1135,57 @@ await run('DTR document carries parsed name parts and office schedule details', 
   })
 
   assert.deepEqual(dtr.employee.nameParts, {
-    familyName: 'LONARIO',
-    firstName: 'JAN ERIC',
+    familyName: 'Lonario',
+    firstName: 'Jan Eric',
     middleInitial: '',
   })
   assert.equal(dtr.officialHours.regularDays, 'Monday- Friday')
   assert.equal(dtr.officialHours.arrivalDeparture, '8:00-12:00 to 1:00-5:00')
+})
+
+await run('DTR derives a middle initial from legacy display names when the stored middle name is absent', () => {
+  const dtr = buildDtrDocument({
+    employee: {
+      name: 'LONARIO, JAN ERIC LANCIOLA',
+      lastName: 'LONARIO',
+      firstName: 'JAN ERIC',
+      employeeId: '12254',
+    },
+    month: 7,
+    year: 2026,
+    dayRecords: [],
+  })
+
+  assert.deepEqual(dtr.employee.nameParts, {
+    familyName: 'Lonario',
+    firstName: 'Jan Eric',
+    middleInitial: 'L.',
+  })
+})
+
+await run('DTR carries manual and system time logs in a department-sorted detail sheet', async () => {
+  const dtr = buildDtrDocument({
+    employee: { name: 'JAN ERIC LONARIO', employeeId: '12254', divisionName: 'HR Division' },
+    month: 5,
+    year: 2026,
+    dayRecords: [{ dateKey: '2026-05-04', day: 4, manualEntries: [{ time: '8:15 AM', action: 'checkin', remark: 'Forgot to scan AM in' }], timeLogEntries: [{ time: '8:00 AM', action: 'checkin', source: 'System scan', timestamp: 1 }, { time: '8:15 AM', action: 'checkin', source: 'Manual override', remark: 'Forgot to scan AM in', timestamp: 2 }], remarks: ['Forgot to scan AM in'] }],
+  })
+  assert.deepEqual(dtr.rows.find(row => row.day === 4).remarks, ['Forgot to scan AM in'])
+  assert.deepEqual(dtr.manualRemarks, [{ dateKey: '2026-05-04', day: 4, time: '8:15 AM', action: 'checkin', remark: 'Forgot to scan AM in' }])
+  assert.equal(dtr.timeLogDetails.length, 2)
+
+  const templateBytes = new Uint8Array(await readFile(new URL('../lib/templates/dtr-format.xlsx', import.meta.url)))
+  const files = unzipSync(buildDtrWorkbookFromTemplate(templateBytes, [dtr]))
+  const workbookXml = strFromU8(files['xl/workbook.xml'])
+  const remarksXml = strFromU8(files['xl/worksheets/sheet2.xml'])
+  assert.match(workbookXml, /<sheet name="Time Log Details" sheetId="2" r:id="rIdDtrSheet2"\/>/)
+  assert.match(remarksXml, /Forgot to scan AM in/)
+  assert.match(remarksXml, /8:15 AM/)
+  assert.match(remarksXml, /System scan/)
+  assert.match(remarksXml, /HR Division/)
+  const dtrXml = strFromU8(files['xl/worksheets/sheet1.xml'])
+  assert.match(dtrXml, /SYSTEM GENERATED DTR/)
+  assert.match(dtrXml, /Verification ID: FA-[A-F0-9]{16}/)
 })
 
 await run('DTR Excel workbook fills official template cells dynamically', async () => {
@@ -1143,8 +1226,8 @@ await run('DTR Excel workbook fills official template cells dynamically', async 
   const dtrTimeFontId = Number.parseInt(stylesXml.match(/<fonts count="(\d+)"/)?.[1] || '1', 10) - 1
   const dtrTimeStyleId = Number.parseInt(stylesXml.match(/<cellXfs count="(\d+)"/)?.[1] || '1', 10) - 1
 
-  assert.match(sheetXml, /<c r="C6" s="8" t="inlineStr"><is><t>LONARIO<\/t><\/is><\/c>/)
-  assert.match(sheetXml, /<c r="G6" s="8" t="inlineStr"><is><t>JAN ERIC<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="C6" s="8" t="inlineStr"><is><t>Lonario<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="G6" s="8" t="inlineStr"><is><t>Jan Eric<\/t><\/is><\/c>/)
   assert.match(sheetXml, /<c r="G9" s="20" t="inlineStr"><is><t>MAY 1-31, 2026<\/t><\/is><\/c>/)
   assert.match(sheetXml, /<c r="E15" s="32" t="s"><v>15<\/v><\/c>/)
   assert.match(sheetXml, /<c r="I15" s="32" t="s"><v>15<\/v><\/c>/)
@@ -1157,9 +1240,9 @@ await run('DTR Excel workbook fills official template cells dynamically', async 
   assert.match(sheetXml, new RegExp(`<c r="G17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>10:58 AM<\\/t><\\/is><\\/c>`))
   assert.match(sheetXml, new RegExp(`<c r="I17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>12:06 PM<\\/t><\\/is><\\/c>`))
   assert.match(sheetXml, new RegExp(`<c r="K17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>6:59 PM<\\/t><\\/is><\\/c>`))
-  assert.match(sheetXml, /<c r="B56" s="51" t="inlineStr"><is><t>MARIA THERESA D. BAUTISTA<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="B56" s="51" t="inlineStr"><is><t>Maria Theresa D. Bautista<\/t><\/is><\/c>/)
   assert.match(sheetXml, /<c r="B57" s="56" t="inlineStr"><is><t>Regional Director<\/t><\/is><\/c>/)
-  assert.match(workbookXml, /<sheet name="12-254 JAN ERIC LONARIO" sheetId="1" r:id="rIdDtrSheet1"\/>/)
+  assert.match(workbookXml, /<sheet name="12-254 Jan Eric Lonario" sheetId="1" r:id="rIdDtrSheet1"\/>/)
   assert.equal(relsXml.includes('calcChain'), false)
 })
 
@@ -1249,7 +1332,7 @@ await run('buildDtrDocument resolves signatory from office for field office staf
     year: 2026,
     dayRecords: [],
   })
-  assert.equal(dtr.signatory.name, 'MARIA THERESA D. BAUTISTA')
+  assert.equal(dtr.signatory.name, 'Maria Theresa D. Bautista')
   assert.equal(dtr.signatory.position, 'City Director / LGOO VII')
   assert.equal(dtr.employee.position, 'LGOO II')
 })
@@ -1272,7 +1355,7 @@ await run('buildDtrDocument resolves division head for regional office staff', (
     year: 2026,
     dayRecords: [],
   })
-  assert.equal(dtr.signatory.name, 'MARY ANN T. TRASPE')
+  assert.equal(dtr.signatory.name, 'Mary Ann T. Traspe')
   assert.equal(dtr.signatory.position, 'Division Chief / LGOO VII')
   assert.equal(dtr.employee.divisionName, 'Local Government Capability and Development Division')
   assert.equal(dtr.employee.divisionShortName, 'LGCDD')
@@ -1293,7 +1376,7 @@ await run('buildDtrDocument signatoryOverride wins over auto-resolved head', () 
     year: 2026,
     dayRecords: [],
   })
-  assert.equal(dtr.signatory.name, 'OIC NAME')
+  assert.equal(dtr.signatory.name, 'Oic Name')
   assert.equal(dtr.signatory.position, 'OIC-City Director')
 })
 
@@ -1687,10 +1770,10 @@ await run('raw attendance workbook creates one worksheet per employee', () => {
   const worksheets = buildRawAttendanceWorksheets(rows)
 
   assert.equal(worksheets.length, 2)
-  assert.equal(worksheets[0].rows[0][0], 'Name')
-  assert.equal(worksheets[0].rows[1][3], '2026-04-09')
-  assert.equal(worksheets[1].rows[1][8], 10)
-  assert.equal(worksheets[1].rows[1][9], 20)
+  assert.equal(worksheets[0].rows[0][0], 'Department')
+  assert.equal(worksheets[0].rows[1][4], '2026-04-09')
+  assert.equal(worksheets[1].rows[1][9], 10)
+  assert.equal(worksheets[1].rows[1][10], 20)
 })
 
 await run('raw attendance workbook files contain worksheet XML for each employee', () => {
@@ -1702,8 +1785,8 @@ await run('raw attendance workbook files contain worksheet XML for each employee
   assert.equal(worksheets.length, 2)
   assert.equal(files.some(file => file.name === 'xl/worksheets/sheet1.xml'), true)
   assert.equal(files.some(file => file.name === 'xl/worksheets/sheet2.xml'), true)
-  assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /EMP-001 Alpha Employee/)
-  assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /EMP-002 Beta Employee/)
+  assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /Unassigned - Alpha Employee/)
+  assert.match(files.find(file => file.name === 'xl/workbook.xml').content, /Unassigned - Beta Employee/)
 })
 
 await run('origin guard rejects unconfigured production remote host', () => {
@@ -2190,11 +2273,12 @@ await run('single-descriptor match enforces a safer ambiguity floor', () => {
   assert.equal(result.debug.ambiguousMargin, 0.04)
 })
 
-await run('attendance claimed employee ID validation matches enrollment rules', () => {
-  assert.equal(validateClaimedEmployeeId('EMP-001'), null)
+await run('attendance access code validation requires exactly four digits', () => {
+  assert.equal(validateClaimedEmployeeId('0123'), null)
   assert.match(validateClaimedEmployeeId(''), /required/i)
-  assert.match(validateClaimedEmployeeId('AB'), /at least 3/i)
-  assert.match(validateClaimedEmployeeId('EMP 001'), /letters, numbers, and dashes/i)
+  assert.match(validateClaimedEmployeeId('123'), /exactly four/i)
+  assert.match(validateClaimedEmployeeId('ABCD'), /exactly four/i)
+  assert.match(validateClaimedEmployeeId('12-3'), /exactly four/i)
 })
 
 await run('multi-descriptor match accepts corroborated uncertain support for the same person', () => {

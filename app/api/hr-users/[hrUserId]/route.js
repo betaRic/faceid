@@ -25,9 +25,9 @@ function normalizeBody(body) {
 }
 
 function validateBody(body) {
-  if (!body.email) return 'Email is required.'
   if (!body.displayName) return 'Display name is required.'
   if (body.scope === 'office' && !body.officeId) return 'Office-scoped HR users require an office.'
+  if (body.pin && !/^\d{4,8}$/.test(body.pin)) return 'PIN must be 4 to 8 digits.'
   return null
 }
 
@@ -68,9 +68,9 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'HR user record was not found.' }, { status: 404 })
     }
 
-    const duplicate = usePostgres
+    const duplicate = body.email && (usePostgres
       ? await localEmailExists('hr_users', body.email, hrUserId)
-      : (await db.collection('hr_users').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== hrUserId)
+      : (await db.collection('hr_users').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== hrUserId))
     if (duplicate) {
       return NextResponse.json({ ok: false, message: 'Another HR user record already uses that email.' }, { status: 409 })
     }

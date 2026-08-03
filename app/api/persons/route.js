@@ -9,6 +9,7 @@ import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enr
 import { postgresEnabled } from '@/lib/postgres/client'
 import {
   enrollLocalPerson,
+  loadLocalPersonDirectory,
   listLocalPersons,
   writeLocalEnrollmentAuditLog,
 } from '@/lib/postgres/person-store'
@@ -26,6 +27,7 @@ import {
   writeEnrollmentAuditLog,
 } from '@/lib/persons'
 import { encodePersonDirectoryCursor } from '@/lib/person-directory'
+import { createPrivacyConsentRecord, PRIVACY_NOTICE_VERSION } from '@/lib/privacy-consent'
 
 function toHttpStatus(value) {
   const status = Number(value)
@@ -67,24 +69,27 @@ export async function GET(request) {
 
     if (new URL(request.url).searchParams.get('mode') === 'directory') {
       if (usePostgres) {
-        const persons = (await listLocalPersons({
-          officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
-        })).filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
-        const pending = persons.filter(person => person.approvalStatus === 'pending').length
-        const rejected = persons.filter(person => person.approvalStatus === 'rejected').length
-        const approved = persons.length - pending - rejected
+        const params = parseDirectoryParams(request)
+        const directory = await loadLocalPersonDirectory({
+          ...params,
+          officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : params.officeId,
+        })
+        const lastPerson = directory.persons[directory.persons.length - 1]
+        const nextCursor = directory.hasMore && lastPerson
+          ? encodePersonDirectoryCursor(lastPerson, params.searchMode)
+          : ''
         return NextResponse.json({
           ok: true,
-          persons,
+          persons: directory.persons,
           page: {
-            limit: persons.length,
-            hasMore: false,
-            nextCursor: '',
-            total: persons.length,
-            approved,
-            pending,
-            rejected,
-            searchMode: 'name',
+            limit: params.limit,
+            hasMore: directory.hasMore,
+            nextCursor,
+            total: directory.total,
+            approved: directory.approved,
+            pending: directory.pending,
+            rejected: directory.rejected,
+            searchMode: params.searchMode,
           },
         })
       }
@@ -191,6 +196,15 @@ export async function POST(request) {
         )
     const resolvedSession = session ? await adminAuth.resolveAdminSession(db, session) : null
     publicSubmission = !resolvedSession
+    if (publicSubmission && (!body.privacyConsent || body.privacyNoticeVersion !== PRIVACY_NOTICE_VERSION)) {
+      return NextResponse.json(
+        { ok: false, message: 'You must read and accept the Data Privacy Notice before submitting registration.' },
+        { status: 400 },
+      )
+    }
+    if (publicSubmission) {
+      body = { ...body, privacyConsentRecord: createPrivacyConsentRecord() }
+    }
     const office = await getOfficeRecord(db, body.officeId)
     timer.mark('session-office')
 

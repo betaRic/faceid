@@ -7,6 +7,7 @@ export default function DtrSelectionView({
   customStartDay,
   daysInMonth,
   dtrLoading,
+  employeesLoading = false,
   dtrMonth,
   dtrProgress,
   dtrRange,
@@ -45,7 +46,7 @@ export default function DtrSelectionView({
         </div>
         <button
           className="rounded-lg px-3 py-1.5 text-sm text-muted hover:bg-stone-100 disabled:opacity-50"
-          disabled={dtrLoading}
+          disabled={dtrLoading || employeesLoading}
           onClick={onClose}
           type="button"
         >
@@ -95,9 +96,9 @@ export default function DtrSelectionView({
       <div className="grid gap-3 border-b border-black/5 px-4 py-3 sm:grid-cols-2 sm:px-6">
         <Field label="Override signatory name (optional)">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm uppercase"
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
             disabled={dtrLoading}
-            onChange={event => onSetSignatoryName(event.target.value.toUpperCase())}
+            onChange={event => onSetSignatoryName(event.target.value)}
             placeholder="Leave blank to use the office head"
             type="text"
             value={signatoryName}
@@ -154,7 +155,7 @@ export default function DtrSelectionView({
         />
         <button
           className="whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold text-navy hover:bg-navy/5 disabled:opacity-50"
-          disabled={dtrLoading}
+          disabled={dtrLoading || employeesLoading}
           onClick={onSelectAll}
           type="button"
         >
@@ -166,21 +167,23 @@ export default function DtrSelectionView({
       </div>
 
       <div className="max-h-[34dvh] overflow-auto sm:max-h-[40vh]">
-        {filteredEmployees.length === 0 ? (
+        {employeesLoading ? (
+          <div className="px-6 py-8 text-center text-sm text-muted">Loading all employees authorized for DTR generation…</div>
+        ) : filteredEmployees.length === 0 ? (
           <div className="px-6 py-8 text-center text-sm text-muted">
             {search ? 'No employees match your search.' : 'No employees available.'}
           </div>
         ) : (
           filteredEmployees.map(employee => (
             <label
-              key={employee.employeeId}
+              key={employee.id}
               className="flex cursor-pointer items-center gap-3 border-b border-black/5 px-4 py-3 transition hover:bg-stone-50 sm:px-6"
             >
               <input
-                checked={selectedIds.has(employee.employeeId)}
+                checked={selectedIds.has(employee.id)}
                 className="h-4 w-4 rounded border-black/20 text-navy accent-navy"
                 disabled={dtrLoading}
-                onChange={() => onToggleEmployee(employee.employeeId)}
+                onChange={() => onToggleEmployee(employee.id)}
                 type="checkbox"
               />
               <div className="min-w-0 flex-1">
@@ -223,7 +226,7 @@ export default function DtrSelectionView({
             </span>
             <button
               className="w-full rounded-xl bg-navy px-6 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50 sm:w-auto sm:py-2.5"
-              disabled={selectedIds.size === 0}
+              disabled={selectedIds.size === 0 || employeesLoading}
               onClick={onGenerate}
               type="button"
             >

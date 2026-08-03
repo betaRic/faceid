@@ -11,6 +11,7 @@ export default function DetailsStep({
   officeId,
   offices,
   position,
+  privacyConsent,
   divisionId,
   onBack,
   onContinue,
@@ -20,6 +21,7 @@ export default function DetailsStep({
   onMiddleNameChange,
   onOfficeChange,
   onPositionChange,
+  onPrivacyConsentChange,
   onDivisionChange,
   onRetake,
   pendingSampleCount,
@@ -129,6 +131,28 @@ export default function DetailsStep({
             ) : null}
           </Field>
         ) : null}
+
+        <section className="rounded-xl border border-sky/20 bg-sky/5 p-4 text-sm text-ink">
+          <h3 className="font-bold text-navy">Data Privacy Notice</h3>
+          <p className="mt-2 leading-relaxed">
+            DILG Region XII collects and processes your name, employee ID, position, assigned office, facial image, and biometric templates for employee registration, identity verification, and attendance management, pursuant to the Data Privacy Act of 2012 (RA 10173).
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted">
+            <li>For official DILG use only and accessible only to authorized personnel.</li>
+            <li>Protected through appropriate organizational, technical, and physical security measures.</li>
+            <li>Retained only as required for the stated purpose and applicable DILG records-retention rules and law.</li>
+            <li>You may request access or correction, withdraw consent where applicable, object to processing, or lodge a complaint with the National Privacy Commission. Contact the DILG Region XII Data Protection Officer through official DILG channels.</li>
+          </ul>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg bg-white p-3 text-sm font-medium text-navy">
+            <input
+              checked={privacyConsent}
+              className="mt-0.5 h-4 w-4 accent-navy"
+              onChange={event => onPrivacyConsentChange(event.target.checked)}
+              type="checkbox"
+            />
+            <span>I have read and understood this notice and consent to the processing of my personal and biometric data for the purposes stated above.</span>
+          </label>
+        </section>
 
         <div className="grid gap-3 sm:grid-cols-2">
           {onBack ? (

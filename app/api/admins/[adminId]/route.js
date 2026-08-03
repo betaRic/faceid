@@ -24,7 +24,7 @@ function normalizeBody(body) {
 }
 
 function validateBody(body) {
-  if (!body.email) return 'Email is required.'
+  if (!body.displayName) return 'Display name is required.'
   if (body.scope === 'office' && !body.officeId) return 'Office-scoped admins require an office.'
   return null
 }
@@ -67,9 +67,9 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Admin record was not found.' }, { status: 404 })
     }
 
-    const duplicate = usePostgres
+    const duplicate = body.email && (usePostgres
       ? await localEmailExists('admin_users', body.email, adminId)
-      : (await db.collection('admins').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== adminId)
+      : (await db.collection('admins').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== adminId))
     if (duplicate) {
       return NextResponse.json({ ok: false, message: 'Another admin record already uses that email.' }, { status: 409 })
     }

@@ -1,12 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import {
-  adminSessionAllowsOffice,
-  getAdminSessionCookieName,
-  parseAdminSessionCookieValue,
-  resolveAdminSession,
-} from '@/lib/admin-auth'
+import { resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
 import { writeAuditLog } from '@/lib/audit-log'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { createOriginGuard } from '@/lib/csrf'
@@ -21,34 +16,29 @@ import { upsertLocalDailyAttendanceRecord } from '@/lib/postgres/attendance-stor
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const employeeId = String(searchParams.get('employeeId') || '').trim()
+  const personId = String(searchParams.get('personId') || '').trim()
   const date = String(searchParams.get('date') || '').trim()
 
   if (!employeeId || !date) {
     return NextResponse.json({ ok: false, message: 'employeeId and date are required.' }, { status: 400 })
   }
 
-  const session = parseAdminSessionCookieValue(
-    request.cookies.get(getAdminSessionCookieName())?.value,
-  )
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
-  }
-
   try {
     const usePostgres = postgresEnabled()
     const db = null
-    const resolvedSession = await resolveAdminSession(db, session)
+    const resolvedSession = await resolveStaffAttendanceSession(request, db)
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR attendance access is required.' }, { status: 403 })
     }
 
     if (usePostgres) {
       const logs = (await listLocalAttendanceLogs({
         employeeId,
+        personId,
         dateKey: date,
         direction: 'asc',
         limit: 500,
-      })).filter(log => adminSessionAllowsOffice(resolvedSession, log.officeId))
+      })).filter(log => sessionAllowsOffice(resolvedSession, log.officeId))
 
       return NextResponse.json({ ok: true, logs })
     }
@@ -79,9 +69,14 @@ export async function GET(request) {
           source: d.source || 'kiosk',
           overrideReason: d.overrideReason || '',
           overriddenBy: d.overriddenBy || '',
+          fieldDutyStatus: d.fieldDutyStatus || '',
+          fieldDutyReason: d.fieldDutyReason || '',
+          fieldDutyRemarks: d.fieldDutyRemarks || '',
+          latitude: Number.isFinite(d.latitude) ? d.latitude : null,
+          longitude: Number.isFinite(d.longitude) ? d.longitude : null,
         }
       })
-      .filter(log => adminSessionAllowsOffice(resolvedSession, log.officeId))
+      .filter(log => sessionAllowsOffice(resolvedSession, log.officeId))
 
     return NextResponse.json({ ok: true, logs })
   } catch (error) {
@@ -98,15 +93,9 @@ export async function POST(request) {
   const originError = await checkOrigin(request)
   if (originError) return originError
 
-  const session = parseAdminSessionCookieValue(
-    request.cookies.get(getAdminSessionCookieName())?.value,
-  )
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
-  }
-
   const body = await request.json().catch(() => null)
   const employeeId = String(body?.employeeId || '').trim()
+  const personId = String(body?.personId || '').trim()
   const name = String(body?.name || '').trim()
   const officeId = String(body?.officeId || '').trim()
   const officeName = String(body?.officeName || '').trim()
@@ -131,11 +120,11 @@ export async function POST(request) {
   try {
     const usePostgres = postgresEnabled()
     const db = null
-    const resolvedSession = await resolveAdminSession(db, session)
+    const resolvedSession = await resolveStaffAttendanceSession(request, db)
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR attendance access is required.' }, { status: 403 })
     }
-    if (!adminSessionAllowsOffice(resolvedSession, officeId)) {
+    if (!sessionAllowsOffice(resolvedSession, officeId)) {
       return NextResponse.json(
         { ok: false, message: 'This admin session cannot override attendance for that office.' },
         { status: 403 },
@@ -144,8 +133,12 @@ export async function POST(request) {
 
     // Regenerate timing from the provided timestamp for consistency
     const timing = buildAttendanceEntryTiming(timestamp)
-    // Use a collision-safe ID: employeeId_timestamp_override to avoid clashing with kiosk entries
-    const attendanceId = `${employeeId}_${timestamp}_override`
+    if (usePostgres && !personId) {
+      return NextResponse.json({ ok: false, message: 'A specific employee record is required for a manual override.' }, { status: 400 })
+    }
+
+    // personId keeps COS and plantilla employees with the same Employee ID separate.
+    const attendanceId = `${personId || employeeId}_${timestamp}_override`
 
     const existing = usePostgres
       ? await getLocalAttendanceById(attendanceId)
@@ -159,6 +152,7 @@ export async function POST(request) {
 
     const entry = {
       employeeId,
+      personId,
       name,
       officeId,
       officeName,
@@ -194,7 +188,7 @@ export async function POST(request) {
     // without waiting for the next cron run or cache expiry.
     try {
       const freshLogs = usePostgres
-        ? await listLocalAttendanceLogs({ employeeId, dateKey, direction: 'asc', limit: 500 })
+        ? await listLocalAttendanceLogs({ employeeId, personId, dateKey, direction: 'asc', limit: 500 })
         : (await db
             .collection('attendance')
             .where('employeeId', '==', employeeId)
@@ -205,7 +199,7 @@ export async function POST(request) {
       if (officeRecord) {
         const dailyRecord = deriveDailyAttendanceRecord({
           logs: freshLogs,
-          person: { employeeId, name, officeId, officeName },
+          person: { id: personId, employeeId, name, officeId, officeName },
           office: officeRecord,
           targetDateKey: dateKey,
         })

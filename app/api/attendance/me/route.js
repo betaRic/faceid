@@ -25,7 +25,8 @@ export async function GET(request) {
     }
 
     const legacyDateLabel = toLegacyAttendanceDate(date)
-    const cachedRecord = await getEmployeeDailyAttendanceRecord(db, employeeId, date)
+    const personId = String(access.person?.id || '').trim()
+    const cachedRecord = await getEmployeeDailyAttendanceRecord(db, personId, date, employeeId)
 
     if (cachedRecord && Number(cachedRecord.logCount || 0) > 0) {
       const attendanceMode = cachedRecord.decisionCodes.some(code => String(code).toLowerCase() === 'accepted_wfh')

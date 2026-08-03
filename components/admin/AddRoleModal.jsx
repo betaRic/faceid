@@ -4,10 +4,6 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAdminStore } from '@/lib/admin/store'
 
-function validateEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
-}
-
 function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPending = false }) {
   const offices = useAdminStore((state) => state.offices)
   const [roleType, setRoleType] = useState('admin')
@@ -27,11 +23,6 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
   const validation = useMemo(() => {
     if (roleType === 'admin') {
       return {
-        adminEmail: !adminEmail.trim()
-          ? 'Email is required.'
-          : !validateEmail(adminEmail)
-            ? 'Enter a valid email address.'
-            : '',
         adminDisplayName: !adminDisplayName.trim() ? 'Display name is required.' : '',
         adminOfficeId: adminScope === 'office' && !adminOfficeId ? 'Choose an office.' : '',
         adminPin: !/^\d{4,8}$/.test(adminPin) ? 'PIN must be 4 to 8 digits.' : '',
@@ -151,18 +142,17 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
         {roleType === 'admin' ? (
           <div className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">Email</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">Email (optional)</label>
               <input
                 type="email"
                 className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-navy"
-                placeholder="admin@company.com"
+                placeholder="Optional — PIN is used to sign in"
                 value={adminEmail}
                 onChange={(e) => {
                   setAdminEmail(e.target.value)
                   setErrors((current) => ({ ...current, adminEmail: '' }))
                 }}
               />
-              {errors.adminEmail ? <p className="mt-1 text-xs text-red-600">{errors.adminEmail}</p> : null}
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">Display Name</label>

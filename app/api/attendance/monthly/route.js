@@ -30,7 +30,8 @@ export async function GET(request) {
     const [currentYear, currentMonth] = String(dateKey).split('-').map(Number)
     const { attendanceStartOfMonth, attendanceEndOfMonth } = getMonthRange(currentYear, currentMonth)
 
-    const dailyRecords = await listEmployeeDailyAttendanceRecordsForMonth(db, employeeId, currentYear, currentMonth)
+    const personId = String(access.person?.id || '').trim()
+    const dailyRecords = await listEmployeeDailyAttendanceRecordsForMonth(db, personId, currentYear, currentMonth, employeeId)
     if (dailyRecords.length > 0) {
       const records = dailyRecords
         .filter(record => hasDailyAttendanceLogs(record))
@@ -67,7 +68,7 @@ export async function GET(request) {
 
     const records = usePostgres
       ? await listLocalAttendanceLogs({
-          employeeId,
+          personId,
           startMs: attendanceStartOfMonth,
           endMs: attendanceEndOfMonth,
           direction: 'asc',

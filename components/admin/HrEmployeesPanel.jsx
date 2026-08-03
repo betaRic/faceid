@@ -21,6 +21,7 @@ function SkeletonRow() {
 
 function HrEmployeesPanelInner() {
   const employeeRefreshKey = useAdminStore((state) => state.employeeRefreshKey)
+  const setEditingEmployee = useAdminStore((state) => state.setEditingEmployee)
   const setDeletingEmployee = useAdminStore((state) => state.setDeletingEmployee)
   const {
     employees,
@@ -150,13 +151,10 @@ function HrEmployeesPanelInner() {
                   <ApprovalBadge status={person.approvalStatus} />
                   <Badge>{person.officeName}</Badge>
                 </div>
-                <button
-                  className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
-                  onClick={() => setDeletingEmployee(person)}
-                  type="button"
-                >
-                  Delete employee
-                </button>
+                <div className="flex gap-2">
+                  <button className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100" onClick={() => setEditingEmployee(person)} type="button">Edit</button>
+                  <button className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50" onClick={() => setDeletingEmployee(person)} type="button">Delete</button>
+                </div>
               </div>
             ))
           )}
@@ -197,6 +195,13 @@ function HrEmployeesPanelInner() {
                   <td className="px-5 py-3"><ApprovalBadge status={person.approvalStatus} /></td>
                   <td className="px-5 py-3"><StatusBadge active={person.active !== false} /></td>
                   <td className="px-5 py-3">
+                    <button
+                      className="mr-2 rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-ink transition hover:bg-stone-100"
+                      onClick={() => setEditingEmployee(person)}
+                      type="button"
+                    >
+                      Edit
+                    </button>
                     <button
                       className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50"
                       onClick={() => setDeletingEmployee(person)}

@@ -3,24 +3,25 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import * as adminAuth from '@/lib/admin-auth'
+import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { countDirectoryRecords } from '@/lib/persons'
 import { postgresEnabled } from '@/lib/postgres/client'
 import { listLocalPersons } from '@/lib/postgres/person-store'
 
 export async function GET(request) {
-  const session = adminAuth.parseAdminSessionCookieValue(
+  const adminSession = adminAuth.parseAdminSessionCookieValue(
     request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
   )
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
-  }
 
   try {
     const usePostgres = postgresEnabled()
     const db = null
-    const resolvedSession = await adminAuth.resolveAdminSession(db, session)
+    const resolvedAdmin = adminSession ? await adminAuth.resolveAdminSession(db, adminSession) : null
+    const hrSession = resolvedAdmin ? null : parseHrSessionCookieValue(request.cookies.get(getHrSessionCookieName())?.value)
+    const resolvedHr = hrSession ? await resolveHrSession(db, hrSession) : null
+    const resolvedSession = resolvedAdmin || resolvedHr
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR login is required.' }, { status: 401 })
     }
 
     const pending = usePostgres

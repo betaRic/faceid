@@ -352,6 +352,7 @@ function EmployeesPanelInner() {
                       <div>
                         <div className="font-medium text-ink">{person.name}</div>
                         <div className="text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                        {person.accessCode ? <div className="text-xs font-semibold text-navy">Access code: {person.accessCode}</div> : null}
                         {person.position ? (
                           <div className="text-xs text-muted">{person.position}</div>
                         ) : null}

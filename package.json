@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:hosting": "node scripts/clean-next-dev.mjs && next build",
     "start": "next start",
     "test": "node tests/run-tests.mjs",
     "openvino:smoke": "node scripts/openvino-smoke.mjs",

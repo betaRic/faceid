@@ -1,12 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import {
-  adminSessionAllowsOffice,
-  getAdminSessionCookieName,
-  parseAdminSessionCookieValue,
-  resolveAdminSession,
-} from '@/lib/admin-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biometric-index'
 import { getOfficeRecord } from '@/lib/office-directory'
@@ -29,6 +23,7 @@ import {
   normalizePersonApprovalStatus,
 } from '@/lib/person-approval'
 import { normalizeEmployeeNameFields } from '@/lib/person-name'
+import { normalizeEmployeeWfhDays } from '@/lib/employee-wfh'
 
 function normalizeBody(body) {
   const names = normalizeEmployeeNameFields(body || {})
@@ -40,6 +35,7 @@ function normalizeBody(body) {
     officeName: String(body?.officeName || '').trim(),
     divisionId: String(body?.divisionId || '').trim(),
     divisionName: String(body?.divisionName || '').trim(),
+    individualWfhDays: normalizeEmployeeWfhDays(body?.individualWfhDays),
     active: body?.active !== false,
     approvalStatus: typeof body?.approvalStatus === 'string'
       ? normalizePersonApprovalStatus(body?.approvalStatus, '')
@@ -52,7 +48,7 @@ function validateBody(body) {
   if (!body.firstName) return 'First name is required.'
   if (!body.employeeId) return 'Employee ID is required.'
   if (body.employeeId.length < 3 || body.employeeId.length > 20) return 'Employee ID must be 3-20 characters.'
-  if (!/^[A-Za-z0-9-]+$/.test(body.employeeId)) return 'Employee ID must contain only letters, numbers, and dashes (-).'
+  if (!/^\d+$/.test(body.employeeId)) return 'Employee ID must contain digits only, with no letters, spaces, or dashes.'
   if (!body.position) return 'Position is required.'
   if (body.position.length < 2 || body.position.length > 80) return 'Position must be 2-80 characters.'
   if (!body.officeId) return 'Assigned office is required.'
@@ -112,11 +108,6 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
   }
 
-  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required to update employees.' }, { status: 401 })
-  }
-
   const body = normalizeBody(await request.json().catch(() => null))
   const validationError = validateBody(body)
   if (validationError) {
@@ -126,9 +117,9 @@ export async function PUT(request, { params }) {
   try {
     const usePostgres = postgresEnabled()
     const db = null
-    const resolvedSession = await resolveAdminSession(db, session)
+    const resolvedSession = await resolveEmployeeManagementSession(request, db)
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR employee-management access is required.' }, { status: 403 })
     }
 
     const existing = usePostgres ? await getLocalPersonById(personId) : await db.collection('persons').doc(personId).get()
@@ -147,8 +138,8 @@ export async function PUT(request, { params }) {
     }
 
     const existingData = usePostgres ? existing : existing.data()
-    if (!adminSessionAllowsOffice(resolvedSession, existingData.officeId) || !adminSessionAllowsOffice(resolvedSession, office.id)) {
-      return NextResponse.json({ ok: false, message: 'This admin session cannot update that employee.' }, { status: 403 })
+    if (!sessionAllowsOffice(resolvedSession, existingData.officeId) || !sessionAllowsOffice(resolvedSession, office.id)) {
+      return NextResponse.json({ ok: false, message: 'This session cannot update that employee.' }, { status: 403 })
     }
 
     if (usePostgres) {

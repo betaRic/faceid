@@ -117,6 +117,7 @@ export function useKioskLoop({
   recordVerification,
   recordNetwork,
   claimedEmployeeId,
+  fieldDuty,
 }) {
   const scanRef = useRef(null)
   const busyRef = useRef(false)
@@ -361,6 +362,7 @@ export function useKioskLoop({
           officeName: '',
           attendanceMode: '',
           geofenceStatus: '',
+          fieldDuty: fieldDuty || undefined,
           confidence: 0,
           landmarks: landmarks || [],
           antispoof,
@@ -452,7 +454,10 @@ export function useKioskLoop({
               timestamp: Number(result.entry.timestamp ?? timing.timestamp),
               action: result.entry.action || '',
               attendanceMode: result.entry.attendanceMode || '',
-              detail: `${actionLabel} successfully`,
+              detail: result.fieldDutyPending
+                ? 'Field Duty request submitted — pending HR/Admin approval'
+                : `${actionLabel} successfully`,
+              fieldDutyPending: Boolean(result.fieldDutyPending),
               employeeViewSession: result.employeeViewSession || '',
               employeeViewSessionExpiresAt: result.employeeViewSessionExpiresAt || null,
             })
@@ -561,7 +566,7 @@ export function useKioskLoop({
       recordScan?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - scanStartedAt)
       busyRef.current = false
     }
-  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork, claimedEmployeeId])
+  }, [camera, modelsReady, locationState, setKioskState, setCurrentMatch, setCapturedFrameUrl, setFlashKey, setAlertState, confirmRef, confirmedTimer, unknownTimer, attemptCooldownUntilRef, faceLossTimerRef, pausedRef, showAlertAndResume, recordScan, recordVerification, recordNetwork, claimedEmployeeId, fieldDuty])
 
   const startLoop = useCallback((runScanFn) => {
     if (scanRef.current) return

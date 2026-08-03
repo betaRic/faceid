@@ -1,12 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import {
-  adminSessionAllowsOffice,
-  getAdminSessionCookieName,
-  parseAdminSessionCookieValue,
-  resolveAdminSession,
-} from '@/lib/admin-auth'
+import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/employee-access'
 import { deletePersonBiometricIndex } from '@/lib/biometric-index'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
@@ -33,19 +28,12 @@ export async function POST(request, { params }) {
     return NextResponse.json({ ok: false, message: 'Missing person ID.' }, { status: 400 })
   }
 
-  const session = parseAdminSessionCookieValue(
-    request.cookies.get(getAdminSessionCookieName())?.value,
-  )
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
-  }
-
   try {
     const usePostgres = postgresEnabled()
     const db = null
-    const resolvedSession = await resolveAdminSession(db, session)
+    const resolvedSession = await resolveEmployeeManagementSession(request, db)
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR employee-management access is required.' }, { status: 403 })
     }
 
     const personRef = usePostgres ? null : db.collection('persons').doc(personId)
@@ -55,8 +43,8 @@ export async function POST(request, { params }) {
     }
 
     const person = usePostgres ? personDoc : personDoc.data()
-    if (!adminSessionAllowsOffice(resolvedSession, person.officeId)) {
-      return NextResponse.json({ ok: false, message: 'This admin session cannot reset that employee.' }, { status: 403 })
+    if (!sessionAllowsOffice(resolvedSession, person.officeId)) {
+      return NextResponse.json({ ok: false, message: 'This session cannot reset that employee.' }, { status: 403 })
     }
 
     const previousSampleCount = Array.isArray(person.descriptors) ? person.descriptors.length : 0

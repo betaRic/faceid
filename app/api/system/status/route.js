@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { existsSync } from 'fs'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { getLocalRuntimeCounts } from '@/lib/postgres/report-store'
+import { getLocalFileStorageRoot } from '@/lib/postgres/photo-store'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,8 @@ export async function GET(request) {
     return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
   }
 
-  const storageDir = String(process.env.LOCAL_FILE_STORAGE_DIR || '').trim()
+  const configuredStorageDir = String(process.env.LOCAL_FILE_STORAGE_DIR || '').trim()
+  const storageDir = getLocalFileStorageRoot()
   const modelDir = String(process.env.OPENVINO_MODEL_DIR || '').trim()
   const counts = await getLocalRuntimeCounts()
   const warnings = []
@@ -25,8 +27,8 @@ export async function GET(request) {
   if (!process.env.HR_SESSION_SECRET?.trim()) warnings.push('HR session signing is not configured.')
   if (!process.env.HR_PIN_SALT?.trim() && !process.env.LOCAL_PIN_SALT?.trim()) warnings.push('Local PIN hashing salt is not configured.')
   if (!process.env.DATABASE_URL?.trim()) warnings.push('DATABASE_URL is not configured.')
-  if (!storageDir) warnings.push('LOCAL_FILE_STORAGE_DIR is not configured.')
-  else if (!existsSync(storageDir)) warnings.push('Local file storage directory does not exist yet.')
+  if (!configuredStorageDir) warnings.push('LOCAL_FILE_STORAGE_DIR is not configured; using the App_Data fallback.')
+  if (!existsSync(storageDir)) warnings.push('Local file storage directory does not exist yet; it will be created on the first enrollment.')
   if (modelDir && !existsSync(modelDir)) warnings.push('OpenVINO model directory was not found.')
 
   const ready = warnings.length === 0

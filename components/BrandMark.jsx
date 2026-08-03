@@ -1,18 +1,15 @@
 'use client'
 
-import Image from 'next/image'
-
 export default function BrandMark({ compact = false, className = '', inverted = false }) {
   return (
     <div className={`flex items-center gap-3 ${className}`.trim()}>
-      <div className={`relative overflow-hidden rounded-full shadow-md ring-2 ring-white/80 ${compact ? 'h-9 w-9' : 'h-12 w-12'}`}>
-        <Image
+      <div className={`relative shrink-0 overflow-hidden rounded-full shadow-md ring-2 ring-white/80 ${compact ? 'h-7 w-7' : 'h-10 w-10'}`}>
+        <img
           alt="DILG Region XII"
-          className="object-cover"
-          fill
-          priority
-          sizes={compact ? '36px' : '48px'}
-          src="/brand/dilg-logo.svg"
+          className="h-full w-full object-contain"
+          height={192}
+          src="/veriface-icon-192.png"
+          width={192}
         />
       </div>
       <div className="min-w-0">
@@ -20,7 +17,7 @@ export default function BrandMark({ compact = false, className = '', inverted = 
           DILG Region XII
         </div>
         <div className={`font-bold leading-tight ${compact ? 'text-lg' : 'text-xl'} ${inverted ? 'text-white' : 'text-navy'}`}>
-          FaceAttend
+          VeriFace
         </div>
       </div>
     </div>

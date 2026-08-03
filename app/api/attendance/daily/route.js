@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import { getHrSessionCookieName, hrSessionAllowsOffice, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
 import { recalculateDailyAttendanceMetrics } from '@/lib/daily-attendance'
@@ -32,25 +33,26 @@ export async function GET(request) {
     return NextResponse.json({ ok: false, message: 'Date is required.' }, { status: 400 })
   }
 
-  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required to load daily attendance records.' }, { status: 401 })
-  }
-
   try {
     const usePostgres = postgresEnabled()
     const db = null
-    const resolvedSession = await resolveAdminSession(db, session)
-    if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+    const adminSession = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+    const resolvedAdmin = adminSession ? await resolveAdminSession(db, adminSession) : null
+    const hrSession = resolvedAdmin ? null : parseHrSessionCookieValue(request.cookies.get(getHrSessionCookieName())?.value)
+    const resolvedHr = hrSession ? await resolveHrSession(db, hrSession) : null
+    if (!resolvedAdmin && !resolvedHr) {
+      return NextResponse.json({ ok: false, message: 'Admin or HR login is required to load daily attendance records.' }, { status: 401 })
     }
+    const sessionAllowsOffice = (officeId) => (
+      resolvedAdmin ? adminSessionAllowsOffice(resolvedAdmin, officeId) : hrSessionAllowsOffice(resolvedHr, officeId)
+    )
 
     const offices = await listOfficeRecords(db)
     const officesById = new Map(offices.map(office => [office.id, office]))
     const cachedRecords = await listDailyAttendanceRecordsForDate(db, date)
     if (cachedRecords.length > 0 && !shouldRebuildFromRawLogs(cachedRecords)) {
       const records = cachedRecords
-        .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+        .filter(entry => sessionAllowsOffice(entry.officeId))
         .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
         .map(entry => recalculateDailyAttendanceMetrics(entry, officesById.get(entry.officeId) || null))
         .sort((left, right) => left.name.localeCompare(right.name))
@@ -66,7 +68,7 @@ export async function GET(request) {
         direction: 'asc',
         limit: 2000,
       }))
-        .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+        .filter(entry => sessionAllowsOffice(entry.officeId))
         .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
 
       const summary = buildAttendanceSummary({
@@ -107,7 +109,7 @@ export async function GET(request) {
         dateKey: entry?.dateKey || date,
         dateLabel: entry?.dateLabel || entry?.date || legacyDateLabel,
       }))
-      .filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+      .filter(entry => sessionAllowsOffice(entry.officeId))
       .filter(entry => officeIdFilter === 'all' || entry.officeId === officeIdFilter)
       .sort((left, right) => Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0))
 

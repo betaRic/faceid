@@ -17,11 +17,9 @@ import {
 import { writeAuditLog } from '@/lib/audit-log'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { createOriginGuard } from '@/lib/csrf'
-import {
-  findLocalAdminByPin,
-  findLocalHrByPin,
-} from '@/lib/postgres/user-store'
+import { findLocalAdminByPin, findLocalHrByPin } from '@/lib/postgres/user-store'
 import { postgresEnabled } from '@/lib/postgres/client'
+import { isRegionalPinEnabled } from '@/lib/bootstrap-pin'
 
 function safeEqual(left, right) {
   const leftBuffer = Buffer.isBuffer(left) ? left : Buffer.from(left)
@@ -73,7 +71,8 @@ export async function POST(request) {
       }
 
       const configuredPin = getRegionalPin()
-      if (configuredPin && safeEqual(pin, configuredPin)) {
+      const regionalPinAvailable = configuredPin && await isRegionalPinEnabled(db)
+      if (regionalPinAvailable && safeEqual(pin, configuredPin)) {
         await writeAuditLog(db, {
           actorRole: 'admin',
           actorScope: 'regional',

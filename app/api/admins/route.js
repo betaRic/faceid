@@ -20,9 +20,9 @@ function normalizeBody(body) {
 }
 
 function validateBody(body) {
-  if (!body.email) return 'Email is required.'
+  if (!body.displayName) return 'Display name is required.'
   if (body.scope === 'office' && !body.officeId) return 'Office-scoped admins require an office.'
-  if (body.pin && !/^\d{4,8}$/.test(body.pin)) return 'PIN must be 4 to 8 digits.'
+  if (!/^\d{4,8}$/.test(body.pin)) return 'PIN must be 4 to 8 digits.'
   return null
 }
 
@@ -82,9 +82,9 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, message: 'PIN is required for local admin users.' }, { status: 400 })
     }
 
-    const exists = usePostgres
+    const exists = body.email && (usePostgres
       ? await localEmailExists('admin_users', body.email)
-      : !(await db.collection('admins').where('email', '==', body.email).limit(1).get()).empty
+      : !(await db.collection('admins').where('email', '==', body.email).limit(1).get()).empty)
     if (exists) {
       return NextResponse.json({ ok: false, message: 'An admin record already exists for that email.' }, { status: 409 })
     }

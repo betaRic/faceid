@@ -6,7 +6,7 @@ import { downloadResponseBlob } from '@/lib/browser-download'
 import { getDaysInMonth } from '@/lib/dtr'
 import DtrSelectionView from './DtrSelectionView'
 
-export default function DtrModal({ summaryRows, onClose }) {
+export default function DtrModal({ onClose }) {
   const [dtrMonth, setDtrMonth] = useState(new Date().getMonth() + 1)
   const [dtrYear, setDtrYear] = useState(new Date().getFullYear())
   const [dtrRange, setDtrRange] = useState('full')
@@ -19,6 +19,8 @@ export default function DtrModal({ summaryRows, onClose }) {
   const [dtrLoading, setDtrLoading] = useState(false)
   const [dtrProgress, setDtrProgress] = useState({ current: 0, total: 0 })
   const [error, setError] = useState('')
+  const [employees, setEmployees] = useState([])
+  const [employeesLoading, setEmployeesLoading] = useState(true)
   const abortRef = useRef(false)
   const daysInMonth = getDaysInMonth(dtrYear, dtrMonth)
 
@@ -33,10 +35,33 @@ export default function DtrModal({ summaryRows, onClose }) {
     }
   }, [customEndDay, customStartDay])
 
+  useEffect(() => {
+    const controller = new AbortController()
+    async function loadDtrEmployees() {
+      setEmployeesLoading(true)
+      try {
+        const response = await fetch('/api/hr/dtr/employees', {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        const data = await response.json().catch(() => null)
+        if (!response.ok) throw new Error(data?.message || 'Failed to load employees for DTR generation.')
+        setEmployees(Array.isArray(data?.employees) ? data.employees : [])
+      } catch (loadError) {
+        if (loadError?.name !== 'AbortError') setError(loadError?.message || 'Failed to load employees for DTR generation.')
+      } finally {
+        if (!controller.signal.aborted) setEmployeesLoading(false)
+      }
+    }
+    loadDtrEmployees()
+    return () => controller.abort()
+  }, [])
+
   const uniqueEmployees = useMemo(() => (
-    [...new Map(summaryRows.map(row => [row.employeeId, row])).values()]
+    [...new Map(employees.map(employee => [employee.id, employee])).values()]
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  ), [summaryRows])
+  ), [employees])
 
   const filteredEmployees = useMemo(() => {
     if (!search.trim()) return uniqueEmployees
@@ -49,12 +74,12 @@ export default function DtrModal({ summaryRows, onClose }) {
   }, [search, uniqueEmployees])
 
   const allVisibleSelected = filteredEmployees.length > 0
-    && filteredEmployees.every(employee => selectedIds.has(employee.employeeId))
+    && filteredEmployees.every(employee => selectedIds.has(employee.id))
 
   const handleSelectAll = useCallback(() => {
     setSelectedIds(previous => {
       const next = new Set(previous)
-      const visibleIds = filteredEmployees.map(employee => employee.employeeId)
+      const visibleIds = filteredEmployees.map(employee => employee.id)
       const everySelected = visibleIds.every(id => next.has(id))
       if (everySelected) {
         visibleIds.forEach(id => next.delete(id))
@@ -65,17 +90,17 @@ export default function DtrModal({ summaryRows, onClose }) {
     })
   }, [filteredEmployees])
 
-  const toggleEmployee = useCallback((employeeId) => {
+  const toggleEmployee = useCallback((personId) => {
     setSelectedIds(previous => {
       const next = new Set(previous)
-      if (next.has(employeeId)) next.delete(employeeId)
-      else next.add(employeeId)
+      if (next.has(personId)) next.delete(personId)
+      else next.add(personId)
       return next
     })
   }, [])
 
   const handleGenerate = useCallback(async () => {
-    const selectedEmployees = uniqueEmployees.filter(employee => selectedIds.has(employee.employeeId))
+    const selectedEmployees = uniqueEmployees.filter(employee => selectedIds.has(employee.id))
     if (selectedEmployees.length === 0) return
 
     setDtrLoading(true)
@@ -89,7 +114,8 @@ export default function DtrModal({ summaryRows, onClose }) {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeIds: selectedEmployees.map(employee => employee.employeeId),
+          // Person IDs are stable even when plantilla and COS personnel share an Employee ID.
+          employeeIds: selectedEmployees.map(employee => employee.id),
           month: dtrMonth,
           year: dtrYear,
           range: dtrRange,
@@ -146,6 +172,7 @@ export default function DtrModal({ summaryRows, onClose }) {
           customStartDay={customStartDay}
           daysInMonth={daysInMonth}
           dtrLoading={dtrLoading}
+          employeesLoading={employeesLoading}
           dtrMonth={dtrMonth}
           dtrProgress={dtrProgress}
           dtrRange={dtrRange}

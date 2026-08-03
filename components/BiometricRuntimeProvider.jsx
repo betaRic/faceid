@@ -33,6 +33,7 @@ function getDefaultLocationState() {
     status: 'Location idle',
     updatedAt: 0,
     wifiSsid: null,
+    accuracyMeters: null,
   }
 }
 
@@ -57,6 +58,57 @@ function requestDeviceLocation(options = {}) {
   })
 }
 
+function getLocationErrorMessage(error) {
+  if (Number(error?.code) === 1) {
+    return 'Location permission was denied. Allow Location for this site in the browser settings, then tap Retry.'
+  }
+  if (Number(error?.code) === 2) {
+    return 'Location is currently unavailable. Turn on device Location, then move near a window or outdoors and retry.'
+  }
+  if (Number(error?.code) === 3) {
+    return 'Location request timed out. Turn on device Location, improve the signal, and retry.'
+  }
+  return error?.message || 'Unable to determine device location.'
+}
+
+async function requestBestDeviceLocation({ timeout, maximumAge, sampleCount, targetAccuracyMeters }) {
+  const attempts = Math.max(1, Math.min(5, Number(sampleCount) || 1))
+  const totalTimeout = Math.max(8000, Number(timeout) || LOCATION_BOOT_TIMEOUT_MS)
+  // Give phones enough time for the initial GPS fix. Subsequent samples only refine it.
+  const initialTimeout = attempts === 1
+    ? totalTimeout
+    : Math.max(8000, totalTimeout - ((attempts - 1) * 5000))
+  let best = null
+  let lastError = null
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const position = await requestDeviceLocation({
+        timeout: attempt === 0 ? initialTimeout : 5000,
+        maximumAge,
+      })
+      if (!best || Number(position.coords.accuracy || Infinity) < Number(best.coords.accuracy || Infinity)) best = position
+      if (Number(best.coords.accuracy || Infinity) <= Number(targetAccuracyMeters || 0)) break
+    } catch (error) {
+      lastError = error
+      // Some Android browsers cannot provide a high-accuracy GPS fix indoors
+      // but can still supply a usable network location. Keep the same policy
+      // accuracy limit; this only changes how the reading is acquired.
+      if (attempt === 0 && Number(error?.code) !== 1) {
+        try {
+          const fallback = await requestDeviceLocation({
+            enableHighAccuracy: false,
+            timeout: Math.min(10000, totalTimeout),
+            maximumAge: 60_000,
+          })
+          if (!best || Number(fallback.coords.accuracy || Infinity) < Number(best.coords.accuracy || Infinity)) best = fallback
+        } catch (fallbackError) { lastError = fallbackError }
+      }
+    }
+  }
+  if (best) return best
+  throw lastError || new Error('Unable to determine device location.')
+}
+
 export function BiometricRuntimeProvider({ children }) {
   const pathname = usePathname()
   const camera = useCamera()
@@ -75,6 +127,7 @@ export function BiometricRuntimeProvider({ children }) {
   useEffect(() => {
     let active = true
     let refreshInterval = null
+    let locationPolicy = { bootTimeoutMs: LOCATION_BOOT_TIMEOUT_MS, targetAccuracyMeters: 50, maxAccuracyMeters: 250, sampleCount: 3 }
 
     if (!biometricRoute) {
       stopCamera()
@@ -95,10 +148,15 @@ export function BiometricRuntimeProvider({ children }) {
       }))
 
       try {
-        const position = await requestDeviceLocation({
-          timeout: boot ? LOCATION_BOOT_TIMEOUT_MS : 6000,
+        const position = await requestBestDeviceLocation({
+          timeout: boot ? locationPolicy.bootTimeoutMs : 8000,
           maximumAge: boot ? 0 : LOCATION_CACHE_MAX_AGE_MS,
+          ...locationPolicy,
         })
+        const accuracyMeters = Number(position.coords.accuracy)
+        if (Number.isFinite(accuracyMeters) && accuracyMeters > Number(locationPolicy.maxAccuracyMeters)) {
+          throw new Error(`Location accuracy is ±${Math.round(accuracyMeters)} m. Improve the device location signal and try again.`)
+        }
 
         if (!active) return true
 
@@ -108,6 +166,7 @@ export function BiometricRuntimeProvider({ children }) {
             latitude: Number(position.coords.latitude),
             longitude: Number(position.coords.longitude),
           },
+          accuracyMeters: Number.isFinite(accuracyMeters) ? accuracyMeters : null,
           error: null,
           ready: true,
           status: 'Location ready',
@@ -126,7 +185,7 @@ export function BiometricRuntimeProvider({ children }) {
             ...current,
             bypassed: false,
             coords: current.coords,
-            error: error?.message || 'Unable to determine device location.',
+            error: getLocationErrorMessage(error),
             ready: hadKnownLocation,
             status: hadKnownLocation
               ? 'Using last known location'
@@ -143,6 +202,9 @@ export function BiometricRuntimeProvider({ children }) {
       setRuntimeError(null)
 
       try {
+        const policyResponse = await fetch('/api/system/location-policy', { cache: 'no-store' })
+        const policyData = await policyResponse.json().catch(() => null)
+        if (policyResponse.ok && policyData?.policy) locationPolicy = { ...locationPolicy, ...policyData.policy }
         if (!areDetectorModelsReady()) {
           setBootStage('models')
           setModelStatus('Loading face detector...')
@@ -168,12 +230,17 @@ export function BiometricRuntimeProvider({ children }) {
             })
         }
 
+        const cameraStartPromise = requiresImmediateCamera
+          ? startCamera()
+          : Promise.resolve()
+
         if (kioskRoute) {
           setBootStage('location')
           const locationResolved = await resolveLocation({ boot: true })
 
           if (!active) return
           if (!locationResolved) {
+            await cameraStartPromise.catch(() => {})
             setRuntimeError('Verified GPS location is required before scan attendance can start.')
             return
           }
@@ -187,7 +254,7 @@ export function BiometricRuntimeProvider({ children }) {
 
         if (requiresImmediateCamera) {
           setBootStage('camera')
-          await startCamera()
+          await cameraStartPromise
         }
 
         if (!active) return
