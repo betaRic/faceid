@@ -77,6 +77,7 @@ const employeeWfhModule = await importLocalModule('../lib/employee-wfh.js')
 const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 const reportWindowModule = await importLocalModule('../lib/report-window.js')
+const employeeAccessCodeExportModule = await importLocalModule('../lib/employee-access-code-export.js')
 
 const {
   calculateDistanceMeters,
@@ -170,6 +171,10 @@ const { isEmployeeWfhDay, normalizeEmployeeWfhDays } = employeeWfhModule
 const { validateOrigin } = csrfModule
 const { syncPersonBiometricsRecord } = personBiometricsModule
 const { resolveReportWindow } = reportWindowModule
+const {
+  buildEmployeeAccessCodeWorkbookBytes,
+  groupEmployeesByOffice,
+} = employeeAccessCodeExportModule
 
 function createMinimalFaceMesh({
   leftEye = { x: 100, y: 100 },
@@ -2485,6 +2490,33 @@ await run('pending profiles can trigger review but cannot hard-block enrollment'
   assert.equal(evaluation?.duplicate, false)
   assert.equal(evaluation?.reviewRequired, true)
   assert.equal(evaluation?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
+})
+
+await run('employee access-code export groups offices and sorts complete names alphabetically', () => {
+  const groups = groupEmployeesByOffice([
+    { officeName: 'DILG South Cotabato', name: 'Zara Garcia', accessCode: '0321' },
+    { officeName: 'DILG Region 12', name: 'Carlos Reyes', accessCode: '8888' },
+    { officeName: 'DILG Region 12', name: 'Ana Santos', accessCode: '0007' },
+    { officeName: '', firstName: 'Berto', lastName: 'Dela Cruz', accessCode: '' },
+  ])
+
+  assert.deepEqual(groups.map(group => group.officeName), ['DILG Region 12', 'DILG South Cotabato', 'Unassigned'])
+  assert.deepEqual(groups[0].employees.map(employee => employee.completeName), ['Ana Santos', 'Carlos Reyes'])
+  assert.equal(groups[2].employees[0].accessCode, 'Not assigned')
+})
+
+await run('employee access-code export creates a valid Excel workbook with office headings', () => {
+  const workbook = buildEmployeeAccessCodeWorkbookBytes([
+    { officeName: 'Regional ICT Unit', name: 'Ana Santos', accessCode: '0007' },
+  ], 'August 3, 2026, 9:00 AM')
+  const files = unzipSync(workbook)
+  const sheet = strFromU8(files['xl/worksheets/sheet1.xml'])
+
+  assert.ok(files['xl/workbook.xml'])
+  assert.match(sheet, /Office Assignment: Regional ICT Unit/)
+  assert.match(sheet, /Access Code/)
+  assert.match(sheet, /0007/)
+  assert.match(sheet, /Ana Santos/)
 })
 
 if (process.exitCode && process.exitCode !== 0) {

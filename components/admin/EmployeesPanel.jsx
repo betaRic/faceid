@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { startTransition } from 'react'
 import { useEmployees, useOffices } from '@/lib/admin/hooks'
 import { Field, Badge, StatusBadge, ApprovalBadge } from '@/components/shared/ui'
+import EmployeeAccessCodeExportActions from './EmployeeAccessCodeExportActions'
 import {
   PERSON_APPROVAL_APPROVED,
   PERSON_APPROVAL_REJECTED,
@@ -187,6 +188,14 @@ function EmployeesPanelInner() {
             Refresh
           </ActionButton>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-navy/10 bg-navy/[0.025] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <div>
+          <div className="text-sm font-semibold text-ink">Employee access-code list</div>
+          <div className="text-xs text-muted">Grouped by Office Assignment and alphabetized by Complete Name.</div>
+        </div>
+        <EmployeeAccessCodeExportActions />
       </div>
 
       {selectedEmployees.length > 0 ? (

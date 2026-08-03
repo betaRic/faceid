@@ -21,6 +21,15 @@ export default function CompleteStep({ lastSavedSummary, onAddAnotherSample, onE
             <p><strong className="text-ink">Recommended additional:</strong> {lastSavedSummary?.remaining}</p>
           ) : null}
         </div>
+        {lastSavedSummary?.accessCode ? (
+          <div className="mt-5 rounded-[1.25rem] border border-navy/20 bg-white px-4 py-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Your VeriFace access code</div>
+            <div className="mt-2 font-mono text-4xl font-bold tracking-[0.3em] text-navy">{lastSavedSummary.accessCode}</div>
+            <p className="mt-3 text-sm leading-6 text-muted">
+              Keep this 4-digit code. You will use it at the VeriFace kiosk after your registration has been approved.
+            </p>
+          </div>
+        ) : null}
         {lastSavedSummary?.approvalStatus === PERSON_APPROVAL_PENDING ? (
           <div className="mt-4 rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
             Registration is open to the public, but scan access is not. This employee record and its biometric samples stay inactive until an admin approves the submission.

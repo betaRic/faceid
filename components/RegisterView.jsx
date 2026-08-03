@@ -337,6 +337,7 @@ export default function RegisterView({
       sampleCount: totalCount,
       savedSampleCount: savedCount,
       remaining: Math.max(0, ENROLLMENT_MIN_SAMPLES - totalCount),
+      accessCode: String(result?.accessCode || ''),
       approvalStatus,
       duplicateReviewRequired: Boolean(result?.duplicateReviewRequired),
       duplicateReviewStatus: String(result?.duplicateReviewStatus || 'clear'),

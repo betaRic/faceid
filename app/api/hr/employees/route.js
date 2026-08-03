@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { postgresEnabled } from '@/lib/postgres/client'
-import { listLocalHrEmployees } from '@/lib/postgres/report-store'
+import { listLocalHrEmployeeAccessCodeDirectory, listLocalHrEmployees } from '@/lib/postgres/report-store'
 
 const PAGE_SIZE = 20
 
@@ -45,6 +45,13 @@ export async function GET(request) {
     const approvalFilter = normalizeQueryParam(searchParams.get('approval'))
 
     if (usePostgres) {
+      if (searchParams.get('mode') === 'access-codes') {
+        const employees = await listLocalHrEmployeeAccessCodeDirectory({
+          sessionOfficeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
+        })
+        return NextResponse.json({ ok: true, employees })
+      }
+
       const { employees, total } = await listLocalHrEmployees({
         sessionOfficeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
         officeId: officeFilter,

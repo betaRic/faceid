@@ -6,6 +6,7 @@ import { startTransition } from 'react'
 import { useHrEmployees } from '@/lib/hr/hooks'
 import { useAdminStore } from '@/lib/admin/store'
 import { ApprovalBadge, Badge, StatusBadge } from '@/components/shared/ui'
+import EmployeeAccessCodeExportActions from './EmployeeAccessCodeExportActions'
 
 function SkeletonRow() {
   return (
@@ -122,6 +123,14 @@ function HrEmployeesPanelInner() {
             Refresh
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-navy/10 bg-navy/[0.025] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <div>
+          <div className="text-sm font-semibold text-ink">Employee access-code list</div>
+          <div className="text-xs text-muted">Grouped by Office Assignment and alphabetized by Complete Name.</div>
+        </div>
+        <EmployeeAccessCodeExportActions endpoint="/api/hr/employees?mode=access-codes" resultKey="employees" />
       </div>
 
       <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">

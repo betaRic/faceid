@@ -308,6 +308,7 @@ export async function POST(request) {
     return NextResponse.json({
       ok: true,
       personId: transactionResult.personId,
+      accessCode: transactionResult.nextPerson.accessCode || '',
       approvalStatus: transactionResult.nextPerson.approvalStatus,
       sampleCount,
       savedSampleCount: transactionResult.uniqueCount,

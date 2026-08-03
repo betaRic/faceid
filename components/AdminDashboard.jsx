@@ -18,6 +18,7 @@ import OfficePanel from './admin/OfficePanel'
 import EmployeeEditorModal from './admin/EmployeeEditorModal'
 import EmployeeDeleteModal from '@/components/admin/EmployeeDeleteModal'
 import { HrEmployeesPanel } from './admin/HrEmployeesPanel'
+import HrOfficeSettingsPanel from './admin/HrOfficeSettingsPanel'
 import { ThresholdSettings } from './admin/ThresholdSettings'
 
 export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '', permissions = [] }) {
@@ -60,14 +61,18 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       { id: 'settings', label: 'Settings' },
       { id: 'roles', label: 'Roles' },
     ]
-    return allItems
+    const permittedItems = allItems
       .filter(item => permissions.includes(item.id))
       .map(item => ({
         ...item,
         disabled: item.id === 'roles' && roleScope !== 'regional',
         badge: item.id === 'employees' && pendingCount > 0 ? pendingCount : null,
       }))
-  }, [pendingCount, permissions, roleScope])
+    if (isHr && roleScope === 'office') {
+      permittedItems.push({ id: 'office-settings', label: 'Office Settings' })
+    }
+    return permittedItems
+  }, [isHr, pendingCount, permissions, roleScope])
 
   // Boot office subscription here so it isn't gated behind officesLoaded
   useOffices(true)
@@ -136,6 +141,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
           <>
             {activePanel === 'employees' && <HrEmployeesPanel />}
             {activePanel === 'summary' && <SummaryPanel />}
+            {activePanel === 'office-settings' && <HrOfficeSettingsPanel />}
           </>
         ) : (
           <>
