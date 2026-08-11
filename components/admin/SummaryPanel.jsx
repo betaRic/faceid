@@ -1,7 +1,6 @@
 'use client'
 
-import { memo, useCallback, useState } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { useSummary, useOffices } from '@/lib/admin/hooks'
 import AttendanceOverrideModal from './AttendanceOverrideModal'
 import DtrModal from './summary/DtrModal'
@@ -12,6 +11,7 @@ function SummaryPanelInner() {
   const {
     summaryDate, setSummaryDate,
     summaryOfficeFilter, setSummaryOfficeFilter,
+    summaryDivisionFilter, setSummaryDivisionFilter,
     summaryEmployeeFilter, setSummaryEmployeeFilter,
     summaryQuery, setSummaryQuery,
     summaryRows, summaryLoading,
@@ -19,6 +19,11 @@ function SummaryPanelInner() {
     reloadSummary,
   } = useSummary()
   const { visibleOffices } = useOffices()
+  const selectedOffice = useMemo(
+    () => visibleOffices.find((office) => office.id === summaryOfficeFilter) || null,
+    [summaryOfficeFilter, visibleOffices],
+  )
+  const summaryDivisionOptions = Array.isArray(selectedOffice?.divisions) ? selectedOffice.divisions : []
 
   const [overrideRow, setOverrideRow] = useState(null)
   const [showDtr, setShowDtr] = useState(false)
@@ -27,8 +32,12 @@ function SummaryPanelInner() {
     reloadSummary()
   }, [reloadSummary])
 
+  if (showDtr) {
+    return <DtrModal onClose={() => setShowDtr(false)} />
+  }
+
   return (
-    <section className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
+    <section className="flex min-h-0 flex-col gap-2 bg-white p-3 sm:p-4 md:h-full md:overflow-hidden">
       <SummaryFilters
         summaryDate={summaryDate}
         summaryEmployeeFilter={summaryEmployeeFilter}
@@ -36,6 +45,9 @@ function SummaryPanelInner() {
         summaryLoading={summaryLoading}
         summaryQuery={summaryQuery}
         summaryOfficeFilter={summaryOfficeFilter}
+        summaryDivisionFilter={summaryDivisionFilter}
+        summaryDivisionOptions={summaryDivisionOptions}
+        showDivisionFilter={summaryDivisionOptions.length > 0}
         summaryRows={summaryRows}
         visibleOffices={visibleOffices}
         onOpenDtr={() => setShowDtr(true)}
@@ -43,6 +55,7 @@ function SummaryPanelInner() {
         onSetSummaryEmployeeFilter={setSummaryEmployeeFilter}
         onSetSummaryQuery={setSummaryQuery}
         onSetSummaryOfficeFilter={setSummaryOfficeFilter}
+        onSetSummaryDivisionFilter={setSummaryDivisionFilter}
       />
 
       <SummaryTable
@@ -59,13 +72,6 @@ function SummaryPanelInner() {
         />
       ) : null}
 
-      <AnimatePresence>
-        {showDtr ? (
-          <DtrModal
-            onClose={() => setShowDtr(false)}
-          />
-        ) : null}
-      </AnimatePresence>
     </section>
   )
 }

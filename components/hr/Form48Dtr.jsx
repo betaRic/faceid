@@ -42,17 +42,36 @@ function DtrTimeRow({ row }) {
         <td className="form48-day-cell">{row.day}</td>
         <td className="form48-weekend-cell" colSpan={2}>{weekendLabel}</td>
         <td className="form48-weekend-cell" colSpan={2}>{weekendLabel}</td>
+        <td className="form48-weekend-cell" colSpan={2}>{weekendLabel}</td>
       </tr>
     )
   }
 
   return (
-    <tr>
-      <td className="form48-day-cell">{row?.inMonth ? row.day : BLANK}</td>
-      <td className="form48-time-cell">{renderTime(row?.amIn, row)}</td>
-      <td className="form48-time-cell">{renderTime(row?.amOut, row)}</td>
-      <td className="form48-time-cell">{renderTime(row?.pmIn, row)}</td>
-      <td className="form48-time-cell">{renderTime(row?.pmOut, row)}</td>
+    <tr className={row?.specialColor ? `form48-special-${row.specialColor}` : row?.isAbsent ? 'form48-special-absent' : ''}>
+      <td className="form48-day-cell">{row?.inMonth ? <><span>{row.day}</span>{row.specialLabel ? <small>{row.specialLabel}</small> : row.isAbsent ? <small>ABSENT</small> : null}</> : BLANK}</td>
+      {row?.specialCode === 'CTO' ? <>
+        <td className="form48-time-cell form48-cto-arrival">CTO</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+      </> : row?.specialCode || row?.isAbsent ? <>
+        <td className="form48-time-cell form48-special-cell">{row.specialCode || (row.isAbsent ? 'ABSENT' : BLANK)}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+        <td className="form48-time-cell">{BLANK}</td>
+      </> : <>
+        <td className="form48-time-cell">{renderTime(row?.amIn, row)}</td>
+        <td className="form48-time-cell">{renderTime(row?.amOut, row)}</td>
+        <td className="form48-time-cell">{renderTime(row?.pmIn, row)}</td>
+        <td className="form48-time-cell">{renderTime(row?.pmOut, row)}</td>
+        <td className="form48-time-cell">{row?.undertimeHours ?? BLANK}</td>
+        <td className="form48-time-cell">{row?.undertimeMinutes ?? BLANK}</td>
+      </>}
     </tr>
   )
 }
@@ -66,14 +85,23 @@ function DtrTimeTable({ rows }) {
         <col className="form48-col-time" />
         <col className="form48-col-time" />
         <col className="form48-col-time" />
+        <col className="form48-col-undertime" />
+        <col className="form48-col-undertime" />
       </colgroup>
       <thead>
         <tr>
-          <th className="form48-day-header">Days</th>
-          <th className="form48-time-header">Arrival</th>
-          <th className="form48-time-header">Departure</th>
-          <th className="form48-time-header">Arrival</th>
-          <th className="form48-time-header">Departure</th>
+          <th className="form48-day-header" rowSpan={2}>Days</th>
+          <th className="form48-time-header" colSpan={2}>AM</th>
+          <th className="form48-time-header" colSpan={2}>PM</th>
+          <th className="form48-time-header" colSpan={2}>Under time</th>
+        </tr>
+        <tr>
+          <th className="form48-time-subheader">Arrival</th>
+          <th className="form48-time-subheader">Departure</th>
+          <th className="form48-time-subheader">Arrival</th>
+          <th className="form48-time-subheader">Departure</th>
+          <th className="form48-time-subheader">Hour(s)</th>
+          <th className="form48-time-subheader">Min.(s)</th>
         </tr>
       </thead>
       <tbody>
@@ -91,25 +119,21 @@ function DtrCopy({ dtr }) {
   const nameParts = employee.nameParts || {}
   const periodLabel = dtr?.period?.periodLabel || ''
   const officialHours = dtr?.officialHours || {}
-  const employeeName = String(employee.name || '').trim()
-  const signatoryName = String(dtr?.signatory?.name || '').trim()
+  const employeeName = String(employee.name || '').trim().toUpperCase()
+  const signatoryName = String(dtr?.signatory?.name || '').trim().toUpperCase()
   const signatoryPosition = String(dtr?.signatory?.position || '').trim()
 
   return (
     <section className="form48-copy">
-      <div className="form48-code">CSC FORM 48</div>
+      <div className="form48-code">CIVIL SERVICE COMMISSION FORM NO. 48</div>
       <h1 className="form48-title">DAILY&nbsp; TIME&nbsp; RECORD</h1>
 
-      <div className="form48-name-grid">
-        <NameSlot value={nameParts.familyName} label="Family Name" />
-        <NameSlot value={nameParts.firstName} label="First Name" />
-        <NameSlot value={nameParts.middleInitial} label="M.I." />
-      </div>
+      <div className="form48-full-name">Name: <span>{employeeName || BLANK}</span></div>
 
       <div className="form48-details">
-        <DetailRow label="For the Month of">{periodLabel}</DetailRow>
-        <DetailRow label="Official  Hours" small="(Reg. Days)">{officialHours.regularDays || 'Monday- Friday'}</DetailRow>
-        <DetailRow label="Arrival & Departure">{officialHours.arrivalDeparture || '8:00-12:00 to 1:00-5:00'}</DetailRow>
+        <DetailRow label="For the month of">{periodLabel}</DetailRow>
+        <DetailRow label="Official hours for" small="Regular Days">{officialHours.regularDays || 'Monday- Friday'}</DetailRow>
+        <DetailRow label="Arrival / Departure">{officialHours.arrivalDeparture || '8:00-12:00 to 1:00-5:00'}</DetailRow>
       </div>
 
       <DtrTimeTable rows={rows} />
@@ -299,11 +323,14 @@ function PrintStyles() {
       }
 
       .form48-col-day {
-        width: 13%;
+        width: 11%;
       }
 
       .form48-col-time {
-        width: 21.75%;
+        width: 14.5%;
+      }
+      .form48-col-undertime {
+        width: 15.5%;
       }
 
       .form48-day-header,
@@ -337,6 +364,26 @@ function PrintStyles() {
         font-size: 9pt;
         font-weight: 700;
       }
+      .form48-time-subheader {
+        height: 0.16in;
+        padding: 0;
+        border-bottom: 1.5px solid #000000;
+        font-size: 6.4pt;
+        font-weight: 400;
+        line-height: 1;
+      }
+      .form48-full-name { margin-top: 0.45in; font-size: 10pt; }
+      .form48-full-name span { display: inline-block; min-width: 2.5in; border-bottom: 1.5px solid #000; text-align: center; font-weight: 700; }
+      .form48-day-cell small { display: block; font-size: 5pt; font-weight: 400; line-height: 1; }
+      .form48-special-cell { border-bottom: 1.5px solid #000; text-align: center; font-size: 8pt; font-weight: 700; }
+      .form48-cto-arrival { background: #fef3c7; font-weight: 700; }
+      .form48-special-ob { background: #bbf7d0; }
+      .form48-special-absent { background: #fecaca; }
+      .form48-special-wl { background: #bfdbfe; }
+      .form48-special-vl { background: #fff; }
+      .form48-special-cto { background: #fef3c7; }
+      .form48-special-sl { background: #e0e7ff; }
+      .form48-special-holiday { background: #f3f4f6; }
 
       .form48-time-cell,
       .form48-weekend-cell {

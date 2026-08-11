@@ -5,6 +5,8 @@ export default function DtrSelectionView({
   allVisibleSelected,
   customEndDay,
   customStartDay,
+  divisionId = 'all',
+  divisions = [],
   daysInMonth,
   dtrLoading,
   employeesLoading = false,
@@ -26,6 +28,7 @@ export default function DtrSelectionView({
   onSelectAll,
   onSetCustomEndDay,
   onSetCustomStartDay,
+  onSetDivisionId = () => {},
   onSetDtrMonth,
   onSetDtrRange,
   onSetDtrYear,
@@ -34,7 +37,7 @@ export default function DtrSelectionView({
   onToggleEmployee,
 }) {
   return (
-    <div className="flex max-h-[92dvh] flex-col sm:max-h-[90dvh]">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-black/5 px-6 py-4">
         <div>
           <h3 className="font-display text-lg font-bold text-ink">
@@ -89,6 +92,12 @@ export default function DtrSelectionView({
             {DTR_RANGE_OPTIONS.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
+          </select>
+        </Field>
+        <Field label="Division">
+          <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm" disabled={dtrLoading} onChange={event => onSetDivisionId(event.target.value)} value={divisionId}>
+            <option value="all">All divisions</option>
+            {divisions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
         </Field>
       </div>
@@ -166,7 +175,7 @@ export default function DtrSelectionView({
         </span>
       </div>
 
-      <div className="max-h-[34dvh] overflow-auto sm:max-h-[40vh]">
+      <div className="min-h-0 flex-1 overflow-auto">
         {employeesLoading ? (
           <div className="px-6 py-8 text-center text-sm text-muted">Loading all employees authorized for DTR generation…</div>
         ) : filteredEmployees.length === 0 ? (

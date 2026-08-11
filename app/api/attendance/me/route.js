@@ -3,8 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getEmployeeDailyAttendanceRecord } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
-import { formatAttendanceDateKey, getAttendanceHour, toLegacyAttendanceDate } from '@/lib/attendance-time'
-import { postgresEnabled } from '@/lib/postgres/client'
+import { formatAttendanceDateKey, getAttendanceHour } from '@/lib/attendance-time'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
@@ -17,14 +16,12 @@ export async function GET(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const access = await resolveAttendanceViewer(request, db, employeeId)
     if (!access.viewer) {
       return NextResponse.json({ ok: false, message: access.message }, { status: access.status })
     }
 
-    const legacyDateLabel = toLegacyAttendanceDate(date)
     const personId = String(access.person?.id || '').trim()
     const cachedRecord = await getEmployeeDailyAttendanceRecord(db, personId, date, employeeId)
 
@@ -63,78 +60,15 @@ export async function GET(request) {
       })
     }
 
-    if (usePostgres) {
-      const entries = (await listLocalAttendanceLogs({
-        employeeId,
-        dateKey: date,
-        direction: 'asc',
-        limit: 100,
-      })).map(entry => ({
-        ...entry,
-        timestamp: Number(entry?.timestamp ?? 0),
-        dateKey: entry?.dateKey || date,
-        dateLabel: entry?.dateLabel || entry?.date || legacyDateLabel,
-        officeName: access.person?.officeName || entry.officeName || 'Unknown Office',
-      }))
-
-      return buildAttendanceMeResponse({ date, employeeId, entries })
-    }
-
-    const snapshot = await db
-      .collection('attendance')
-      .where('employeeId', '==', employeeId)
-      .where('dateKey', '==', date)
-      .get()
-
-    let attendance = snapshot.docs.map(record => ({ id: record.id, ...record.data() }))
-
-    if (attendance.length === 0) {
-      const legacySnapshot = await db
-        .collection('attendance')
-        .where('employeeId', '==', employeeId)
-        .where('date', '==', legacyDateLabel)
-        .get()
-
-      attendance = legacySnapshot.docs.map(record => ({ id: record.id, ...record.data() }))
-    }
-
-    const entries = attendance
+    const entries = (await listLocalAttendanceLogs({ personId, dateKey: date, direction: 'asc', limit: 100 }))
       .map(entry => ({
         ...entry,
         timestamp: Number(entry?.timestamp ?? 0),
         dateKey: entry?.dateKey || date,
-        dateLabel: entry?.dateLabel || entry?.date || legacyDateLabel,
+        dateLabel: entry?.dateLabel || entry?.date || date,
         officeName: access.person?.officeName || entry.officeName || 'Unknown Office',
       }))
-      .sort((a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0))
-
-    const amEntries = entries.filter(entry => Number(entry.timestamp ?? 0) > 0 && getAttendanceHour(Number(entry.timestamp)) < 12)
-    const pmEntries = entries.filter(entry => Number(entry.timestamp ?? 0) > 0 && getAttendanceHour(Number(entry.timestamp)) >= 12)
-
-    const amIn = amEntries[0] || null
-    const amOut = amEntries.length > 1 ? amEntries[amEntries.length - 1] : null
-    const pmIn = pmEntries[0] || null
-    const pmOut = pmEntries.length > 1 ? pmEntries[pmEntries.length - 1] : null
-
-    const hasAM = Boolean(amIn)
-    const hasPM = Boolean(pmIn)
-    let status = 'No Record'
-    if (hasAM && hasPM) status = 'Complete'
-    else if (hasAM || hasPM) status = 'Partial'
-
-    return NextResponse.json({
-      ok: true,
-      date,
-      employeeId,
-      entries,
-      summary: {
-        amIn: amIn ? amIn.time : null,
-        amOut: amOut ? amOut.time : null,
-        pmIn: pmIn ? pmIn.time : null,
-        pmOut: pmOut ? pmOut.time : null,
-        status,
-      },
-    })
+    return buildAttendanceMeResponse({ date, employeeId, entries })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to load attendance records.' },

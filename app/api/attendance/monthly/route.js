@@ -1,7 +1,6 @@
 import { listEmployeeDailyAttendanceRecordsForMonth, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +18,6 @@ export async function GET(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const access = await resolveAttendanceViewer(request, db, employeeId)
     if (!access.viewer) {
@@ -66,25 +64,14 @@ export async function GET(request) {
       })
     }
 
-    const records = usePostgres
-      ? await listLocalAttendanceLogs({
-          personId,
-          startMs: attendanceStartOfMonth,
-          endMs: attendanceEndOfMonth,
-          direction: 'asc',
-          limit: 2000,
-        })
-      : null
-
-    if (usePostgres) {
-      const dateKeySet = new Set(records.map(r => r.dateKey))
-      const datesPresent = Array.from(dateKeySet).sort()
-      const checkIns = records.filter(r => r.action === 'checkin')
-      const checkOuts = records.filter(r => r.action === 'checkout')
-      const wfhCount = records.filter(r => normalizeAttendanceMode(r.attendanceMode) === 'wfh').length
-      const onSiteCount = records.filter(r => ['onsite', 'on-site'].includes(normalizeAttendanceMode(r.attendanceMode))).length
-
-      return Response.json({
+    const records = await listLocalAttendanceLogs({ personId, startMs: attendanceStartOfMonth, endMs: attendanceEndOfMonth, direction: 'asc', limit: 2000 })
+    const dateKeySet = new Set(records.map(r => r.dateKey))
+    const datesPresent = Array.from(dateKeySet).sort()
+    const checkIns = records.filter(r => r.action === 'checkin')
+    const checkOuts = records.filter(r => r.action === 'checkout')
+    const wfhCount = records.filter(r => normalizeAttendanceMode(r.attendanceMode) === 'wfh').length
+    const onSiteCount = records.filter(r => ['onsite', 'on-site'].includes(normalizeAttendanceMode(r.attendanceMode))).length
+    return Response.json({
         ok: true,
         month: currentMonth,
         year: currentYear,
@@ -95,48 +82,6 @@ export async function GET(request) {
         onSiteCount,
         dates: datesPresent,
         records: records.slice(0, 50),
-      })
-    }
-
-    const snapshot = await db.collection('attendance')
-      .where('employeeId', '==', employeeId)
-      .where('timestamp', '>=', attendanceStartOfMonth)
-      .where('timestamp', '<=', attendanceEndOfMonth)
-      .get()
-
-    const fallbackRecords = snapshot.docs.map(doc => {
-      const data = doc.data()
-      return {
-        id: doc.id,
-        action: data.action,
-        timestamp: data.timestamp,
-        dateKey: data.dateKey,
-        dateLabel: data.dateLabel,
-        time: data.time,
-        attendanceMode: data.attendanceMode,
-        geofenceStatus: data.geofenceStatus,
-      }
-    })
-
-    const dateKeySet = new Set(fallbackRecords.map(r => r.dateKey))
-    const datesPresent = Array.from(dateKeySet).sort()
-
-    const checkIns = fallbackRecords.filter(r => r.action === 'checkin')
-    const checkOuts = fallbackRecords.filter(r => r.action === 'checkout')
-    const wfhCount = fallbackRecords.filter(r => normalizeAttendanceMode(r.attendanceMode) === 'wfh').length
-    const onSiteCount = fallbackRecords.filter(r => ['onsite', 'on-site'].includes(normalizeAttendanceMode(r.attendanceMode))).length
-
-    return Response.json({
-      ok: true,
-      month: currentMonth,
-      year: currentYear,
-      totalDays: datesPresent.length,
-      checkIns: checkIns.length,
-      checkOuts: checkOuts.length,
-      wfhCount,
-      onSiteCount,
-      dates: datesPresent,
-      records: fallbackRecords.slice(0, 50),
     })
   } catch (error) {
     console.error('Monthly summary error:', error)

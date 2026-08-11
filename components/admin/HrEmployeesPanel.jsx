@@ -1,29 +1,62 @@
-'use client'
+"use client";
 
-import { memo, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { startTransition } from 'react'
-import { useHrEmployees } from '@/lib/hr/hooks'
-import { useAdminStore } from '@/lib/admin/store'
-import { ApprovalBadge, Badge, StatusBadge } from '@/components/shared/ui'
-import EmployeeAccessCodeExportActions from './EmployeeAccessCodeExportActions'
+import { memo, useEffect } from "react";
+import { motion } from "framer-motion";
+import { startTransition } from "react";
+import { useHrEmployees } from "@/lib/hr/hooks";
+import { useAdminStore } from "@/lib/admin/store";
+import { Badge } from "@/components/shared/ui";
+import EmployeeAccessCodeExportActions from "./EmployeeAccessCodeExportActions";
 
 function SkeletonRow() {
   return (
     <tr className="animate-pulse">
-      <td className="px-5 py-4"><div className="h-10 w-10 rounded-full bg-stone-200" /></td>
-      <td className="px-5 py-4"><div className="h-4 w-24 rounded bg-stone-200" /></td>
-      <td className="px-5 py-4"><div className="h-4 w-20 rounded bg-stone-200" /></td>
-      <td className="px-5 py-4"><div className="h-6 w-16 rounded-full bg-stone-200" /></td>
-      <td className="px-5 py-4"><div className="h-6 w-16 rounded-full bg-stone-200" /></td>
+      <td className="px-5 py-4">
+        <div className="h-10 w-10 rounded-full bg-stone-200" />
+      </td>
+      <td className="px-5 py-4">
+        <div className="h-4 w-24 rounded bg-stone-200" />
+      </td>
+      <td className="px-5 py-4">
+        <div className="h-4 w-20 rounded bg-stone-200" />
+      </td>
+      <td className="px-5 py-4">
+        <div className="h-6 w-16 rounded-full bg-stone-200" />
+      </td>
+      <td className="px-5 py-4">
+        <div className="h-6 w-16 rounded-full bg-stone-200" />
+      </td>
     </tr>
-  )
+  );
+}
+
+function LifecycleBadge({ status }) {
+  const lifecycle = String(status || "").toLowerCase();
+  const tone =
+    lifecycle === "active"
+      ? "bg-emerald-100 text-emerald-800"
+      : lifecycle === "pending"
+        ? "bg-amber-100 text-amber-800"
+        : "bg-stone-200 text-stone-700";
+  const label =
+    lifecycle === "active"
+      ? "Active"
+      : lifecycle === "pending"
+        ? "Pending review"
+        : "Inactive";
+  return (
+    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${tone}`}>
+      {label}
+    </span>
+  );
 }
 
 function HrEmployeesPanelInner() {
-  const employeeRefreshKey = useAdminStore((state) => state.employeeRefreshKey)
-  const setEditingEmployee = useAdminStore((state) => state.setEditingEmployee)
-  const setDeletingEmployee = useAdminStore((state) => state.setDeletingEmployee)
+  const employeeRefreshKey = useAdminStore((state) => state.employeeRefreshKey);
+  const setEditingEmployee = useAdminStore((state) => state.setEditingEmployee);
+  const setDeletingEmployee = useAdminStore(
+    (state) => state.setDeletingEmployee,
+  );
   const {
     employees,
     employeesLoaded,
@@ -32,19 +65,17 @@ function HrEmployeesPanelInner() {
     setEmployeeQuery,
     employeeStatusFilter,
     setEmployeeStatusFilter,
-    employeeApprovalFilter,
-    setEmployeeApprovalFilter,
     employeePage,
     employeeHasMore,
     handlePreviousPage,
     handleNextPage,
     fetchEmployees,
     loading,
-  } = useHrEmployees()
+  } = useHrEmployees();
 
   useEffect(() => {
-    fetchEmployees()
-  }, [fetchEmployees, employeeRefreshKey])
+    fetchEmployees();
+  }, [fetchEmployees, employeeRefreshKey]);
 
   return (
     <motion.section
@@ -55,21 +86,31 @@ function HrEmployeesPanelInner() {
     >
       <div className="grid gap-3 lg:grid-cols-[minmax(150px,0.55fr)_minmax(0,1.8fr)] lg:items-end">
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">HR</div>
-          <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Employees</h2>
+          <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">
+            HR
+          </div>
+          <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">
+            Employees
+          </h2>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="col-span-2 sm:col-span-1">
-            <label className="block text-xs font-semibold text-muted mb-1">Search</label>
+            <label className="block text-xs font-semibold text-muted mb-1">
+              Search
+            </label>
             <input
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
-              onChange={(e) => { startTransition(() => setEmployeeQuery(e.target.value)) }}
+              onChange={(e) => {
+                startTransition(() => setEmployeeQuery(e.target.value));
+              }}
               placeholder="Name or ID"
               value={employeeQuery}
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-muted mb-1">Status</label>
+            <label className="block text-xs font-semibold text-muted mb-1">
+              Status
+            </label>
             <select
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
               onChange={(e) => setEmployeeStatusFilter(e.target.value)}
@@ -77,20 +118,8 @@ function HrEmployeesPanelInner() {
             >
               <option value="">All status</option>
               <option value="active">Active</option>
+              <option value="pending">Pending review</option>
               <option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-muted mb-1">Approval</label>
-            <select
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
-              onChange={(e) => setEmployeeApprovalFilter(e.target.value)}
-              value={employeeApprovalFilter}
-            >
-              <option value="">All</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
             </select>
           </div>
         </div>
@@ -98,7 +127,7 @@ function HrEmployeesPanelInner() {
 
       <div className="flex flex-col gap-3 rounded-xl border border-black/5 bg-stone-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-4">
         <span className="text-muted">
-          {employeesLoaded ? `${employeeTotal} employees` : 'Loading...'}
+          {employeesLoaded ? `${employeeTotal} employees` : "Loading..."}
         </span>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -127,10 +156,17 @@ function HrEmployeesPanelInner() {
 
       <div className="flex flex-col gap-2 rounded-xl border border-navy/10 bg-navy/[0.025] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
         <div>
-          <div className="text-sm font-semibold text-ink">Employee access-code list</div>
-          <div className="text-xs text-muted">Grouped by Office Assignment and alphabetized by Complete Name.</div>
+          <div className="text-sm font-semibold text-ink">
+            Employee access-code list
+          </div>
+          <div className="text-xs text-muted">
+            Grouped by Office Assignment and alphabetized by Complete Name.
+          </div>
         </div>
-        <EmployeeAccessCodeExportActions endpoint="/api/hr/employees?mode=access-codes" resultKey="employees" />
+        <EmployeeAccessCodeExportActions
+          endpoint="/api/hr/employees?mode=access-codes"
+          resultKey="employees"
+        />
       </div>
 
       <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">
@@ -151,18 +187,33 @@ function HrEmployeesPanelInner() {
               <div key={person.id} className="grid gap-3 px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-base font-semibold text-ink">{person.name}</div>
-                    <div className="mt-1 text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                    <div className="text-base font-semibold text-ink">
+                      {person.name}
+                    </div>
+                    <div className="mt-1 text-xs uppercase tracking-wider text-muted">
+                      {person.employeeId}
+                    </div>
                   </div>
-                  <StatusBadge active={person.active !== false} />
+                  <LifecycleBadge status={person.lifecycleStatus} />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <ApprovalBadge status={person.approvalStatus} />
                   <Badge>{person.officeName}</Badge>
                 </div>
                 <div className="flex gap-2">
-                  <button className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100" onClick={() => setEditingEmployee(person)} type="button">Edit</button>
-                  <button className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50" onClick={() => setDeletingEmployee(person)} type="button">Delete</button>
+                  <button
+                    className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
+                    onClick={() => setEditingEmployee(person)}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                    onClick={() => setDeletingEmployee(person)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             ))
@@ -174,8 +225,7 @@ function HrEmployeesPanelInner() {
             <tr>
               <th className="px-5 py-3">Employee</th>
               <th className="px-5 py-3">Office</th>
-              <th className="px-5 py-3">Approval</th>
-              <th className="px-5 py-3">Status</th>
+              <th className="px-5 py-3">Lifecycle</th>
               <th className="px-5 py-3">Actions</th>
             </tr>
           </thead>
@@ -184,7 +234,9 @@ function HrEmployeesPanelInner() {
               Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
             ) : employees.length === 0 ? (
               <tr>
-                <td className="px-5 py-10 text-center text-muted" colSpan={5}>No employees match the current filters.</td>
+                <td className="px-5 py-10 text-center text-muted" colSpan={4}>
+                  No employees match the current filters.
+                </td>
               </tr>
             ) : (
               employees.map((person) => (
@@ -192,17 +244,22 @@ function HrEmployeesPanelInner() {
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-navy/10 text-sm font-bold text-navy-dark">
-                        {String(person.name || '?')[0]}
+                        {String(person.name || "?")[0]}
                       </div>
                       <div>
-                        <div className="font-medium text-ink">{person.name}</div>
-                        <div className="text-xs uppercase tracking-wider text-muted">{person.employeeId}</div>
+                        <div className="font-medium text-ink">
+                          {person.name}
+                        </div>
+                        <div className="text-xs uppercase tracking-wider text-muted">
+                          {person.employeeId}
+                        </div>
                       </div>
                     </div>
                   </td>
                   <td className="px-5 py-3 text-muted">{person.officeName}</td>
-                  <td className="px-5 py-3"><ApprovalBadge status={person.approvalStatus} /></td>
-                  <td className="px-5 py-3"><StatusBadge active={person.active !== false} /></td>
+                  <td className="px-5 py-3">
+                    <LifecycleBadge status={person.lifecycleStatus} />
+                  </td>
                   <td className="px-5 py-3">
                     <button
                       className="mr-2 rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-ink transition hover:bg-stone-100"
@@ -226,7 +283,7 @@ function HrEmployeesPanelInner() {
         </table>
       </div>
     </motion.section>
-  )
+  );
 }
 
-export const HrEmployeesPanel = memo(HrEmployeesPanelInner)
+export const HrEmployeesPanel = memo(HrEmployeesPanelInner);

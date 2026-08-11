@@ -2,6 +2,7 @@
 
 import { useOffices } from '@/lib/admin/hooks/useOffices'
 import OfficeEditorModal from '@/components/admin/OfficeEditorModal'
+import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
 
 const DAY_LABELS = {
   0: 'Sun',
@@ -86,24 +87,38 @@ export default function OfficePanel() {
   if (!officesLoaded) {
     return (
       <section className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
+        <DilgLoadingIndicator compact label="Loading offices…" />
       </section>
     )
   }
 
+  if (draftOffice) {
+    return <OfficeEditorModal
+      activeOffice={activeOffice}
+      addDivision={addDivision}
+      handleCancel={handleCancelOfficeEditor}
+      handleSaveOffice={handleSaveOffice}
+      handleUseMyLocation={handleUseMyLocation}
+      highlightLocationPin={highlightLocationPin}
+      locationLoading={locationLoading}
+      locationNotice={locationNotice}
+      officeDraftDirty={officeDraftDirty}
+      officeDraftWarning={officeDraftWarning}
+      removeDivision={removeDivision}
+      saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}
+      savePending={savePending}
+      toggleDay={toggleDay}
+      updateDivision={updateDivision}
+      updateDraft={updateDraft}
+    />
+  }
+
   return (
     <>
-      <section className="flex min-h-0 flex-col bg-white p-3 sm:p-6 md:h-full md:overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-black/5 pb-3 sm:flex-row sm:items-end sm:justify-between sm:pb-5">
-          <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-navy-dark">Office</div>
-            <h2 className="mt-1 font-display text-2xl text-ink sm:mt-2 sm:text-3xl">Office list</h2>
-            <p className="mt-2 hidden text-sm leading-7 text-muted sm:block">
-              Manage offices from one table. Edit opens a modal. Delete stays in the action column.
-            </p>
-          </div>
+      <section className="flex min-h-0 flex-col bg-white p-3 sm:p-4 md:h-full md:overflow-hidden">
+        <div className="flex justify-end border-b border-black/5 pb-2">
           <button
-            className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark"
+            className="inline-flex min-h-[38px] items-center justify-center rounded-full bg-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-dark"
             onClick={handleCreateOffice}
             type="button"
           >
@@ -178,14 +193,14 @@ export default function OfficePanel() {
           <table className="hidden w-full text-left text-sm lg:table">
             <thead className="bg-stone-50 text-xs uppercase tracking-[0.16em] text-muted">
               <tr>
-                <th className="px-5 py-4">Code</th>
-                <th className="px-5 py-4">Office</th>
-                <th className="px-5 py-4">Type</th>
-                <th className="px-5 py-4">Geofence</th>
-                <th className="px-5 py-4">Schedule</th>
-                <th className="px-5 py-4">Employees</th>
-                <th className="px-5 py-4">Status</th>
-                <th className="px-5 py-4">Actions</th>
+                <th className="px-4 py-3">Code</th>
+                <th className="px-4 py-3">Office</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Geofence</th>
+                <th className="px-4 py-3">Schedule</th>
+                <th className="px-4 py-3">Employees</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5">
@@ -195,29 +210,29 @@ export default function OfficePanel() {
 
                 return (
                   <tr key={office.id} className={`transition hover:bg-sky-light/40 ${selected ? 'bg-navy/5' : ''}`}>
-                    <td className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
+                    <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
                       {office.code || office.shortName || office.id}
                     </td>
-                    <td className="px-5 py-4 align-top">
+                    <td className="px-4 py-3 align-top">
                       <div className="max-w-[280px] font-semibold leading-6 text-ink">{office.name}</div>
                       <div className="mt-1 text-xs text-muted">
                         {office.shortName || '--'} · {office.provinceOrCity || office.location || 'No city'}
                       </div>
                     </td>
-                    <td className="px-5 py-4 align-top text-muted">{office.officeType || '--'}</td>
-                    <td className="px-5 py-4 align-top text-muted">
+                    <td className="px-4 py-3 align-top text-muted">{office.officeType || '--'}</td>
+                    <td className="px-4 py-3 align-top text-muted">
                       <div>{geofence.city}</div>
                       <div className="mt-1 text-xs text-muted/80">Radius {geofence.radius}</div>
                     </td>
-                    <td className="px-5 py-4 align-top text-muted">
+                    <td className="px-4 py-3 align-top text-muted">
                       <div className="max-w-[240px] leading-6">{formatScheduleSummary(office)}</div>
                       <div className="mt-1 text-xs text-muted/80">WFH {formatDays(office.workPolicy?.wfhDays || [])}</div>
                     </td>
-                    <td className="px-5 py-4 text-muted">{office.employees || 0}</td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3 text-muted">{office.employees || 0}</td>
+                    <td className="px-4 py-3">
                       <StatusPill status={office.status} />
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         <button
                           className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
@@ -244,26 +259,6 @@ export default function OfficePanel() {
         </div>
       </section>
 
-      {draftOffice ? (
-        <OfficeEditorModal
-          activeOffice={activeOffice}
-          addDivision={addDivision}
-          handleCancel={handleCancelOfficeEditor}
-          handleSaveOffice={handleSaveOffice}
-          handleUseMyLocation={handleUseMyLocation}
-          highlightLocationPin={highlightLocationPin}
-          locationLoading={locationLoading}
-          locationNotice={locationNotice}
-          officeDraftDirty={officeDraftDirty}
-          officeDraftWarning={officeDraftWarning}
-          removeDivision={removeDivision}
-          saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}
-          savePending={savePending}
-          toggleDay={toggleDay}
-          updateDivision={updateDivision}
-          updateDraft={updateDraft}
-        />
-      ) : null}
     </>
   )
 }

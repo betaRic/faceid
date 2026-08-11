@@ -6,7 +6,6 @@ import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enrollment'
-import { postgresEnabled } from '@/lib/postgres/client'
 import {
   enrollLocalPerson,
   loadLocalPersonDirectory,
@@ -18,13 +17,6 @@ import {
   validateBody,
   validateDivisionAgainstOffice,
   parseDirectoryParams,
-  mapPersonRecord,
-  countDirectoryRecords,
-  loadDirectoryPage,
-  selectPersonDirectoryFields,
-  enrollPerson,
-  uploadEnrollmentPhotoIfPending,
-  writeEnrollmentAuditLog,
 } from '@/lib/persons'
 import { encodePersonDirectoryCursor } from '@/lib/person-directory'
 import { createPrivacyConsentRecord, PRIVACY_NOTICE_VERSION } from '@/lib/privacy-consent'
@@ -59,7 +51,6 @@ export async function GET(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await adminAuth.resolveAdminSession(db, session)
     timer.mark('session')
@@ -68,58 +59,47 @@ export async function GET(request) {
     }
 
     if (new URL(request.url).searchParams.get('mode') === 'directory') {
-      if (usePostgres) {
-        const params = parseDirectoryParams(request)
-        const directory = await loadLocalPersonDirectory({
-          ...params,
-          officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : params.officeId,
-        })
-        const lastPerson = directory.persons[directory.persons.length - 1]
-        const nextCursor = directory.hasMore && lastPerson
-          ? encodePersonDirectoryCursor(lastPerson, params.searchMode)
-          : ''
-        return NextResponse.json({
-          ok: true,
-          persons: directory.persons,
-          page: {
-            limit: params.limit,
-            hasMore: directory.hasMore,
-            nextCursor,
-            total: directory.total,
-            approved: directory.approved,
-            pending: directory.pending,
-            rejected: directory.rejected,
-            searchMode: params.searchMode,
-          },
-        })
+      const params = parseDirectoryParams(request)
+      const effectiveOfficeId = resolvedSession.scope === 'office' ? resolvedSession.officeId : params.officeId
+      if (params.divisionId) {
+        if (!effectiveOfficeId) {
+          return NextResponse.json({ ok: false, message: 'Choose the regional office before filtering by division.' }, { status: 400 })
+        }
+        const office = await getOfficeRecord(db, effectiveOfficeId)
+        const validDivision = Array.isArray(office?.divisions)
+          && office.divisions.some((division) => division?.id === params.divisionId)
+        if (!validDivision) {
+          return NextResponse.json({ ok: false, message: 'The selected division does not belong to this office.' }, { status: 400 })
+        }
       }
-      const response = await handleDirectoryGet(request, db, resolvedSession)
-      timer.mark('directory')
-      timer.warnIfSlow()
-      return response
+      const directory = await loadLocalPersonDirectory({
+        ...params,
+        officeId: effectiveOfficeId,
+      })
+      const lastPerson = directory.persons[directory.persons.length - 1]
+      const nextCursor = directory.hasMore && lastPerson
+        ? encodePersonDirectoryCursor(lastPerson, params.searchMode)
+        : ''
+      return NextResponse.json({
+        ok: true,
+        persons: directory.persons,
+        page: {
+          limit: params.limit,
+          hasMore: directory.hasMore,
+          nextCursor,
+          total: directory.total,
+          approved: directory.approved,
+          pending: directory.pending,
+          rejected: directory.rejected,
+          searchMode: params.searchMode,
+        },
+      })
     }
 
-    if (usePostgres) {
-      const persons = (await listLocalPersons({
-        officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
-      })).filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
-      return NextResponse.json({ ok: true, persons })
-    }
-
-    const snapshot = resolvedSession.scope === 'office'
-      ? await selectPersonDirectoryFields(
-          db.collection('persons').where('officeId', '==', resolvedSession.officeId),
-        ).get()
-      : await selectPersonDirectoryFields(
-          db.collection('persons').orderBy('nameLower'),
-        ).get()
-
-    const persons = snapshot.docs.map(mapPersonRecord)
+    const persons = (await listLocalPersons({
+      officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
+    }))
       .filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
-      .sort((left, right) => left.name.localeCompare(right.name))
-
-    timer.mark('legacy-list')
-    timer.warnIfSlow()
     return NextResponse.json({ ok: true, persons })
   } catch (error) {
     timer.warnIfSlow(1000)
@@ -130,55 +110,11 @@ export async function GET(request) {
   }
 }
 
-async function handleDirectoryGet(request, db, resolvedSession) {
-  const params = parseDirectoryParams(request)
-
-  const [allTotal, pending, rejected] = await Promise.all([
-    countDirectoryRecords(db, resolvedSession, { ...params, approval: 'all' }),
-    countDirectoryRecords(db, resolvedSession, { ...params, approval: 'pending' }),
-    countDirectoryRecords(db, resolvedSession, { ...params, approval: 'rejected' }),
-  ])
-
-  const approved = Math.max(0, allTotal - pending - rejected)
-  const total = params.approval === 'all' ? allTotal : params.approval === 'approved' ? approved : params.approval === 'pending' ? pending : rejected
-
-  const pageResult = await loadDirectoryPage(db, resolvedSession, params)
-  const persons = pageResult.docs
-    .map(mapPersonRecord)
-    .filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
-
-  const lastPerson = persons[persons.length - 1]
-  const nextCursor = pageResult.hasMore && lastPerson
-    ? encodePersonDirectoryCursor({
-        ...lastPerson,
-        [pageResult.primaryField]: lastPerson?.[pageResult.primaryField] || '',
-        [pageResult.secondaryField]: lastPerson?.[pageResult.secondaryField] || '',
-      }, params.searchMode)
-    : ''
-
-  return NextResponse.json({
-    ok: true,
-    persons,
-    page: {
-      limit: params.limit,
-      hasMore: pageResult.hasMore,
-      nextCursor,
-      total,
-      approved,
-      pending,
-      rejected,
-      searchMode: params.searchMode,
-    },
-  })
-}
-
 export async function POST(request) {
   const timer = createRouteTimer('POST /api/persons')
   const guard = createOriginGuard()
   const originError = await guard(request)
   if (originError) return originError
-  const usePostgres = postgresEnabled()
-
   let body = normalizeBody(await request.json().catch(() => null))
   const validationError = validateBody(body)
   if (validationError) {
@@ -189,11 +125,9 @@ export async function POST(request) {
   let publicSubmission = true
   try {
     const db = null
-    const session = usePostgres
-      ? null
-      : adminAuth.parseAdminSessionCookieValue(
-          request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
-        )
+    const session = adminAuth.parseAdminSessionCookieValue(
+      request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
+    )
     const resolvedSession = session ? await adminAuth.resolveAdminSession(db, session) : null
     publicSubmission = !resolvedSession
     if (publicSubmission && (!body.privacyConsent || body.privacyNoticeVersion !== PRIVACY_NOTICE_VERSION)) {
@@ -273,35 +207,21 @@ export async function POST(request) {
       biometricModelVersion: authoritativePayload.biometricModelVersion,
     }
 
-    const { transactionResult, sampleCount, indexSyncWarning, duplicateReviewRequired } = usePostgres
-      ? await enrollLocalPerson(body, office, resolvedSession)
-      : await enrollPerson(db, body, office, resolvedSession)
+    const { transactionResult, sampleCount, indexSyncWarning, duplicateReviewRequired } =
+      await enrollLocalPerson(body, office, resolvedSession)
     timer.mark('enroll-write')
 
-    if (usePostgres) {
-      const { saveLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
-      await saveLocalEnrollmentPhoto(transactionResult.personId, body.photoDataUrl)
-      await writeLocalEnrollmentAuditLog(transactionResult, body, office, resolvedSession)
-    } else {
-      await uploadEnrollmentPhotoIfPending(
-        db,
-        transactionResult.personId,
-        body.photoDataUrl,
-        transactionResult.nextPerson.approvalStatus,
-      )
-    }
+    const { saveLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
+    await saveLocalEnrollmentPhoto(transactionResult.personId, body.photoDataUrl)
+    await writeLocalEnrollmentAuditLog(transactionResult, body, office, resolvedSession)
     timer.mark('photo')
-
-    if (!usePostgres) {
-      await writeEnrollmentAuditLog(db, transactionResult, body, office, resolvedSession)
-    }
     timer.mark('audit')
 
-    const baseMessage = transactionResult.nextPerson.approvalStatus === 'pending'
-      ? 'Enrollment submitted for admin approval. The employee record and biometric samples are not active on the kiosk until approved.'
+    const baseMessage = transactionResult.nextPerson.lifecycleStatus === 'pending'
+      ? 'Enrollment submitted for HR review. The employee record and biometric samples are not active on the kiosk until activated.'
       : 'Enrollment saved.'
     const message = duplicateReviewRequired
-      ? `${baseMessage} Similarity review required: an existing employee profile is close enough that an admin should verify this submission before approval.`
+      ? `${baseMessage} Similarity review required: an existing employee profile is close enough that an authorized reviewer should verify this submission before activation.`
       : baseMessage
 
     timer.warnIfSlow()
@@ -309,7 +229,7 @@ export async function POST(request) {
       ok: true,
       personId: transactionResult.personId,
       accessCode: transactionResult.nextPerson.accessCode || '',
-      approvalStatus: transactionResult.nextPerson.approvalStatus,
+      lifecycleStatus: transactionResult.nextPerson.lifecycleStatus,
       sampleCount,
       savedSampleCount: transactionResult.uniqueCount,
       duplicateReviewRequired,
@@ -333,9 +253,10 @@ export async function POST(request) {
       )
     }
 
+    const duplicateRegistration = error?.code === 'duplicate_person_registration'
     return NextResponse.json(
       { ok: false, message },
-      { status: duplicateFace?.duplicate ? 409 : (message.startsWith('Employee ID already exists.') ? 409 : toHttpStatus(error?.status)) },
+      { status: duplicateFace?.duplicate || duplicateRegistration ? 409 : (message.startsWith('Employee ID already exists.') ? 409 : toHttpStatus(error?.status)) },
     )
   }
 }

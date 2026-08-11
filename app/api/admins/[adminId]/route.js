@@ -5,7 +5,6 @@ import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCoo
 import { writeAuditLog } from '@/lib/audit-log'
 import { getActiveRegionalAdminCount } from '@/lib/admin-directory'
 import { createOriginGuard } from '@/lib/csrf'
-import { postgresEnabled } from '@/lib/postgres/client'
 import {
   deleteLocalAdminProfile,
   getLocalAdminProfileById,
@@ -52,7 +51,6 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -62,19 +60,17 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const existing = usePostgres ? await getLocalAdminProfileById(adminId) : await db.collection('admins').doc(adminId).get()
-    if (usePostgres ? !existing : !existing.exists) {
+    const existing = await getLocalAdminProfileById(adminId)
+    if (!existing) {
       return NextResponse.json({ ok: false, message: 'Admin record was not found.' }, { status: 404 })
     }
 
-    const duplicate = body.email && (usePostgres
-      ? await localEmailExists('admin_users', body.email, adminId)
-      : (await db.collection('admins').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== adminId))
+    const duplicate = body.email && await localEmailExists('admin_users', body.email, adminId)
     if (duplicate) {
       return NextResponse.json({ ok: false, message: 'Another admin record already uses that email.' }, { status: 409 })
     }
 
-    const existingData = usePostgres ? existing : existing.data() || {}
+    const existingData = existing
     const wasActiveRegional = existingData.active !== false && String(existingData.scope || 'regional') !== 'office'
     const willBeActiveRegional = body.active !== false && body.scope !== 'office'
 
@@ -88,18 +84,7 @@ export async function PUT(request, { params }) {
       }
     }
 
-    if (usePostgres) {
-      await updateLocalAdminProfile(adminId, body)
-    } else {
-      await db.collection('admins').doc(adminId).set({
-        email: body.email,
-        displayName: body.displayName,
-        scope: body.scope,
-        officeId: body.scope === 'office' ? body.officeId : '',
-        active: body.active,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true })
-    }
+    await updateLocalAdminProfile(adminId, body)
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -143,7 +128,6 @@ export async function DELETE(request, { params }) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -153,12 +137,12 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const existing = usePostgres ? await getLocalAdminProfileById(adminId) : await db.collection('admins').doc(adminId).get()
-    if (usePostgres ? !existing : !existing.exists) {
+    const existing = await getLocalAdminProfileById(adminId)
+    if (!existing) {
       return NextResponse.json({ ok: false, message: 'Admin record was not found.' }, { status: 404 })
     }
 
-    const existingData = usePostgres ? existing : existing.data() || {}
+    const existingData = existing
     const isActiveRegional = existingData.active !== false && String(existingData.scope || 'regional') !== 'office'
     if (isActiveRegional) {
       const remainingRegionalAdmins = await getActiveRegionalAdminCount(db, adminId)
@@ -170,8 +154,7 @@ export async function DELETE(request, { params }) {
       }
     }
 
-    if (usePostgres) await deleteLocalAdminProfile(adminId)
-    else await db.collection('admins').doc(adminId).delete()
+    await deleteLocalAdminProfile(adminId)
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

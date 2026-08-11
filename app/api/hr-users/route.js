@@ -3,10 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listHrProfiles } from '@/lib/hr-directory'
-import { hashPin } from '@/lib/hr-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { createLocalHrProfile, localEmailExists } from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
@@ -70,7 +68,6 @@ export async function POST(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -80,25 +77,12 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const exists = body.email && (usePostgres
-      ? await localEmailExists('hr_users', body.email)
-      : !(await db.collection('hr_users').where('email', '==', body.email).limit(1).get()).empty)
+    const exists = body.email && await localEmailExists('hr_users', body.email)
     if (exists) {
       return NextResponse.json({ ok: false, message: 'An HR user record already exists for that email.' }, { status: 409 })
     }
 
-    const recordId = usePostgres
-      ? await createLocalHrProfile(body)
-      : (await db.collection('hr_users').add({
-          email: body.email,
-          displayName: body.displayName,
-          scope: body.scope,
-          officeId: body.scope === 'office' ? body.officeId : '',
-          pinHash: body.pin ? hashPin(body.pin) : null,
-          active: body.active,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        })).id
+    const recordId = await createLocalHrProfile(body)
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

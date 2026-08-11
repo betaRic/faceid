@@ -2,7 +2,6 @@
 
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { PERSON_APPROVAL_PENDING } from '../lib/person-approval'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
 import { checkEnrollmentDuplicate } from '../lib/data-store'
 import { useAudioCue } from '../hooks/useAudioCue'
@@ -77,7 +76,7 @@ export default function RegisterView({
   const stepIndex = STEPS.findIndex(item => item.id === step)
   const currentStep = STEPS[stepIndex] || STEPS[0]
   const detailsReady = Boolean(
-    lastName.trim() && firstName.trim() && employeeId.trim() && position.trim() && officeId
+    lastName.trim() && firstName.trim() && position.trim() && officeId
     && (!isRegionalOffice || divisionId) && privacyConsent,
   )
 
@@ -223,10 +222,6 @@ export default function RegisterView({
       showToast('Enter the first name')
       return
     }
-    if (!employeeId.trim()) {
-      showToast('Enter the employee ID')
-      return
-    }
     if (!position.trim()) {
       showToast('Enter the employee position')
       return
@@ -261,10 +256,6 @@ export default function RegisterView({
     }
     if (!firstName.trim()) {
       showToast('Enter the first name')
-      return
-    }
-    if (!employeeId.trim()) {
-      showToast('Enter the employee ID')
       return
     }
     if (!officeId) {
@@ -322,7 +313,7 @@ export default function RegisterView({
 
     const savedCount = Number(result?.savedSampleCount || pendingSampleCount || 1)
     const totalCount = Number(result?.sampleCount || savedCount)
-    const approvalStatus = result?.approvalStatus || PERSON_APPROVAL_PENDING
+    const lifecycleStatus = result?.lifecycleStatus || 'pending'
     setLastSavedSummary({
       name: buildEmployeeDisplayName({
         lastName,
@@ -338,7 +329,7 @@ export default function RegisterView({
       savedSampleCount: savedCount,
       remaining: Math.max(0, ENROLLMENT_MIN_SAMPLES - totalCount),
       accessCode: String(result?.accessCode || ''),
-      approvalStatus,
+      lifecycleStatus,
       duplicateReviewRequired: Boolean(result?.duplicateReviewRequired),
       duplicateReviewStatus: String(result?.duplicateReviewStatus || 'clear'),
       message: result?.message || '',

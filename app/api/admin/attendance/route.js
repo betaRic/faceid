@@ -7,8 +7,9 @@ import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { createOriginGuard } from '@/lib/csrf'
 import { kvDel } from '@/lib/kv-utils'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
+import { resolveWorkforcePolicyForDate } from '@/lib/workforce-policy'
 import { getOfficeRecord } from '@/lib/office-directory'
-import { postgresEnabled } from '@/lib/postgres/client'
+import { getLocalPersonById } from '@/lib/postgres/person-store'
 import { insertLocalAttendanceEntry, getLocalAttendanceById, listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 import { upsertLocalDailyAttendanceRecord } from '@/lib/postgres/attendance-store'
 
@@ -24,58 +25,19 @@ export async function GET(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveStaffAttendanceSession(request, db)
     if (!resolvedSession) {
       return NextResponse.json({ ok: false, message: 'Admin or HR attendance access is required.' }, { status: 403 })
     }
 
-    if (usePostgres) {
-      const logs = (await listLocalAttendanceLogs({
-        employeeId,
-        personId,
-        dateKey: date,
-        direction: 'asc',
-        limit: 500,
-      })).filter(log => sessionAllowsOffice(resolvedSession, log.officeId))
-
-      return NextResponse.json({ ok: true, logs })
-    }
-
-    const snapshot = await db
-      .collection('attendance')
-      .where('employeeId', '==', employeeId)
-      .where('dateKey', '==', date)
-      .orderBy('timestamp', 'asc')
-      .get()
-
-    const logs = snapshot.docs
-      .map(doc => {
-        const d = doc.data()
-        return {
-          id: doc.id,
-          employeeId: d.employeeId || '',
-          name: d.name || '',
-          officeId: d.officeId || '',
-          officeName: d.officeName || '',
-          action: d.action || '',
-          attendanceMode: d.attendanceMode || '',
-          decisionCode: d.decisionCode || '',
-          confidence: Number(d.confidence ?? 0),
-          timestamp: Number(d.timestamp || 0),
-          dateKey: d.dateKey || date,
-          time: d.time || '',
-          source: d.source || 'kiosk',
-          overrideReason: d.overrideReason || '',
-          overriddenBy: d.overriddenBy || '',
-          fieldDutyStatus: d.fieldDutyStatus || '',
-          fieldDutyReason: d.fieldDutyReason || '',
-          fieldDutyRemarks: d.fieldDutyRemarks || '',
-          latitude: Number.isFinite(d.latitude) ? d.latitude : null,
-          longitude: Number.isFinite(d.longitude) ? d.longitude : null,
-        }
-      })
+    const logs = (await listLocalAttendanceLogs({
+      employeeId,
+      personId,
+      dateKey: date,
+      direction: 'asc',
+      limit: 500,
+    }))
       .filter(log => sessionAllowsOffice(resolvedSession, log.officeId))
 
     return NextResponse.json({ ok: true, logs })
@@ -100,6 +62,7 @@ export async function POST(request) {
   const officeId = String(body?.officeId || '').trim()
   const officeName = String(body?.officeName || '').trim()
   const action = String(body?.action || '').trim()
+  const manualSlot = String(body?.manualSlot || '').trim()
   const timestamp = Number(body?.timestamp)
   const dateKey = String(body?.dateKey || '').trim()
   const reason = String(body?.reason || '').trim()
@@ -118,7 +81,6 @@ export async function POST(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveStaffAttendanceSession(request, db)
     if (!resolvedSession) {
@@ -133,17 +95,15 @@ export async function POST(request) {
 
     // Regenerate timing from the provided timestamp for consistency
     const timing = buildAttendanceEntryTiming(timestamp)
-    if (usePostgres && !personId) {
+    if (!personId) {
       return NextResponse.json({ ok: false, message: 'A specific employee record is required for a manual override.' }, { status: 400 })
     }
 
     // personId keeps COS and plantilla employees with the same Employee ID separate.
     const attendanceId = `${personId || employeeId}_${timestamp}_override`
 
-    const existing = usePostgres
-      ? await getLocalAttendanceById(attendanceId)
-      : await db.collection('attendance').doc(attendanceId).get()
-    if (usePostgres ? existing : existing.exists) {
+    const existing = await getLocalAttendanceById(attendanceId)
+    if (existing) {
       return NextResponse.json(
         { ok: false, message: 'A manual entry already exists at this exact time.' },
         { status: 409 },
@@ -167,10 +127,11 @@ export async function POST(request) {
       date: timing.dateLabel,
       time: timing.time,
       source: 'manual_override',
+      manualSlot,
       overrideReason: reason,
       overriddenBy: resolvedSession.email || '',
-      overriddenAt: usePostgres ? new Date().toISOString() : FieldValue.serverTimestamp(),
-      createdAt: usePostgres ? new Date().toISOString() : FieldValue.serverTimestamp(),
+      overriddenAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       // Explicitly null out biometric fields — admin verification is by identity, not descriptor
       descriptor: null,
       landmarks: null,
@@ -178,8 +139,7 @@ export async function POST(request) {
       longitude: null,
     }
 
-    if (usePostgres) await insertLocalAttendanceEntry(attendanceId, entry)
-    else await db.collection('attendance').doc(attendanceId).set(entry)
+    await insertLocalAttendanceEntry(attendanceId, entry)
 
     // Invalidate the KV cache for this employee+date so the next summary fetch is fresh
     await kvDel(`attendance:logs:${employeeId}:${dateKey}`)
@@ -187,29 +147,20 @@ export async function POST(request) {
     // Refresh attendance_daily immediately so HR sees correct data
     // without waiting for the next cron run or cache expiry.
     try {
-      const freshLogs = usePostgres
-        ? await listLocalAttendanceLogs({ employeeId, personId, dateKey, direction: 'asc', limit: 500 })
-        : (await db
-            .collection('attendance')
-            .where('employeeId', '==', employeeId)
-            .where('dateKey', '==', dateKey)
-            .orderBy('timestamp', 'asc')
-            .get()).docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      const freshLogs = await listLocalAttendanceLogs({ employeeId, personId, dateKey, direction: 'asc', limit: 500 })
       const officeRecord = await getOfficeRecord(db, officeId)
       if (officeRecord) {
+        const personRecord = await getLocalPersonById(personId)
+        const personForPolicy = personRecord || { id: personId, employeeId, name, officeId, officeName }
+        const policyOverride = await resolveWorkforcePolicyForDate({ person: personForPolicy, office: officeRecord, dateKey })
         const dailyRecord = deriveDailyAttendanceRecord({
           logs: freshLogs,
-          person: { id: personId, employeeId, name, officeId, officeName },
+          person: personForPolicy,
           office: officeRecord,
           targetDateKey: dateKey,
+          policyOverride,
         })
-        if (usePostgres) await upsertLocalDailyAttendanceRecord(dailyRecord)
-        else {
-          await db.collection('attendance_daily').doc(`${employeeId}_${dateKey}`).set({
-            ...dailyRecord,
-            updatedAt: FieldValue.serverTimestamp(),
-          }, { merge: true })
-        }
+        await upsertLocalDailyAttendanceRecord(dailyRecord)
       }
     } catch (cacheErr) {
       console.error('[Admin] Failed to refresh attendance_daily:', cacheErr?.message)
@@ -224,7 +175,7 @@ export async function POST(request) {
       targetId: attendanceId,
       officeId,
       summary: `Manual ${action} added for ${name} (${employeeId}) on ${dateKey}`,
-      metadata: { employeeId, name, action, dateKey, time: timing.time, reason, overriddenBy: resolvedSession.email },
+      metadata: { employeeId, name, action, manualSlot, dateKey, time: timing.time, reason, overriddenBy: resolvedSession.email },
     })
 
     return NextResponse.json({ ok: true, attendanceId })

@@ -121,6 +121,17 @@ export default function KioskScanningOverlay({
             )}
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
+            {(isScanning || isVerifying) ? (
+              <div aria-hidden="true" className={`scan-visual ${isVerifying ? 'scan-visual--verifying' : ''}`}>
+                <div className="scan-visual__grid" />
+                <div className="scan-visual__sweep" />
+                <div className="scan-visual__target" />
+                <span className="scan-visual__corner scan-visual__corner--tl" />
+                <span className="scan-visual__corner scan-visual__corner--tr" />
+                <span className="scan-visual__corner scan-visual__corner--bl" />
+                <span className="scan-visual__corner scan-visual__corner--br" />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

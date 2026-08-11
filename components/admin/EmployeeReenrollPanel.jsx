@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBiometricRuntime } from '@/components/BiometricRuntimeProvider'
 import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
 import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
+import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
 import { CAPTURE_PHASES, useEnrollmentCapture } from '@/hooks/useEnrollmentCapture'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 
@@ -24,7 +25,17 @@ function InfoCard({ title, text, tone = 'default' }) {
 
 export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
   const runtime = useBiometricRuntime()
-  const { camera, workspaceReady, modelsReady, modelStatus, runtimeError, retry } = runtime
+  const {
+    bootStage,
+    camera,
+    workspaceReady,
+    modelsReady,
+    modelStatus,
+    permissionRequestPending,
+    requestPermissions,
+    runtimeError,
+    retry,
+  } = runtime
   const camOn = camera.camOn
   const camError = camera.camError
   const setVideoRef = camera.setVideoRef
@@ -155,8 +166,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center rounded-[1.4rem] border border-black/5 bg-stone-50 p-6">
         <div className="text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-          <p className="mt-4 text-sm font-medium text-ink">Loading biometric workspace...</p>
+          <DilgLoadingIndicator compact label="Loading biometric workspace…" />
           <p className="mt-1 text-xs text-muted">Starting models and camera for live re-enrollment.</p>
         </div>
       </div>
@@ -194,9 +204,25 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-50 p-6">
         <div className="text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-          <p className="mt-4 text-sm font-medium text-ink">Starting camera...</p>
-          <p className="mt-1 text-xs text-muted">{modelStatus}</p>
+          {bootStage === 'permission' ? (
+            <>
+              <h3 className="text-lg font-bold text-ink">Camera permission required</h3>
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted">Tap once to let the browser request the camera. Safari does not reliably show this prompt when it starts automatically.</p>
+              <button
+                className="mt-5 rounded-full bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-wait disabled:opacity-70"
+                disabled={permissionRequestPending}
+                onClick={requestPermissions}
+                type="button"
+              >
+                {permissionRequestPending ? 'Requesting camera…' : 'Enable camera'}
+              </button>
+            </>
+          ) : (
+            <>
+              <DilgLoadingIndicator compact label="Starting camera…" />
+              <p className="mt-1 text-xs text-muted">{modelStatus}</p>
+            </>
+          )}
         </div>
       </div>
     )

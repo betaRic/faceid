@@ -5,8 +5,10 @@ import { motion } from 'framer-motion'
 import { useAdminStore } from '@/lib/admin/store'
 
 const ACTION_OPTIONS = [
-  { value: 'checkin', label: 'Check In (AM or PM)' },
-  { value: 'checkout', label: 'Check Out (AM or PM)' },
+  { value: 'am_in', action: 'checkin', label: 'AM In' },
+  { value: 'am_out', action: 'checkout', label: 'AM Out' },
+  { value: 'pm_in', action: 'checkin', label: 'PM In' },
+  { value: 'pm_out', action: 'checkout', label: 'PM Out' },
 ]
 
 function formatTimestamp(ts) {
@@ -35,7 +37,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
   const [busy, setBusy] = useState(false)
 
   // Form state
-  const [action, setAction] = useState('checkin')
+  const [action, setAction] = useState('am_in')
   const [timeValue, setTimeValue] = useState('08:00')
   const [reason, setReason] = useState('')
 
@@ -63,6 +65,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
     setBusy(true)
     try {
       const timestamp = buildManilaTimestamp(row.dateKey, timeValue)
+      const selectedAction = ACTION_OPTIONS.find(option => option.value === action)
       const res = await fetch('/api/admin/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,7 +75,8 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
           name: row.name,
           officeId: row.officeId,
           officeName: row.officeName,
-          action,
+          action: selectedAction?.action || 'checkin',
+          manualSlot: action,
           timestamp,
           dateKey: row.dateKey,
           reason: reason.trim(),
@@ -80,7 +84,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
       })
       const data = await res.json()
       if (data.ok) {
-        store.addToast(`Manual ${action === 'checkin' ? 'check-in' : 'check-out'} added.`, 'success')
+        store.addToast(`Manual ${selectedAction?.label || 'attendance'} added.`, 'success')
         setReason('')
         await fetchLogs()
         onSaved?.()
@@ -136,11 +140,11 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
   const sorted = [...logs].sort((a, b) => a.timestamp - b.timestamp)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm">
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-black/5 bg-white shadow-2xl sm:max-w-xl sm:rounded-3xl"
+        className="flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-black/5 bg-white shadow-2xl"
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
         {/* Header */}

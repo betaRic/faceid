@@ -12,13 +12,11 @@ import {
   createHrSessionCookieValue,
   getHrSessionCookieName,
   getHrSessionMaxAge,
-  verifyPin,
 } from '@/lib/hr-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { createOriginGuard } from '@/lib/csrf'
 import { findLocalAdminByPin, findLocalHrByPin } from '@/lib/postgres/user-store'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { isRegionalPinEnabled } from '@/lib/bootstrap-pin'
 
 function safeEqual(left, right) {
@@ -37,7 +35,6 @@ export async function POST(request) {
   if (originError) return originError
 
   const db = null
-  const usePostgres = postgresEnabled()
   const ip = getRequestIp(request)
 
   const ipLimit = await enforceRateLimit(db, {
@@ -71,7 +68,7 @@ export async function POST(request) {
       }
 
       const configuredPin = getRegionalPin()
-      const regionalPinAvailable = configuredPin && await isRegionalPinEnabled(db)
+      const regionalPinAvailable = configuredPin && await isRegionalPinEnabled()
       if (regionalPinAvailable && safeEqual(pin, configuredPin)) {
         await writeAuditLog(db, {
           actorRole: 'admin',
@@ -102,9 +99,8 @@ export async function POST(request) {
         return response
       }
 
-      if (usePostgres) {
-        const adminProfile = await findLocalAdminByPin(pin)
-        if (adminProfile?.active) {
+      const adminProfile = await findLocalAdminByPin(pin)
+      if (adminProfile?.active) {
           await writeAuditLog(db, {
             actorRole: 'admin',
             actorScope: adminProfile.scope,
@@ -131,11 +127,11 @@ export async function POST(request) {
             path: '/',
             maxAge: getAdminSessionMaxAge(),
           })
-          return response
-        }
+        return response
+      }
 
-        const hrProfile = await findLocalHrByPin(pin)
-        if (hrProfile?.active) {
+      const hrProfile = await findLocalHrByPin(pin)
+      if (hrProfile?.active) {
           await writeAuditLog(db, {
             actorRole: 'hr',
             actorScope: hrProfile.scope,
@@ -162,44 +158,7 @@ export async function POST(request) {
             path: '/',
             maxAge: getHrSessionMaxAge(),
           })
-          return response
-        }
-
-        return NextResponse.json({ ok: false, message: 'Invalid PIN.' }, { status: 401 })
-      }
-
-      const hrSnapshots = await db.collection('hr_users').where('active', '==', true).get()
-      for (const doc of hrSnapshots.docs) {
-        const data = doc.data()
-        if (data.pinHash && verifyPin(pin, data.pinHash)) {
-          await writeAuditLog(db, {
-            actorRole: 'hr',
-            actorScope: data.scope || 'office',
-            actorOfficeId: data.officeId || '',
-            action: 'hr_login_pin',
-            targetType: 'session',
-            targetId: doc.id,
-            officeId: data.officeId || '',
-            summary: `HR PIN login for ${data.email}`,
-          })
-
-          const response = NextResponse.json({ ok: true, role: 'hr', scope: data.scope || 'office' })
-          response.cookies.set({
-            name: getHrSessionCookieName(),
-            value: createHrSessionCookieValue({
-              scope: data.scope || 'office',
-              officeId: data.officeId || '',
-              email: data.email,
-              hrUserId: doc.id,
-            }),
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-            maxAge: getHrSessionMaxAge(),
-          })
-          return response
-        }
+        return response
       }
 
       return NextResponse.json({ ok: false, message: 'Invalid PIN.' }, { status: 401 })

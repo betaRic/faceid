@@ -2,7 +2,6 @@
 
 import { memo, useCallback, useEffect, useState } from 'react'
 import { useThresholds } from '@/lib/admin/hooks/useThresholds'
-import { MaintenancePanel } from './MaintenancePanel'
 
 function SliderField({ fieldKey, meta, value, onChange }) {
   const isChanged = value !== meta.default
@@ -299,11 +298,7 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
 
   return (
     <section className="flex min-h-0 flex-col gap-4 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
-      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="font-display text-2xl font-bold text-ink">System Settings</h2>
-          <p className="mt-0.5 hidden text-sm text-muted sm:block">Tune biometric matching, scan behavior, and enrollment without redeploying.</p>
-        </div>
+      <div className="flex shrink-0 justify-end">
         {hasAnyPending ? (
           <div className="flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
             Unsaved changes pending
@@ -349,7 +344,6 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
             )}
           </div>
 
-          <MaintenancePanel />
           <RegionalPinAccess />
         </div>
       </div>

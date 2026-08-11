@@ -144,7 +144,7 @@ const {
   DUPLICATE_STATUS_HARD_DUPLICATE,
   DUPLICATE_STATUS_REVIEW_REQUIRED,
 } = duplicateFaceModule
-const { mapPersonRecord } = personsDirectoryListModule
+const { mapPersonRecord, parseDirectoryParams } = personsDirectoryListModule
 const {
   buildMatchSupportSnapshot,
   isStrongUnambiguousSingleSampleSupport,
@@ -164,6 +164,7 @@ const {
 const {
   getEmployeeDailyAttendanceRecord,
   listEmployeeDailyAttendanceRecordsForMonth,
+  normalizeDailyRecord,
 } = attendanceDailyStoreModule
 const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
@@ -480,6 +481,29 @@ await run('afternoon scan after missed AM out starts PM in', () => {
   assert.match(record.pmIn, /1:03\s?PM/i)
 })
 
+await run('flexitime accepts a continuous two-punch ten-hour day', () => {
+  const office = {
+    workPolicy: { morningIn: '08:00', morningOut: '12:00', afternoonIn: '13:00', afternoonOut: '17:00' },
+  }
+  const amIn = { action: 'checkin', timestamp: new Date('2026-05-05T06:00:00+08:00').getTime() }
+  const pmOut = new Date('2026-05-05T17:00:00+08:00').getTime()
+  const policyOverride = {
+    schedule: { morningIn: '06:00', morningOut: '12:00', afternoonIn: '13:00', afternoonOut: '17:00' },
+    flexitime: { enabled: true, requiredMinutes: 600 },
+  }
+  assert.equal(getNextAttendanceAction([amIn], office, pmOut, policyOverride), 'checkout')
+  const record = deriveDailyAttendanceRecord({
+    logs: [amIn, { action: 'checkout', timestamp: pmOut }],
+    person: { employeeId: 'FLEX-10', name: 'Flex Ten' },
+    office,
+    policyOverride,
+    targetDateKey: '2026-05-05',
+  })
+  assert.equal(record.workingMinutes, 660)
+  assert.equal(record.undertimeMinutes, 0)
+  assert.equal(record.lateMinutes, 0)
+})
+
 await run('orphan afternoon checkout after missed AM out is repaired as PM in', () => {
   const office = {
     id: 'office-repair-afternoon',
@@ -640,6 +664,12 @@ await run('person directory search mode distinguishes names from employee IDs', 
   assert.equal(normalizePersonDirectorySearchValue('  Jane Doe  ', 'name'), 'jane doe')
   assert.equal(normalizePersonDirectorySearchValue(' EMP-001 ', 'employeeId'), 'EMP-001')
   assert.equal(clampPersonDirectoryLimit(200), 50)
+})
+
+await run('person directory carries a division filter with its selected office', () => {
+  const params = parseDirectoryParams(new Request('https://attendance.test/api/persons?mode=directory&officeId=regional-12&divisionId=lgcdd'))
+  assert.equal(params.officeId, 'regional-12')
+  assert.equal(params.divisionId, 'lgcdd')
 })
 
 await run('person directory cursor encodes and decodes pagination state', () => {
@@ -1228,27 +1258,54 @@ await run('DTR Excel workbook fills official template cells dynamically', async 
   const stylesXml = strFromU8(files['xl/styles.xml'])
   const workbookXml = strFromU8(files['xl/workbook.xml'])
   const relsXml = strFromU8(files['xl/_rels/workbook.xml.rels'])
-  const dtrTimeFontId = Number.parseInt(stylesXml.match(/<fonts count="(\d+)"/)?.[1] || '1', 10) - 1
-  const dtrTimeStyleId = Number.parseInt(stylesXml.match(/<cellXfs count="(\d+)"/)?.[1] || '1', 10) - 1
-
-  assert.match(sheetXml, /<c r="C6" s="8" t="inlineStr"><is><t>Lonario<\/t><\/is><\/c>/)
-  assert.match(sheetXml, /<c r="G6" s="8" t="inlineStr"><is><t>Jan Eric<\/t><\/is><\/c>/)
-  assert.match(sheetXml, /<c r="G9" s="20" t="inlineStr"><is><t>MAY 1-31, 2026<\/t><\/is><\/c>/)
-  assert.match(sheetXml, /<c r="E15" s="32" t="s"><v>15<\/v><\/c>/)
-  assert.match(sheetXml, /<c r="I15" s="32" t="s"><v>15<\/v><\/c>/)
-  assert.match(stylesXml, /<font><sz val="9"\/><color rgb="FFBFBFBF"\/><name val="Calibri"\/><family val="2"\/><scheme val="minor"\/><\/font>/)
-  assert.match(
-    stylesXml,
-    new RegExp(`<xf numFmtId="0" fontId="${dtrTimeFontId}" fillId="0" borderId="7" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/><\\/xf>`),
-  )
-  assert.match(sheetXml, new RegExp(`<c r="E17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>9:02 AM<\\/t><\\/is><\\/c>`))
-  assert.match(sheetXml, new RegExp(`<c r="G17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>10:58 AM<\\/t><\\/is><\\/c>`))
-  assert.match(sheetXml, new RegExp(`<c r="I17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>12:06 PM<\\/t><\\/is><\\/c>`))
-  assert.match(sheetXml, new RegExp(`<c r="K17" s="${dtrTimeStyleId}" t="inlineStr"><is><t>6:59 PM<\\/t><\\/is><\\/c>`))
-  assert.match(sheetXml, /<c r="B56" s="51" t="inlineStr"><is><t>Maria Theresa D. Bautista<\/t><\/is><\/c>/)
-  assert.match(sheetXml, /<c r="B57" s="56" t="inlineStr"><is><t>Regional Director<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="B4" s="2" t="inlineStr"><is><t>JAN ERIC LONARIO<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="D5" s="5" t="inlineStr"><is><t>MAY 1-31, 2026<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<t>9:02 AM<\/t>/)
+  assert.match(sheetXml, /<t>10:58 AM<\/t>/)
+  assert.match(sheetXml, /<t>12:06 PM<\/t>/)
+  assert.match(sheetXml, /<t>6:59 PM<\/t>/)
+  // Generated grid cells must never fall back to Excel's default unbordered
+  // style merely because the empty template cell did not have a <c> node.
+  for (const cell of ['B14', 'C14', 'D14', 'E14', 'J14', 'K14', 'L14', 'M14']) {
+    assert.match(sheetXml, new RegExp(`<c r="${cell}" s="[1-9]\\d*"[^>]*>[\\s\\S]*?<t>`))
+  }
+  assert.match(stylesXml, /<font><sz val="8"\/><color rgb="FF808080"\/><name val="Arial"/)
+  assert.match(sheetXml, /<t>MARIA THERESA D\. BAUTISTA<\/t>/)
+  assert.match(sheetXml, /<t>REGIONAL DIRECTOR<\/t>/)
+  assert.match(sheetXml, /<c r="B57"[^>]*>[\s\S]*?<t>MARIA THERESA D\. BAUTISTA<\/t>/)
+  assert.match(sheetXml, /<c r="B58"[^>]*>[\s\S]*?<t>REGIONAL DIRECTOR<\/t>/)
+  assert.match(sheetXml, /<c r="J57"[^>]*>[\s\S]*?<t>MARIA THERESA D\. BAUTISTA<\/t>/)
+  assert.match(sheetXml, /<c r="J58"[^>]*>[\s\S]*?<t>REGIONAL DIRECTOR<\/t>/)
+  assert.doesNotMatch(sheetXml, /<c r="B59"[^>]*>[\s\S]*?MARIA THERESA D\. BAUTISTA/)
+  assert.match(workbookXml, /_xlnm\.Print_Area" localSheetId="0">'12-254 Jan Eric Lonario'!\$A\$1:\$O\$58<\/definedName>/)
   assert.match(workbookXml, /<sheet name="12-254 Jan Eric Lonario" sheetId="1" r:id="rIdDtrSheet1"\/>/)
   assert.equal(relsXml.includes('calcChain'), false)
+})
+
+await run('DTR Excel applies special-day fills to the full Form 48 row', async () => {
+  const dtr = buildDtrDocument({
+    employee: { name: 'Color Test', employeeId: 'COLOR-1' },
+    month: 5,
+    year: 2026,
+    dayRecords: [
+      { dateKey: '2026-05-04', day: 4, specialCode: 'OB' },
+      { dateKey: '2026-05-05', day: 5, specialCode: 'WL' },
+      { dateKey: '2026-05-06', day: 6, specialCode: 'CTO' },
+      { dateKey: '2026-05-03', day: 3, specialCode: 'SL' },
+    ],
+  })
+  const templateBytes = new Uint8Array(await readFile(new URL('../lib/templates/dtr-format.xlsx', import.meta.url)))
+  const files = unzipSync(buildDtrWorkbookFromTemplate(templateBytes, [dtr]))
+  const sheetXml = strFromU8(files['xl/worksheets/sheet1.xml'])
+  const stylesXml = strFromU8(files['xl/styles.xml'])
+  assert.match(sheetXml, /<c r="A14" s="\d+"><v>4<\/v><\/c>/)
+  assert.match(sheetXml, /<c r="B14" s="\d+" t="inlineStr"><is><t>OB<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="J14" s="\d+" t="inlineStr"><is><t>OB<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="B15" s="\d+" t="inlineStr"><is><t>WL<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="B16" s="\d+" t="inlineStr"><is><t>CTO<\/t><\/is><\/c>/)
+  assert.match(sheetXml, /<c r="B13" s="\d+" t="inlineStr"><is><t>SL<\/t><\/is><\/c>/)
+  assert.doesNotMatch(sheetXml, /<c r="B13"[^>]*>[\s\S]*?<t>SUNDAY<\/t>/)
+  for (const color of ['FFBBF7D0', 'FFFECACA', 'FFBFDBFE', 'FFFFFFFF', 'FFF3F4F6', 'FFE0E7FF', 'FFFEF3C7']) assert.match(stylesXml, new RegExp(`fgColor rgb="${color}"`))
 })
 
 await run('buildDtrDocument shades inactive half-month rows and preserves active day data', () => {
@@ -1625,110 +1682,36 @@ await run('OpenVINO shadow profile samples strip invalid vectors and cap metadat
   assert.equal(samples[0].browser.length, 80)
 })
 
-await run('employee monthly attendance reads exact daily docs for the month', async () => {
-  const requestedIds = []
-  const db = {
-    collection(name) {
-      assert.equal(name, 'attendance_daily')
-      return {
-        doc(id) {
-          requestedIds.push(id)
-          return { id }
-        },
-      }
-    },
-    async getAll(...refs) {
-      return refs.map(ref => ({
-        id: ref.id,
-        exists: ref.id.endsWith('_2026-04-09'),
-        data: () => ({
-          employeeId: 'EMP-001',
-          dateKey: '2026-04-09',
-          logCount: 2,
-          amInTimestamp: 1,
-          pmOutTimestamp: 2,
-        }),
-      }))
-    },
-  }
+await run('daily attendance records normalize PostgreSQL payloads', () => {
+  const record = normalizeDailyRecord({
+    id: 'person-001_2026-04-09',
+    employeeId: 'EMP-001',
+    personId: 'person-001',
+    dateKey: '2026-04-09',
+    logCount: 1,
+    amInTimestamp: 1,
+  })
 
-  const records = await listEmployeeDailyAttendanceRecordsForMonth(db, 'EMP-001', 2026, 4)
-
-  assert.equal(requestedIds.length, 30)
-  assert.equal(requestedIds[0], 'EMP-001_2026-04-01')
-  assert.equal(requestedIds[29], 'EMP-001_2026-04-30')
-  assert.equal(records.length, 1)
-  assert.equal(records[0].dateKey, '2026-04-09')
-  assert.equal(records[0].pmInTimestamp, 2)
-  assert.equal(records[0].pmOutTimestamp, null)
-})
-
-await run('employee daily attendance reads one cached daily doc by id', async () => {
-  let requestedId = ''
-  const db = {
-    collection(name) {
-      assert.equal(name, 'attendance_daily')
-      return {
-        doc(id) {
-          requestedId = id
-          return {
-            async get() {
-              return {
-                id,
-                exists: true,
-                data: () => ({
-                  employeeId: 'EMP-001',
-                  dateKey: '2026-04-09',
-                  logCount: 1,
-                  amInTimestamp: 1,
-                }),
-              }
-            },
-          }
-        },
-      }
-    },
-  }
-
-  const record = await getEmployeeDailyAttendanceRecord(db, 'EMP-001', '2026-04-09')
-
-  assert.equal(requestedId, 'EMP-001_2026-04-09')
+  assert.equal(record.id, 'person-001_2026-04-09')
   assert.equal(record.employeeId, 'EMP-001')
+  assert.equal(record.personId, 'person-001')
   assert.equal(record.dateKey, '2026-04-09')
 })
 
-await run('cached daily attendance repairs orphan PM out from missed AM out', async () => {
-  const db = {
-    collection(name) {
-      assert.equal(name, 'attendance_daily')
-      return {
-        doc(id) {
-          assert.equal(id, 'EMP-001_2026-05-05')
-          return {
-            async get() {
-              return {
-                id,
-                exists: true,
-                data: () => ({
-                  employeeId: 'EMP-001',
-                  dateKey: '2026-05-05',
-                  logCount: 2,
-                  amInTimestamp: 1777933620000,
-                  amIn: '9:07 AM',
-                  amOut: '--',
-                  pmIn: '--',
-                  pmOutTimestamp: 1777942980000,
-                  pmOut: '1:03 PM',
-                }),
-              }
-            },
-          }
-        },
-      }
-    },
-  }
-
-  const record = await getEmployeeDailyAttendanceRecord(db, 'EMP-001', '2026-05-05')
+await run('daily attendance records repair orphan PM out from missed AM out', () => {
+  const record = normalizeDailyRecord({
+    id: 'person-001_2026-05-05',
+    employeeId: 'EMP-001',
+    personId: 'person-001',
+    dateKey: '2026-05-05',
+    logCount: 2,
+    amInTimestamp: 1777933620000,
+    amIn: '9:07 AM',
+    amOut: '--',
+    pmIn: '--',
+    pmOutTimestamp: 1777942980000,
+    pmOut: '1:03 PM',
+  })
 
   assert.equal(record.amIn, '9:07 AM')
   assert.equal(record.amOut, '--')

@@ -3,72 +3,21 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { listLocalDtrEmployees } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
-  const usePostgres = postgresEnabled()
-  const db = null
-
-  const adminSession = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  const hrSession = parseHrSessionCookieValue(request.cookies.get(getHrSessionCookieName())?.value)
-
-  let resolvedSession = null
-  if (adminSession) {
-    resolvedSession = await resolveAdminSession(db, adminSession)
-  }
-  if (!resolvedSession && hrSession) {
-    resolvedSession = await resolveHrSession(db, hrSession)
-  }
-  if (!resolvedSession || !resolvedSession.active) {
-    return NextResponse.json({ ok: false, message: 'Admin or HR login is required.' }, { status: 401 })
-  }
-
+  const adminCookie = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
+  const hrCookie = parseHrSessionCookieValue(request.cookies.get(getHrSessionCookieName())?.value)
+  const session = (adminCookie && await resolveAdminSession(null, adminCookie)) || (hrCookie && await resolveHrSession(null, hrCookie))
+  if (!session?.active) return NextResponse.json({ ok: false, message: 'Admin or HR login is required.' }, { status: 401 })
   try {
-    if (usePostgres) {
-      const employees = (await listLocalDtrEmployees(resolvedSession)).map(person => ({
-        id: person.id,
-        name: person.name || '',
-        employeeId: person.employeeId || '',
-        officeId: person.officeId || '',
-        officeName: person.officeName || '',
-        active: person.active !== false,
-        approvalStatus: person.approvalStatus || 'pending',
-      }))
-
-      return NextResponse.json({ ok: true, employees })
-    }
-
-    let query = db.collection('persons').orderBy('nameLower', 'asc')
-
-    if (resolvedSession.scope === 'office' && resolvedSession.officeId) {
-      query = query.where('officeId', '==', resolvedSession.officeId)
-    } else if (resolvedSession.scope === 'regional') {
-    } else if (resolvedSession.officeId) {
-      query = query.where('officeId', '==', resolvedSession.officeId)
-    }
-
-    const snapshot = await query.get()
-
-    const employees = snapshot.docs.map(doc => {
-      const d = doc.data()
-      return {
-        id: doc.id,
-        name: d.name || '',
-        employeeId: d.employeeId || '',
-        officeId: d.officeId || '',
-        officeName: d.officeName || '',
-        active: d.active !== false,
-        approvalStatus: d.approvalStatus || 'pending',
-      }
-    })
-
+    const divisionId = String(new URL(request.url).searchParams.get('divisionId') || '').trim()
+    const employees = (await listLocalDtrEmployees({ ...session, divisionId })).map(person => ({
+      id: person.id, name: person.name || '', employeeId: person.employeeId || '', officeId: person.officeId || '', officeName: person.officeName || '',
+      divisionId: person.divisionId || '', divisionName: person.divisionName || '', lifecycleStatus: person.lifecycleStatus,
+    }))
     return NextResponse.json({ ok: true, employees })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load employees.' },
-      { status: 500 },
-    )
+    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to load employees.' }, { status: 500 })
   }
 }
-

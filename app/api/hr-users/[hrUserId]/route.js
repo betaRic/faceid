@@ -2,10 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
-import { hashPin } from '@/lib/hr-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
-import { postgresEnabled } from '@/lib/postgres/client'
 import {
   deleteLocalHrProfile,
   getLocalHrProfileById,
@@ -53,7 +51,6 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -63,36 +60,17 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const existing = usePostgres ? await getLocalHrProfileById(hrUserId) : await db.collection('hr_users').doc(hrUserId).get()
-    if (usePostgres ? !existing : !existing.exists) {
+    const existing = await getLocalHrProfileById(hrUserId)
+    if (!existing) {
       return NextResponse.json({ ok: false, message: 'HR user record was not found.' }, { status: 404 })
     }
 
-    const duplicate = body.email && (usePostgres
-      ? await localEmailExists('hr_users', body.email, hrUserId)
-      : (await db.collection('hr_users').where('email', '==', body.email).limit(2).get()).docs.some(record => record.id !== hrUserId))
+    const duplicate = body.email && await localEmailExists('hr_users', body.email, hrUserId)
     if (duplicate) {
       return NextResponse.json({ ok: false, message: 'Another HR user record already uses that email.' }, { status: 409 })
     }
 
-    if (usePostgres) {
-      await updateLocalHrProfile(hrUserId, body)
-    } else {
-      const updateData = {
-        email: body.email,
-        displayName: body.displayName,
-        scope: body.scope,
-        officeId: body.scope === 'office' ? body.officeId : '',
-        active: body.active,
-        updatedAt: FieldValue.serverTimestamp(),
-      }
-
-      if (body.pin) {
-        updateData.pinHash = hashPin(body.pin)
-      }
-
-      await db.collection('hr_users').doc(hrUserId).set(updateData, { merge: true })
-    }
+    await updateLocalHrProfile(hrUserId, body)
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,
@@ -135,7 +113,6 @@ export async function DELETE(request, { params }) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -145,15 +122,14 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const existing = usePostgres ? await getLocalHrProfileById(hrUserId) : await db.collection('hr_users').doc(hrUserId).get()
-    if (usePostgres ? !existing : !existing.exists) {
+    const existing = await getLocalHrProfileById(hrUserId)
+    if (!existing) {
       return NextResponse.json({ ok: false, message: 'HR user record was not found.' }, { status: 404 })
     }
 
-    const existingData = usePostgres ? existing : existing.data() || {}
+    const existingData = existing
 
-    if (usePostgres) await deleteLocalHrProfile(hrUserId)
-    else await db.collection('hr_users').doc(hrUserId).delete()
+    await deleteLocalHrProfile(hrUserId)
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

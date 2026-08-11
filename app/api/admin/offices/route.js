@@ -6,7 +6,6 @@ import { writeAuditLog } from '@/lib/audit-log'
 import { clearOfficeRecordCache } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { normalizeDivisionList, REGIONAL_OFFICE_TYPE } from '@/lib/offices'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { localOfficeExists, upsertLocalOffice } from '@/lib/postgres/report-store'
 
 function slugify(value) {
@@ -124,28 +123,18 @@ export async function POST(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const existing = usePostgres
-      ? await localOfficeExists(office.id)
-      : await db.collection('offices').doc(office.id).get()
-    if (usePostgres ? existing : existing.exists) {
+    const existing = await localOfficeExists(office.id)
+    if (existing) {
       return NextResponse.json({ ok: false, message: 'An office with the same generated ID already exists. Change the code, short name, or name.' }, { status: 409 })
     }
 
-    if (usePostgres) await upsertLocalOffice(office)
-    else {
-      await db.collection('offices').doc(office.id).set({
-        ...office,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      })
-    }
+    await upsertLocalOffice(office)
     await clearOfficeRecordCache()
 
     await writeAuditLog(db, {

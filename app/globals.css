@@ -452,10 +452,14 @@ body {
 }
 
 .nav-link {
-  padding: 0.5rem 1rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
-  font-weight: 500;
+  display: inline-flex;
+  height: 2.4rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: var(--color-slate);
   transition: all 0.15s ease;
 }
@@ -547,6 +551,16 @@ select.input {
   outline-offset: 2px;
 }
 
+/* Every actionable button acknowledges the press immediately.  Requests that
+   mutate data additionally set their own busy state and lock themselves. */
+button:not(:disabled) {
+  transition: transform 120ms ease, opacity 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
 /* =========================================================
    KIOSK & CAMERA UI
    ========================================================= */
@@ -568,6 +582,152 @@ select.input {
 @keyframes flashOut {
   from { opacity: 1; }
   to { opacity: 0; }
+}
+
+/* DILG brand loader: a real agency mark, not a second product logo. */
+.dilg-loading-mark {
+  position: relative;
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.dilg-loading-mark::after {
+  position: absolute;
+  bottom: 5px;
+  left: 17%;
+  width: 66%;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(3, 45, 87, 0.2);
+  content: "";
+  filter: blur(7px);
+  opacity: 0.5;
+  transform: translateY(5px);
+}
+
+.dilg-loading-mark__stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  animation: dilgLogoSpin 2.4s linear infinite;
+  will-change: transform;
+}
+
+.dilg-loading-mark__logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 5px rgba(3, 45, 87, 0.24));
+}
+
+.dilg-loading-mark--compact {
+  width: 44px;
+  height: 44px;
+}
+
+.dilg-loading-mark--compact .dilg-loading-mark__stage {
+  animation-duration: 1.7s;
+}
+
+/* Cosmetic kiosk feedback only. It is a DOM layer above the preview and does
+   not read, alter, delay, or submit camera frames. */
+.scan-visual {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  color: rgb(78, 255, 194);
+  box-shadow: inset 0 0 36px rgba(45, 235, 170, 0.13);
+}
+
+.scan-visual--verifying {
+  color: rgb(116, 193, 255);
+  box-shadow: inset 0 0 36px rgba(70, 153, 255, 0.16);
+}
+
+.scan-visual__grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.28;
+  background-image:
+    linear-gradient(to right, currentColor 1px, transparent 1px),
+    linear-gradient(to bottom, currentColor 1px, transparent 1px);
+  background-size: 25% 25%;
+  mask-image: radial-gradient(ellipse at center, black 18%, transparent 78%);
+}
+
+.scan-visual__sweep {
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: -22%;
+  height: 22%;
+  opacity: 0;
+  border-top: 2px solid currentColor;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 38%, transparent);
+  background: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, currentColor 12%, transparent) 55%, color-mix(in srgb, currentColor 35%, transparent) 100%);
+  box-shadow: 0 0 18px color-mix(in srgb, currentColor 72%, transparent), 0 12px 28px color-mix(in srgb, currentColor 18%, transparent);
+  animation: kioskScanSweep 1.8s cubic-bezier(.45, 0, .25, 1) infinite;
+}
+
+.scan-visual__target {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 38%;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, currentColor 62%, transparent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 8px color-mix(in srgb, currentColor 7%, transparent), 0 0 28px color-mix(in srgb, currentColor 22%, transparent);
+  animation: kioskTargetPulse 1.8s ease-in-out infinite;
+}
+
+.scan-visual__corner {
+  position: absolute;
+  width: 15%;
+  height: 15%;
+  border-color: currentColor;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, currentColor 70%, transparent));
+}
+
+.scan-visual__corner--tl { top: 9%; left: 10%; border-top: 3px solid; border-left: 3px solid; border-radius: 18px 0 0; }
+.scan-visual__corner--tr { top: 9%; right: 10%; border-top: 3px solid; border-right: 3px solid; border-radius: 0 18px 0 0; }
+.scan-visual__corner--bl { bottom: 9%; left: 10%; border-bottom: 3px solid; border-left: 3px solid; border-radius: 0 0 0 18px; }
+.scan-visual__corner--br { right: 10%; bottom: 9%; border-right: 3px solid; border-bottom: 3px solid; border-radius: 0 0 18px; }
+
+.scan-visual--verifying .scan-visual__sweep {
+  animation-duration: 1.05s;
+}
+
+@keyframes kioskScanSweep {
+  0% { transform: translateY(0); opacity: 0; }
+  8%, 86% { opacity: 1; }
+  100% { transform: translateY(560%); opacity: 0; }
+}
+
+@keyframes kioskTargetPulse {
+  0%, 100% { opacity: 0.45; transform: translate(-50%, -50%) scale(0.95); }
+  50% { opacity: 0.9; transform: translate(-50%, -50%) scale(1.04); }
+}
+
+@keyframes dilgLogoSpin {
+  from { transform: rotate(0deg) scale(0.96); }
+  50% { transform: rotate(180deg) scale(1); }
+  to { transform: rotate(360deg) scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dilg-loading-mark__stage { animation: none; }
+  .scan-visual__sweep, .scan-visual__target { animation: none; }
+  .scan-visual__sweep { top: 43%; opacity: 0.8; }
 }
 
 /* =========================================================

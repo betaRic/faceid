@@ -72,11 +72,33 @@ function AdminsPanelInner() {
   }
 
   return (
-    <section className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Roles</div>
-          <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Manage Roles</h2>
+    <section className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:p-4 md:h-full md:overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setFilterRole('all')}
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+              filterRole === 'all' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilterRole('admin')}
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+              filterRole === 'admin' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
+            }`}
+          >
+            Admins
+          </button>
+          <button
+            onClick={() => setFilterRole('hr')}
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+              filterRole === 'hr' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
+            }`}
+          >
+            HR
+          </button>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
@@ -84,34 +106,6 @@ function AdminsPanelInner() {
         >
           + Add Role
         </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setFilterRole('all')}
-          className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-            filterRole === 'all' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
-          }`}
-        >
-          All
-        </button>
-        <button
-          onClick={() => setFilterRole('admin')}
-          className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-            filterRole === 'admin' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
-          }`}
-        >
-          Admins
-        </button>
-        <button
-          onClick={() => setFilterRole('hr')}
-          className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-            filterRole === 'hr' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
-          }`}
-        >
-          HR
-        </button>
-        
       </div>
 
       <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">

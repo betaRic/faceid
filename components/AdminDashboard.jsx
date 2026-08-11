@@ -9,6 +9,7 @@ import { useAdminStore } from '@/lib/admin/store'
 import { useOffices } from '@/lib/admin/hooks/useOffices'
 import { usePendingApprovals } from '@/lib/admin/hooks/usePendingApprovals'
 import { ToastContainer } from '@/components/shared/ui'
+import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
 import { DashboardPanel } from './admin/DashboardPanel'
 import { EmployeesPanel } from './admin/EmployeesPanel'
 import { SummaryPanel } from './admin/SummaryPanel'
@@ -20,6 +21,13 @@ import EmployeeDeleteModal from '@/components/admin/EmployeeDeleteModal'
 import { HrEmployeesPanel } from './admin/HrEmployeesPanel'
 import HrOfficeSettingsPanel from './admin/HrOfficeSettingsPanel'
 import { ThresholdSettings } from './admin/ThresholdSettings'
+import WorkforcePanel from './admin/WorkforcePanel'
+
+function HeaderActionIcon({ name }) {
+  const props = { className: 'h-4 w-4', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', 'aria-hidden': true }
+  if (name === 'scan') return <svg {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M4 8V5a1 1 0 0 1 1-1h3m8 0h3a1 1 0 0 1 1 1v3M4 16v3a1 1 0 0 0 1 1h3m8 0h3a1 1 0 0 0 1-1v-3M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z" /></svg>
+  return <svg {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M10 7V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2m4-5H3m0 0 3-3m-3 3 3 3" /></svg>
+}
 
 export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '', permissions = [] }) {
   const router = useRouter()
@@ -58,6 +66,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       { id: 'office', label: 'Office' },
       { id: 'employees', label: 'Employees' },
       { id: 'summary', label: 'Summary' },
+      { id: 'workforce', label: 'Workforce' },
       { id: 'settings', label: 'Settings' },
       { id: 'roles', label: 'Roles' },
     ]
@@ -68,8 +77,12 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
         disabled: item.id === 'roles' && roleScope !== 'regional',
         badge: item.id === 'employees' && pendingCount > 0 ? pendingCount : null,
       }))
+    if (!isHr && roleScope === 'regional' && !permittedItems.some(item => item.id === 'workforce')) {
+      permittedItems.splice(Math.max(0, permittedItems.findIndex(item => item.id === 'settings')), 0, { id: 'workforce', label: 'Workforce' })
+    }
     if (isHr && roleScope === 'office') {
       permittedItems.push({ id: 'office-settings', label: 'Office Settings' })
+      permittedItems.push({ id: 'workforce', label: 'Workforce' })
     }
     return permittedItems
   }, [isHr, pendingCount, permissions, roleScope])
@@ -102,12 +115,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
   if (!officesLoaded) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[linear-gradient(180deg,#f6f8fc_0%,#edf2f8_100%)] px-4">
-        <div className="flex h-64 items-center justify-center rounded-[1.6rem] border border-black/5 bg-white px-8 shadow-sm">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-            <span className="text-sm text-muted">Loading workspace...</span>
-          </div>
-        </div>
+        <div className="flex h-64 items-center justify-center rounded-[1.6rem] border border-black/5 bg-white px-8 shadow-sm"><DilgLoadingIndicator label="Loading workspace…" /></div>
       </div>
     )
   }
@@ -118,16 +126,18 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
             href="/scan"
           >
+            <HeaderActionIcon name="scan" />
             Scan
           </Link>
           <button
-            className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
             onClick={handleLogout}
             type="button"
           >
+            <HeaderActionIcon name="logout" />
             Logout
           </button>
         </div>
@@ -136,12 +146,21 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       onPanelChange={setActivePanel}
       roleScope={roleScope}
     >
-      <div className="flex min-h-0 flex-col p-2 pb-3 sm:p-5 md:h-full md:pb-5">
+      {editingEmployee ? (
+        <EmployeeEditorModal
+          person={editingEmployee}
+          onSave={() => {
+            setEditingEmployee(null)
+          }}
+          onCancel={() => setEditingEmployee(null)}
+        />
+      ) : <div className="flex min-h-0 flex-col p-2 pb-3 sm:p-5 md:h-full md:pb-5">
         {isHr ? (
           <>
             {activePanel === 'employees' && <HrEmployeesPanel />}
             {activePanel === 'summary' && <SummaryPanel />}
             {activePanel === 'office-settings' && <HrOfficeSettingsPanel />}
+            {activePanel === 'workforce' && <WorkforcePanel allowNationalHolidays={roleScope === 'regional'} />}
           </>
         ) : (
           <>
@@ -149,24 +168,14 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
             {activePanel === 'office' && <OfficePanel />}
             {activePanel === 'employees' && <EmployeesPanel />}
             {activePanel === 'summary' && <SummaryPanel />}
+            {activePanel === 'workforce' && <WorkforcePanel allowNationalHolidays={roleScope === 'regional'} />}
             {activePanel === 'settings' && <ThresholdSettings />}
             {activePanel === 'roles' && <AdminsPanel />}
           </>
         )}
-      </div>
+      </div>}
 
       <ToastContainer />
-
-      {editingEmployee && (
-        <EmployeeEditorModal
-          person={editingEmployee}
-          onSave={() => {
-            useAdminStore.getState().addToast(`${editingEmployee.name} updated`, 'success')
-            setEditingEmployee(null)
-          }}
-          onCancel={() => setEditingEmployee(null)}
-        />
-      )}
 
       {deletingEmployee && (
         <EmployeeDeleteModal

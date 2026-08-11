@@ -29,10 +29,6 @@ function normalizeNonNegativeInteger(value, fallback) {
 }
 
 function validateOfficeHrSettings(payload) {
-  const location = String(payload?.location || '').trim()
-  const provinceOrCity = String(payload?.provinceOrCity || '').trim()
-  const latitude = Number(payload?.gps?.latitude)
-  const longitude = Number(payload?.gps?.longitude)
   const workPolicy = payload?.workPolicy || {}
   const morningIn = normalizeTime(workPolicy.morningIn)
   const morningOut = normalizeTime(workPolicy.morningOut)
@@ -41,11 +37,6 @@ function validateOfficeHrSettings(payload) {
   const schedule = String(workPolicy.schedule || '').trim()
   const workingDays = normalizeDays(workPolicy.workingDays)
 
-  if (!location) return { error: 'Location label is required.' }
-  if (!provinceOrCity) return { error: 'Province or city is required.' }
-  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-    return { error: 'Enter valid GPS coordinates.' }
-  }
   if (!schedule) return { error: 'Schedule label is required.' }
   if (workingDays.length === 0) return { error: 'Choose at least one working day.' }
   if (!morningIn || !morningOut || !afternoonIn || !afternoonOut) return { error: 'Complete all session times before saving.' }
@@ -54,9 +45,6 @@ function validateOfficeHrSettings(payload) {
 
   return {
     value: {
-      location,
-      provinceOrCity,
-      gps: { latitude, longitude },
       workPolicy: {
         schedule,
         workingDays,
@@ -115,15 +103,6 @@ export async function PUT(request) {
 
     const updatedOffice = normalizeOfficeRecord({
       ...access.office,
-      location: parsed.value.location,
-      provinceOrCity: parsed.value.provinceOrCity,
-      gps: {
-        ...access.office.gps,
-        latitude: parsed.value.gps.latitude,
-        longitude: parsed.value.gps.longitude,
-        // Geofence radius is deliberately preserved: only an admin can change it.
-        radiusMeters: access.office.gps.radiusMeters,
-      },
       workPolicy: {
         ...access.office.workPolicy,
         ...parsed.value.workPolicy,
@@ -142,11 +121,7 @@ export async function PUT(request) {
       officeId: updatedOffice.id,
       summary: `Office HR updated allowed settings for ${updatedOffice.name}`,
       metadata: {
-        locationChanged: access.office.location !== updatedOffice.location
-          || access.office.gps.latitude !== updatedOffice.gps.latitude
-          || access.office.gps.longitude !== updatedOffice.gps.longitude,
         workPolicyChanged: JSON.stringify(access.office.workPolicy) !== JSON.stringify(updatedOffice.workPolicy),
-        geofenceRadiusMeters: updatedOffice.gps.radiusMeters,
       },
     })
 

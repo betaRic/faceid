@@ -74,19 +74,20 @@ export default function EmployeeDeleteModal({ person, onCancel }) {
 
         <div className="mt-6 flex justify-end gap-3">
           <button
-            className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:opacity-50"
+            disabled={isDeleting}
             onClick={onCancel}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!canDelete || isDeleting}
             onClick={handleDelete}
             type="button"
           >
-            {isDeleting ? 'Deleting...' : 'Delete'}
+            {isDeleting ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Deleting...</> : 'Delete'}
           </button>
         </div>
       </motion.div>

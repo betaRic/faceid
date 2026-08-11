@@ -2,450 +2,123 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { writeAuditLog } from '@/lib/audit-log'
-import { deletePersonBiometricIndex, syncPersonBiometricIndex } from '@/lib/biometric-index'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/employee-access'
-import { deletePersonBiometricsRecord, syncPersonBiometricsRecord } from '@/lib/person-biometrics'
-import { kvDel, kvKeys } from '@/lib/kv-utils'
-import { deleteEnrollmentPhoto } from '@/lib/storage'
-import { postgresEnabled } from '@/lib/postgres/client'
-import {
-  deleteLocalPerson,
-  getLocalPersonById,
-  updateLocalPersonProfile,
-} from '@/lib/postgres/person-store'
-import {
-  getEffectivePersonApprovalStatus,
-  PERSON_APPROVAL_APPROVED,
-  PERSON_APPROVAL_PENDING,
-  PERSON_APPROVAL_REJECTED,
-  normalizePersonApprovalStatus,
-} from '@/lib/person-approval'
+import { deleteLocalPerson, getLocalPersonById, updateLocalPersonProfile } from '@/lib/postgres/person-store'
+import { PERSON_LIFECYCLE_ACTIVE, PERSON_LIFECYCLE_INACTIVE, PERSON_LIFECYCLE_PENDING, normalizePersonLifecycleStatus } from '@/lib/person-approval'
 import { normalizeEmployeeNameFields } from '@/lib/person-name'
 import { normalizeEmployeeWfhDays } from '@/lib/employee-wfh'
+import { normalizeWeeklySchedule } from '@/lib/workforce-policy'
 
 function normalizeBody(body) {
   const names = normalizeEmployeeNameFields(body || {})
   return {
     ...names,
-    employeeId: String(body?.employeeId || '').trim(),
-    position: String(body?.position || '').trim(),
-    officeId: String(body?.officeId || '').trim(),
-    officeName: String(body?.officeName || '').trim(),
-    divisionId: String(body?.divisionId || '').trim(),
-    divisionName: String(body?.divisionName || '').trim(),
+    employeeId: String(body?.employeeId || '').trim(), position: String(body?.position || '').trim(),
+    officeId: String(body?.officeId || '').trim(), officeName: String(body?.officeName || '').trim(),
+    divisionId: String(body?.divisionId || '').trim(), divisionName: String(body?.divisionName || '').trim(),
     individualWfhDays: normalizeEmployeeWfhDays(body?.individualWfhDays),
-    active: body?.active !== false,
-    approvalStatus: typeof body?.approvalStatus === 'string'
-      ? normalizePersonApprovalStatus(body?.approvalStatus, '')
-      : '',
+    lifecycleStatus: typeof body?.lifecycleStatus === 'string' ? normalizePersonLifecycleStatus(body.lifecycleStatus, '') : '',
+    weeklySchedule: Object.prototype.hasOwnProperty.call(body || {}, 'weeklySchedule') ? normalizeWeeklySchedule(body?.weeklySchedule) : undefined,
+    flexitime: Object.prototype.hasOwnProperty.call(body || {}, 'flexitime') ? { enabled: body?.flexitime?.enabled === true, requiredMinutes: Number(body?.flexitime?.requiredMinutes) || null } : undefined,
   }
 }
 
 function validateBody(body) {
   if (!body.lastName) return 'Last name is required.'
   if (!body.firstName) return 'First name is required.'
-  if (!body.employeeId) return 'Employee ID is required.'
-  if (body.employeeId.length < 3 || body.employeeId.length > 20) return 'Employee ID must be 3-20 characters.'
-  if (!/^\d+$/.test(body.employeeId)) return 'Employee ID must contain digits only, with no letters, spaces, or dashes.'
-  if (!body.position) return 'Position is required.'
-  if (body.position.length < 2 || body.position.length > 80) return 'Position must be 2-80 characters.'
+  if (body.employeeId && (body.employeeId.length < 3 || body.employeeId.length > 20 || !/^\d+$/.test(body.employeeId))) return 'Employee ID must contain 3-20 digits only.'
+  if (!body.position || body.position.length < 2 || body.position.length > 80) return 'Position must be 2-80 characters.'
   if (!body.officeId) return 'Assigned office is required.'
-  if (body.approvalStatus && ![
-    PERSON_APPROVAL_PENDING,
-    PERSON_APPROVAL_APPROVED,
-    PERSON_APPROVAL_REJECTED,
-  ].includes(body.approvalStatus)) return 'Approval status is not valid.'
-  return null
+  if (body.lifecycleStatus && ![PERSON_LIFECYCLE_PENDING, PERSON_LIFECYCLE_ACTIVE, PERSON_LIFECYCLE_INACTIVE].includes(body.lifecycleStatus)) return 'Lifecycle status is not valid.'
+  return ''
 }
 
-function validateDivisionAgainstOffice(body, office) {
-  const officeType = String(office?.officeType || '').trim()
-  const divisions = Array.isArray(office?.divisions) ? office.divisions : []
-  if (officeType === 'Regional Office') {
-    if (!body.divisionId) return 'Division or unit is required for Regional Office staff.'
-    const valid = divisions.some(d => d?.id === body.divisionId)
-    if (!valid) return 'Selected division or unit is not configured for this office.'
-  }
-  return null
-}
-
-async function commitDeleteBatch(db, refs) {
-  if (!refs.length) return 0
-  let deleted = 0
-  for (let index = 0; index < refs.length; index += 400) {
-    const batch = db.batch()
-    refs.slice(index, index + 400).forEach(ref => {
-      batch.delete(ref)
-      deleted += 1
-    })
-    await batch.commit()
-  }
-  return deleted
-}
-
-async function invalidateDeletedEmployeeCaches(employeeId, officeId) {
-  const keys = []
-  if (employeeId) {
-    const attendanceKeys = await kvKeys(`attendance:logs:${employeeId}:*`)
-    keys.push(...attendanceKeys)
-  }
-  if (officeId) {
-    keys.push(`bioidx:${officeId}`)
-  }
-  await Promise.all(Array.from(new Set(keys)).map(key => kvDel(key)))
+function validateDivision(body, office) {
+  if (String(office?.officeType || '') !== 'Regional Office') return ''
+  if (!body.divisionId) return 'Division or unit is required for Regional Office staff.'
+  return Array.isArray(office.divisions) && office.divisions.some(division => division?.id === body.divisionId) ? '' : 'Selected division or unit is not configured for this office.'
 }
 
 export async function PUT(request, { params }) {
-  const checkOrigin = createOriginGuard()
-  const originError = await checkOrigin(request)
+  const originError = await createOriginGuard()(request)
   if (originError) return originError
-
   const { personId } = await params
-
-  if (!personId) {
-    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
-  }
-
+  if (!personId) return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
   const body = normalizeBody(await request.json().catch(() => null))
-  const validationError = validateBody(body)
-  if (validationError) {
-    return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
-  }
+  const validation = validateBody(body)
+  if (validation) return NextResponse.json({ ok: false, message: validation }, { status: 400 })
 
   try {
-    const usePostgres = postgresEnabled()
-    const db = null
-    const resolvedSession = await resolveEmployeeManagementSession(request, db)
-    if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin or HR employee-management access is required.' }, { status: 403 })
-    }
+    const session = await resolveEmployeeManagementSession(request, null)
+    if (!session) return NextResponse.json({ ok: false, message: 'Admin or HR employee-management access is required.' }, { status: 403 })
+    const existing = await getLocalPersonById(personId)
+    if (!existing) return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
+    const office = await getOfficeRecord(null, body.officeId)
+    if (!office) return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 400 })
+    const divisionError = validateDivision(body, office)
+    if (divisionError) return NextResponse.json({ ok: false, message: divisionError }, { status: 400 })
+    if (!sessionAllowsOffice(session, existing.officeId) || !sessionAllowsOffice(session, office.id)) return NextResponse.json({ ok: false, message: 'This session cannot update that employee.' }, { status: 403 })
 
-    const existing = usePostgres ? await getLocalPersonById(personId) : await db.collection('persons').doc(personId).get()
-    if (usePostgres ? !existing : !existing.exists) {
-      return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
-    }
-
-    const office = await getOfficeRecord(db, body.officeId)
-    if (!office) {
-      return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 400 })
-    }
-
-    const divisionError = validateDivisionAgainstOffice(body, office)
-    if (divisionError) {
-      return NextResponse.json({ ok: false, message: divisionError }, { status: 400 })
-    }
-
-    const existingData = usePostgres ? existing : existing.data()
-    if (!sessionAllowsOffice(resolvedSession, existingData.officeId) || !sessionAllowsOffice(resolvedSession, office.id)) {
-      return NextResponse.json({ ok: false, message: 'This session cannot update that employee.' }, { status: 403 })
-    }
-
-    if (usePostgres) {
-      const updateResult = await updateLocalPersonProfile(personId, body, office, resolvedSession)
-      if (!updateResult) {
-        return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
-      }
-      const action = updateResult.approvalChanged
-        ? updateResult.nextPerson.approvalStatus === PERSON_APPROVAL_APPROVED
-          ? 'person_approve'
-          : updateResult.nextPerson.approvalStatus === PERSON_APPROVAL_REJECTED
-            ? 'person_reject'
-            : 'person_review_reset'
-        : updateResult.officeChanged
-          ? 'person_transfer'
-          : 'person_update'
-      await writeAuditLog(db, {
-        actorRole: resolvedSession.role,
-        actorScope: resolvedSession.scope,
-        actorOfficeId: resolvedSession.officeId,
-        action,
-        targetType: 'person',
-        targetId: personId,
-        officeId: office.id,
-        summary: `Updated employee record for ${body.name}`,
+    const updateResult = await updateLocalPersonProfile(personId, body, office, session)
+    if (!updateResult) return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
+    const lifecycleChanged = updateResult.existing.lifecycleStatus !== updateResult.nextPerson.lifecycleStatus
+    const scheduleChanged = JSON.stringify(updateResult.existing.weeklySchedule || {}) !== JSON.stringify(updateResult.nextPerson.weeklySchedule || {})
+      || JSON.stringify(updateResult.existing.flexitime || {}) !== JSON.stringify(updateResult.nextPerson.flexitime || {})
+    const action = lifecycleChanged
+      ? `person_lifecycle_${updateResult.nextPerson.lifecycleStatus}`
+      : updateResult.officeChanged ? 'person_transfer' : 'person_update'
+    await writeAuditLog(null, {
+      actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId, action,
+      targetType: 'person', targetId: personId, officeId: office.id, summary: `Updated employee record for ${body.name}`,
+      metadata: { employeeId: updateResult.existing.employeeId || '', officeName: office.name, lifecycleStatus: updateResult.nextPerson.lifecycleStatus },
+    })
+    if (scheduleChanged) {
+      await writeAuditLog(null, {
+        actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId,
+        action: 'workforce.update', targetType: 'workforce_employee_schedule', targetId: personId, officeId: office.id,
+        summary: `Updated employee schedule and flexitime for ${body.name}`,
         metadata: {
-          employeeId: updateResult.existing.employeeId || '',
-          officeName: office.name,
-          active: body.active,
-          approvalStatus: updateResult.nextPerson.approvalStatus,
+          before: { weeklySchedule: updateResult.existing.weeklySchedule || {}, flexitime: updateResult.existing.flexitime || {} },
+          after: { weeklySchedule: updateResult.nextPerson.weeklySchedule || {}, flexitime: updateResult.nextPerson.flexitime || {} },
         },
       })
-      return NextResponse.json({ ok: true })
     }
-
-    const previousApprovalStatus = getEffectivePersonApprovalStatus(existingData)
-    const nextApprovalStatus = body.approvalStatus || previousApprovalStatus
-    const approvalChanged = previousApprovalStatus !== nextApprovalStatus
-    const approvalUpdatedAt = approvalChanged ? FieldValue.serverTimestamp() : existingData.approvalUpdatedAt
-    const approvalUpdatedByEmail = approvalChanged ? resolvedSession.email : existingData.approvalUpdatedByEmail
-    const approvedAt = approvalChanged
-      ? nextApprovalStatus === PERSON_APPROVAL_APPROVED
-        ? FieldValue.serverTimestamp()
-        : previousApprovalStatus === PERSON_APPROVAL_APPROVED
-          ? FieldValue.delete()
-          : existingData.approvedAt
-      : existingData.approvedAt
-
-    const officeChanged = existingData.officeId !== office.id
-    const isRegional = String(office.officeType || '').trim() === 'Regional Office'
-    const division = isRegional
-      ? (Array.isArray(office.divisions) ? office.divisions : []).find(d => d?.id === body.divisionId) || null
-      : null
-    const nextPerson = {
-      ...existingData,
-      ...body,
-      officeId: office.id,
-      officeName: office.name,
-      divisionId: isRegional ? (division?.id || '') : '',
-      divisionName: isRegional ? (division?.name || '') : '',
-      nameLower: body.name.toLowerCase(),
-      updatedAt: FieldValue.serverTimestamp(),
-      approvalStatus: nextApprovalStatus,
-      approvalUpdatedAt,
-      approvalUpdatedByEmail,
-      approvedAt,
-    }
-
-    if (
-      approvalChanged
-      && (existingData.duplicateReviewRequired === true || ['required', 'review_required'].includes(existingData.duplicateReviewStatus))
-      && nextApprovalStatus !== PERSON_APPROVAL_PENDING
-    ) {
-      nextPerson.duplicateReviewRequired = false
-      nextPerson.duplicateReviewStatus = 'resolved'
-      nextPerson.duplicateReviewResolvedAt = FieldValue.serverTimestamp()
-      nextPerson.duplicateReviewResolvedByEmail = resolvedSession.email || ''
-    }
-
-    await db.collection('persons').doc(personId).set(nextPerson, { merge: true })
-    await syncPersonBiometricIndex(db, personId, nextPerson)
-    try {
-      await syncPersonBiometricsRecord(db, personId, nextPerson)
-    } catch (err) {
-      console.warn(`[PersonUpdate] person_biometrics sync failed for ${personId}:`, err?.message)
-    }
-
-    const action = approvalChanged
-      ? nextApprovalStatus === PERSON_APPROVAL_APPROVED
-        ? 'person_approve'
-        : nextApprovalStatus === PERSON_APPROVAL_REJECTED
-          ? 'person_reject'
-          : 'person_review_reset'
-      : officeChanged
-        ? 'person_transfer'
-        : 'person_update'
-
-    const summary = approvalChanged
-      ? nextApprovalStatus === PERSON_APPROVAL_APPROVED
-        ? `Approved employee enrollment for ${body.name}`
-        : nextApprovalStatus === PERSON_APPROVAL_REJECTED
-          ? `Rejected employee enrollment for ${body.name}`
-          : `Returned employee enrollment to pending review for ${body.name}`
-      : officeChanged
-        ? `Transferred ${body.name} from ${existingData.officeName || 'unknown'} to ${office.name}`
-        : `Updated employee record for ${body.name}`
-
-    await writeAuditLog(db, {
-      actorRole: resolvedSession.role,
-      actorScope: resolvedSession.scope,
-      actorOfficeId: resolvedSession.officeId,
-      action,
-      targetType: 'person',
-      targetId: personId,
-      officeId: office.id,
-      summary,
-      metadata: {
-        employeeId: existingData.employeeId || '',
-        officeName: office.name,
-        active: body.active,
-        approvalStatus: nextApprovalStatus,
-        ...(officeChanged && {
-          previousOffice: existingData.officeName || existingData.officeId || 'unknown',
-          previousOfficeId: existingData.officeId || '',
-        }),
-      },
-    })
-
     return NextResponse.json({ ok: true })
   } catch (error) {
     const status = Number(error?.status)
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to update employee.' },
-      { status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500 },
-    )
-  }
-}
-
-async function hardDeleteEmployee(db, resolvedSession, personId, personData) {
-  const personIdStr = String(personId)
-  const employeeIdStr = String(personData.employeeId || '')
-  const officeIdStr = String(personData.officeId || '')
-  const biometricDeleted = Array.isArray(personData.descriptors) ? personData.descriptors.length : 0
-
-  const entriesToDelete = await Promise.all([
-    employeeIdStr ? db.collection('attendance').where('employeeId', '==', employeeIdStr).get() : Promise.resolve({ empty: true, docs: [] }),
-    employeeIdStr ? db.collection('attendance_daily').where('employeeId', '==', employeeIdStr).get() : Promise.resolve({ empty: true, docs: [] }),
-    employeeIdStr ? db.collection('attendance_locks').where('employeeId', '==', employeeIdStr).get() : Promise.resolve({ empty: true, docs: [] }),
-    db.collection('person_enrollment_locks').where('personId', '==', personIdStr).get(),
-  ])
-
-  const attendanceRefs = entriesToDelete[0].docs.map(doc => doc.ref)
-  const attendanceDailyRefs = entriesToDelete[1].docs.map(doc => doc.ref)
-  const attendanceLockRefs = entriesToDelete[2].docs.map(doc => doc.ref)
-  const enrollmentLockRefs = entriesToDelete[3].docs.map(doc => doc.ref)
-
-  if (employeeIdStr) {
-    attendanceLockRefs.push(db.collection('attendance_locks').doc(employeeIdStr))
-    enrollmentLockRefs.push(db.collection('person_enrollment_locks').doc(employeeIdStr))
-  }
-
-  await deletePersonBiometricIndex(db, personIdStr, { officeIds: [officeIdStr] })
-  await deletePersonBiometricsRecord(db, personIdStr)
-  const attendanceDeleted = await commitDeleteBatch(db, attendanceRefs)
-  const attendanceDailyDeleted = await commitDeleteBatch(db, attendanceDailyRefs)
-  const attendanceLocksDeleted = await commitDeleteBatch(db, Array.from(new Map(attendanceLockRefs.map(ref => [ref.path, ref])).values()))
-  const enrollmentLocksDeleted = await commitDeleteBatch(db, Array.from(new Map(enrollmentLockRefs.map(ref => [ref.path, ref])).values()))
-  await db.collection('persons').doc(personIdStr).delete()
-
-  const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-  const photoDeleted = storageBucket ? await deleteEnrollmentPhoto(storageBucket, personIdStr) : false
-  await invalidateDeletedEmployeeCaches(employeeIdStr, officeIdStr)
-
-  await writeAuditLog(db, {
-    actorRole: resolvedSession.role,
-    actorScope: resolvedSession.scope,
-    actorOfficeId: resolvedSession.officeId,
-    action: 'person_hard_delete',
-    targetType: 'person',
-    targetId: personIdStr,
-    officeId: officeIdStr,
-    summary: `Hard deleted employee ${personData.name || personIdStr} and all related data`,
-    metadata: {
-      employeeId: employeeIdStr,
-      officeName: personData.officeName || '',
-      biometricDeleted,
-      attendanceDeleted,
-      attendanceDailyDeleted,
-      attendanceLocksDeleted,
-      enrollmentLocksDeleted,
-      photoDeleted,
-    },
-  })
-
-  return {
-    biometricDeleted,
-    attendanceDeleted,
-    attendanceDailyDeleted,
-    attendanceLocksDeleted,
-    enrollmentLocksDeleted,
-    photoDeleted,
+    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update employee.' }, { status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500 })
   }
 }
 
 export async function DELETE(request, { params }) {
-  const checkOrigin = createOriginGuard()
-  const originError = await checkOrigin(request)
+  const originError = await createOriginGuard()(request)
   if (originError) return originError
-
   const { personId } = await params
-
-  if (!personId) {
-    return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
-  }
-
+  if (!personId) return NextResponse.json({ ok: false, message: 'Invalid request.' }, { status: 400 })
   const { searchParams } = new URL(request.url)
   const hardDelete = searchParams.get('hard') === 'true'
   const confirmName = String(searchParams.get('confirm') || '').trim().toLowerCase()
-
   try {
-    const usePostgres = postgresEnabled()
-    const db = null
-    const resolvedSession = await resolveEmployeeManagementSession(request, db)
-    if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin or HR login with employee access is required to delete employees.' }, { status: 401 })
-    }
+    const session = await resolveEmployeeManagementSession(request, null)
+    if (!session) return NextResponse.json({ ok: false, message: 'Admin or HR login with employee access is required.' }, { status: 401 })
+    const person = await getLocalPersonById(personId)
+    if (!person) return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
+    if (!sessionAllowsOffice(session, person.officeId)) return NextResponse.json({ ok: false, message: 'This session cannot delete that employee.' }, { status: 403 })
+    if (hardDelete && (!confirmName || confirmName !== String(person.name || '').trim().toLowerCase())) return NextResponse.json({ ok: false, message: 'Hard delete requires the exact employee name confirmation.' }, { status: 400 })
 
-    const existing = usePostgres ? await getLocalPersonById(personId) : await db.collection('persons').doc(personId).get()
-    if (usePostgres ? !existing : !existing.exists) {
-      return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
-    }
-
-    const personData = usePostgres ? existing : existing.data()
-    if (!personData) {
-      return NextResponse.json({ ok: false, message: 'Employee record was not found.' }, { status: 404 })
-    }
-
-    if (!sessionAllowsOffice(resolvedSession, personData.officeId)) {
-      return NextResponse.json({ ok: false, message: 'This session cannot delete that employee.' }, { status: 403 })
-    }
-
-    if (hardDelete) {
-      if (!confirmName) {
-        return NextResponse.json({ ok: false, message: 'Employee name confirmation is required for hard delete.' }, { status: 400 })
-      }
-      const employeeName = String(personData.name || '').trim().toLowerCase()
-      if (confirmName !== employeeName) {
-        return NextResponse.json({ ok: false, message: 'Employee name does not match. Hard delete requires exact name confirmation.' }, { status: 400 })
-      }
-
-      if (usePostgres) {
-        const deleted = await deleteLocalPerson(personId, { hardDelete: true })
-        const { deleteLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
-        const photoDeleted = await deleteLocalEnrollmentPhoto(personData)
-        await writeAuditLog(db, {
-          actorRole: resolvedSession.role,
-          actorScope: resolvedSession.scope,
-          actorOfficeId: resolvedSession.officeId,
-          action: 'person_hard_delete',
-          targetType: 'person',
-          targetId: personId,
-          officeId: personData.officeId || '',
-          summary: `Hard deleted employee ${personData.name || personId} and all related data`,
-          metadata: {
-            employeeId: personData.employeeId || '',
-            officeName: personData.officeName || '',
-            ...(deleted?.counts || {}),
-            photoDeleted,
-          },
-        })
-        return NextResponse.json({ ok: true, hardDeleted: true, deletedCounts: { ...(deleted?.counts || {}), photoDeleted } })
-      }
-
-      const deletedCounts = await hardDeleteEmployee(db, resolvedSession, personId, personData)
-      return NextResponse.json({ ok: true, hardDeleted: true, deletedCounts })
-    }
-
-    if (usePostgres) {
-      await deleteLocalPerson(personId, { hardDelete: false })
-      const { deleteLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
-      await deleteLocalEnrollmentPhoto(personData)
-    } else {
-      await db.collection('persons').doc(personId).delete()
-      await deletePersonBiometricIndex(db, personId, { officeIds: [personData.officeId] })
-      await deletePersonBiometricsRecord(db, personId)
-    }
-    await writeAuditLog(db, {
-      actorRole: resolvedSession.role,
-      actorScope: resolvedSession.scope,
-      actorOfficeId: resolvedSession.officeId,
-      action: 'person_delete',
-      targetType: 'person',
-      targetId: personId,
-      officeId: personData.officeId || '',
-      summary: `Deleted employee record for ${personData.name || personId}`,
-      metadata: {
-        employeeId: personData.employeeId || '',
-        officeName: personData.officeName || '',
-      },
+    const deleted = await deleteLocalPerson(personId, { hardDelete })
+    const { deleteLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
+    const photoDeleted = await deleteLocalEnrollmentPhoto(person)
+    await writeAuditLog(null, {
+      actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId,
+      action: hardDelete ? 'person_hard_delete' : 'person_delete', targetType: 'person', targetId: personId, officeId: person.officeId || '',
+      summary: `${hardDelete ? 'Hard deleted' : 'Deleted'} employee record for ${person.name || personId}`,
+      metadata: { employeeId: person.employeeId || '', officeName: person.officeName || '', ...(deleted?.counts || {}), photoDeleted },
     })
-    return NextResponse.json({ ok: true, hardDeleted: false })
+    return NextResponse.json({ ok: true, hardDeleted: hardDelete, deletedCounts: { ...(deleted?.counts || {}), photoDeleted } })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to delete employee.' },
-      { status: 500 },
-    )
+    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete employee.' }, { status: 500 })
   }
 }
-

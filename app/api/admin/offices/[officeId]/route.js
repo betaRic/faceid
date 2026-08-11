@@ -6,7 +6,6 @@ import { writeAuditLog } from '@/lib/audit-log'
 import { clearOfficeRecordCache } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { normalizeDivisionList, REGIONAL_OFFICE_TYPE } from '@/lib/offices'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { deleteLocalOffice, getLocalOfficeReferenceCounts, localOfficeExists, upsertLocalOffice } from '@/lib/postgres/report-store'
 
 function normalizeOfficePayload(officeId, payload) {
@@ -118,7 +117,6 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -128,13 +126,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ ok: false, message: 'This admin session cannot edit that office.' }, { status: 403 })
     }
 
-    if (usePostgres) await upsertLocalOffice(office)
-    else {
-      await db.collection('offices').doc(office.id).set({
-        ...office,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true })
-    }
+    await upsertLocalOffice(office)
     await clearOfficeRecordCache()
 
     await writeAuditLog(db, {
@@ -181,27 +173,18 @@ export async function DELETE(request, { params }) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
-    const officeRef = usePostgres ? null : db.collection('offices').doc(officeId)
-    const officeSnapshot = usePostgres ? await localOfficeExists(officeId) : await officeRef.get()
-    if (usePostgres ? !officeSnapshot : !officeSnapshot.exists) {
+    const exists = await localOfficeExists(officeId)
+    if (!exists) {
       return NextResponse.json({ ok: false, message: 'Office not found.' }, { status: 404 })
     }
 
-    const references = usePostgres
-      ? await getLocalOfficeReferenceCounts(officeId)
-      : {
-          persons: (await db.collection('persons').where('officeId', '==', officeId).count().get()).data().count,
-          admins: (await db.collection('admins').where('officeId', '==', officeId).count().get()).data().count,
-          attendance: (await db.collection('attendance').where('officeId', '==', officeId).count().get()).data().count,
-          attendanceDaily: (await db.collection('attendance_daily').where('officeId', '==', officeId).count().get()).data().count,
-        }
+    const references = await getLocalOfficeReferenceCounts(officeId)
 
     if (Object.values(references).some(count => Number(count) > 0)) {
       return NextResponse.json({
@@ -211,9 +194,8 @@ export async function DELETE(request, { params }) {
       }, { status: 409 })
     }
 
-    const office = usePostgres ? { name: officeId } : (officeSnapshot.data() || {})
-    if (usePostgres) await deleteLocalOffice(officeId)
-    else await officeRef.delete()
+    const office = { name: officeId }
+    await deleteLocalOffice(officeId)
     await clearOfficeRecordCache()
 
     await writeAuditLog(db, {

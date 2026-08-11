@@ -477,6 +477,7 @@ export function useKioskLoop({
             console.warn('[KioskLoop] Attendance rejected', {
               decisionCode,
               message: error?.message || null,
+              errorId: error?.errorId || null,
               detail: safeDecision.detail,
               debug: error?.debug || null,
               entry: error?.entry || null,

@@ -16,7 +16,7 @@ async function resolveRegionalAdmin(request) {
 export async function GET(request) {
   const session = await resolveRegionalAdmin(request)
   if (!session) return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
-  return NextResponse.json({ ok: true, configured: Boolean(process.env.ADMIN_REGIONAL_PIN?.trim()), enabled: await isRegionalPinEnabled(null) })
+  return NextResponse.json({ ok: true, configured: Boolean(process.env.ADMIN_REGIONAL_PIN?.trim()), enabled: await isRegionalPinEnabled() })
 }
 
 export async function POST(request) {
@@ -27,7 +27,7 @@ export async function POST(request) {
   if (!session) return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
   const body = await request.json().catch(() => null)
   if (typeof body?.enabled !== 'boolean') return NextResponse.json({ ok: false, message: 'enabled must be true or false.' }, { status: 400 })
-  await setRegionalPinEnabled(null, body.enabled)
+  await setRegionalPinEnabled(body.enabled)
   await writeAuditLog(null, {
     actorRole: 'admin', actorScope: session.scope, actorOfficeId: session.officeId,
     action: 'regional_pin_access_update', targetType: 'system_config', targetId: 'regional_pin_access', officeId: '',

@@ -191,14 +191,6 @@ function DashboardPanelInner() {
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
-      <div className="shrink-0">
-        <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Dashboard</div>
-        <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Overview</h2>
-        <p className="mt-2 hidden max-w-2xl text-sm text-muted sm:block">
-          Executive snapshot first. Heavier biometric diagnostics stay collapsed until you actually need them.
-        </p>
-      </div>
-
       <div className="md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
         <div className="grid gap-5">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

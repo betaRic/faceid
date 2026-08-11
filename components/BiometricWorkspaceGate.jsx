@@ -1,17 +1,24 @@
 'use client'
 
+import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
+
 export default function BiometricWorkspaceGate({
   page,
   bootStage,
   modelStatus,
   errorMessage,
   locationState,
+  onRequestPermissions,
   onRetry,
+  permissionRequestPending = false,
   loadingLabel = '',
 }) {
   const title = page === 'register' ? 'Preparing enrollment workspace' : 'Preparing scan workspace'
+  const needsPermission = bootStage === 'permission'
   const detail = errorMessage
     ? errorMessage
+    : needsPermission
+      ? 'For privacy, your browser will ask for Camera and Location only after you tap the button below. Both are required before attendance scanning can begin.'
     : bootStage === 'location'
       ? 'Checking verified device location before the camera is shown. Public scan attendance will not start without GPS.'
       : bootStage === 'camera'
@@ -19,6 +26,8 @@ export default function BiometricWorkspaceGate({
         : 'Loading biometric models before the camera is shown to the user.'
   const statusLabel = errorMessage
     ? 'Workspace blocked'
+    : needsPermission
+      ? 'Permission required'
     : bootStage === 'location'
       ? 'Checking location'
       : bootStage === 'camera'
@@ -41,9 +50,7 @@ export default function BiometricWorkspaceGate({
           </p>
 
           <div className="mt-8 rounded-[1.5rem] border border-black/5 bg-white/90 p-5 shadow-sm">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-navy/10 text-navy-dark">
-              <span className={`h-6 w-6 rounded-full border-2 border-current border-t-transparent ${errorMessage ? '' : 'animate-spin'}`} />
-            </div>
+            <DilgLoadingIndicator compact label="" />
             <div className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted">Runtime status</div>
             <div className="mt-2 text-lg font-semibold text-ink">{runtimeStatus}</div>
             {loadingLabel ? (
@@ -56,14 +63,30 @@ export default function BiometricWorkspaceGate({
             ) : null}
           </div>
 
+          {needsPermission && !errorMessage ? (
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <button
+                className="inline-flex min-h-12 items-center justify-center rounded-full bg-navy px-6 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-wait disabled:opacity-70"
+                disabled={permissionRequestPending}
+                onClick={onRequestPermissions}
+                type="button"
+              >
+                {permissionRequestPending ? 'Starting camera and checking location…' : 'Enable camera and location'}
+              </button>
+              <p className="basis-full text-xs leading-5 text-muted">
+                On iPhone, use the trusted HTTPS address—not an IP address or localhost.
+              </p>
+            </div>
+          ) : null}
+
           {errorMessage ? (
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button
                 className="inline-flex items-center justify-center rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark"
-                onClick={onRetry}
+                onClick={bootStage === 'error' && onRequestPermissions ? onRequestPermissions : onRetry}
                 type="button"
               >
-                Retry workspace startup
+                {bootStage === 'error' && onRequestPermissions ? 'Try permissions again' : 'Retry workspace startup'}
               </button>
             </div>
           ) : null}

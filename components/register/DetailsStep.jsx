@@ -75,14 +75,14 @@ export default function DetailsStep({
           </Field>
         </div>
 
-        <Field label="Employee ID">
+        <Field label="Employee ID (optional)">
           <input
             className={`input ${employeeIdError ? 'border-amber-400' : ''}`}
             onChange={event => onEmployeeIdChange(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'Enter') onContinue()
             }}
-            placeholder="Enter employee ID"
+            placeholder="Leave blank if unavailable"
             type="text"
             value={employeeId}
           />

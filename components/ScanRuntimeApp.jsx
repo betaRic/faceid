@@ -15,6 +15,8 @@ export default function ScanRuntimeApp() {
     runtimeError,
     bootStage,
     workspaceReady,
+    requestPermissions,
+    permissionRequestPending,
     retry,
     locationState,
   } = runtime
@@ -30,8 +32,10 @@ export default function ScanRuntimeApp() {
             locationState={locationState}
             modelStatus={modelStatus}
             onContinueWithoutLocation={null}
+            onRequestPermissions={requestPermissions}
             onRetry={retry}
             page="scan"
+            permissionRequestPending={permissionRequestPending}
           />
         </div>
       </AppShell>

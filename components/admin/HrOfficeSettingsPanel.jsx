@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import OfficeLocationPicker from '@/components/OfficeLocationPicker'
 import { useAdminStore } from '@/lib/admin/store'
 import { normalizeOfficeRecord } from '@/lib/offices'
+import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
 
 const DAYS = [
   { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' }, { value: 3, label: 'Wed' },
@@ -46,7 +46,6 @@ export default function HrOfficeSettingsPanel() {
   const [office, setOffice] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState('')
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -64,22 +63,6 @@ export default function HrOfficeSettingsPanel() {
 
   useEffect(() => { loadSettings() }, [loadSettings])
 
-  const useMyLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setNotice('Location services are not available in this browser.')
-      return
-    }
-    setNotice('Getting your location…')
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        setOffice(current => current ? updateNested(updateNested(current, 'gps', 'latitude', Number(position.coords.latitude.toFixed(6))), 'gps', 'longitude', Number(position.coords.longitude.toFixed(6))) : current)
-        setNotice(`Set to ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`)
-      },
-      error => setNotice(`Could not get location: ${error.message || 'Unknown error'}`),
-      { enableHighAccuracy: true, timeout: 10_000 },
-    )
-  }, [])
-
   const save = useCallback(async () => {
     if (!office) return
     setSaving(true)
@@ -89,9 +72,6 @@ export default function HrOfficeSettingsPanel() {
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          location: office.location,
-          provinceOrCity: office.provinceOrCity,
-          gps: { latitude: office.gps.latitude, longitude: office.gps.longitude },
           workPolicy: office.workPolicy,
         }),
       })
@@ -106,7 +86,7 @@ export default function HrOfficeSettingsPanel() {
     }
   }, [addToast, office])
 
-  if (loading) return <section className="flex h-full items-center justify-center"><div className="h-9 w-9 animate-spin rounded-full border-2 border-navy border-t-transparent" /></section>
+  if (loading) return <section className="flex h-full items-center justify-center"><DilgLoadingIndicator compact label="Loading office settings…" /></section>
   if (!office) return <section className="p-6 text-sm text-muted">Office settings could not be loaded.</section>
 
   const policy = office.workPolicy || {}
@@ -117,43 +97,14 @@ export default function HrOfficeSettingsPanel() {
         <div>
           <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Office HR</div>
           <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Office Settings</h2>
-          <p className="mt-1 text-sm text-muted">Update settings for {office.name}. Geofence radius remains managed by Admin.</p>
+          <p className="mt-1 text-sm text-muted">Update the work schedule for {office.name}. Office location and geofence settings are managed by Admin.</p>
         </div>
         <button className="rounded-full bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50" disabled={saving} onClick={save} type="button">
           {saving ? 'Saving…' : 'Save changes'}
         </button>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <div className="grid content-start gap-4">
-          <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">Office location</div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Province / city"><input className={inputClass} onChange={event => setOffice(current => ({ ...current, provinceOrCity: event.target.value }))} value={office.provinceOrCity || ''} /></Field>
-              <Field label="Location label"><input className={inputClass} onChange={event => setOffice(current => ({ ...current, location: event.target.value }))} value={office.location || ''} /></Field>
-            </div>
-          </div>
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">GPS location</div>
-            <OfficeLocationPicker
-              latitude={office.gps?.latitude}
-              longitude={office.gps?.longitude}
-              officeId={office.id}
-              onChange={({ latitude, longitude }) => setOffice(current => current ? { ...current, gps: { ...current.gps, latitude, longitude } } : current)}
-              radiusMeters={office.gps?.radiusMeters}
-            />
-            <div className="mt-3 flex flex-wrap items-end gap-2">
-              <button className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50" onClick={useMyLocation} type="button">Use my location</button>
-              {notice ? <span className="text-xs text-muted">{notice}</span> : null}
-            </div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <Field label="Latitude"><input className={inputClass} onChange={event => setOffice(current => current ? { ...current, gps: { ...current.gps, latitude: Number(event.target.value) } } : current)} step="0.000001" type="number" value={office.gps?.latitude ?? ''} /></Field>
-              <Field label="Longitude"><input className={inputClass} onChange={event => setOffice(current => current ? { ...current, gps: { ...current.gps, longitude: Number(event.target.value) } } : current)} step="0.000001" type="number" value={office.gps?.longitude ?? ''} /></Field>
-              <Field label="Geofence radius" note="Admin only"><input className={`${inputClass} cursor-not-allowed bg-stone-100 text-muted`} disabled value={`${office.gps?.radiusMeters ?? '--'} m`} /></Field>
-            </div>
-          </div>
-        </div>
-
+      <div className="mx-auto mt-5 grid max-w-4xl gap-4">
         <div className="grid content-start gap-4">
           <div className="rounded-2xl border border-black/5 bg-stone-50 p-4">
             <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-navy-dark">Work schedule</div>

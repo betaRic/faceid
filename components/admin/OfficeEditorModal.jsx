@@ -26,10 +26,10 @@ export default function OfficeEditorModal({
   const saveDisabled = savePending || !officeDraftDirty
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+    <section className="h-full min-h-0 bg-white p-3 sm:p-6">
       <motion.div
         animate={{ opacity: 1, scale: 1 }}
-        className="relative flex max-h-[92vh] w-full max-w-[1280px] flex-col overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-2xl"
+        className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-sm"
         initial={{ opacity: 0, scale: 0.97 }}
       >
         <div className="flex items-center justify-between gap-3 border-b border-black/5 px-5 py-4 sm:px-6">
@@ -90,6 +90,6 @@ export default function OfficeEditorModal({
           </div>
         ) : null}
       </motion.div>
-    </div>
+    </section>
   )
 }

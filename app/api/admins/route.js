@@ -5,7 +5,6 @@ import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCoo
 import { listAdminProfiles } from '@/lib/admin-directory'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { createLocalAdminProfile, localEmailExists } from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
@@ -69,7 +68,6 @@ export async function POST(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -78,28 +76,16 @@ export async function POST(request) {
     if (!isRegionalAdminSession(resolvedSession)) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
-    if (usePostgres && !body.pin) {
+    if (!body.pin) {
       return NextResponse.json({ ok: false, message: 'PIN is required for local admin users.' }, { status: 400 })
     }
 
-    const exists = body.email && (usePostgres
-      ? await localEmailExists('admin_users', body.email)
-      : !(await db.collection('admins').where('email', '==', body.email).limit(1).get()).empty)
+    const exists = body.email && await localEmailExists('admin_users', body.email)
     if (exists) {
       return NextResponse.json({ ok: false, message: 'An admin record already exists for that email.' }, { status: 409 })
     }
 
-    const recordId = usePostgres
-      ? await createLocalAdminProfile(body)
-      : (await db.collection('admins').add({
-          email: body.email,
-          displayName: body.displayName,
-          scope: body.scope,
-          officeId: body.scope === 'office' ? body.officeId : '',
-          active: body.active,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        })).id
+    const recordId = await createLocalAdminProfile(body)
 
     await writeAuditLog(db, {
       actorRole: resolvedSession.role,

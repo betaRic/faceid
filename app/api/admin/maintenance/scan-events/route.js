@@ -9,34 +9,11 @@ import {
 } from '@/lib/admin-auth'
 import { createOriginGuard } from '@/lib/csrf'
 import { writeAuditLog } from '@/lib/audit-log'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { countLocalRowsBefore, deleteLocalRowsBefore } from '@/lib/postgres/report-store'
 
 function toNumber(value, fallback) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : fallback
-}
-
-async function countOlderThan(db, collectionName, field, cutoff) {
-  const snapshot = await db.collection(collectionName).where(field, '<', cutoff).count().get()
-  return snapshot.data().count
-}
-
-async function deleteOlderThan(db, collectionName, field, cutoff, batchSize = 200) {
-  let deleted = 0
-  while (true) {
-    const snapshot = await db
-      .collection(collectionName)
-      .where(field, '<', cutoff)
-      .limit(batchSize)
-      .get()
-    if (snapshot.empty) break
-    const batch = db.batch()
-    snapshot.docs.forEach(record => batch.delete(record.ref))
-    await batch.commit()
-    deleted += snapshot.size
-  }
-  return deleted
 }
 
 export async function GET(request) {
@@ -48,7 +25,6 @@ export async function GET(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
@@ -59,12 +35,7 @@ export async function GET(request) {
     const retentionDays = Math.max(7, Math.min(365, toNumber(url.searchParams.get('days'), 30)))
     const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000)
 
-    const counts = usePostgres
-      ? await countLocalRowsBefore(cutoff)
-      : {
-          scan_events: await countOlderThan(db, 'scan_events', 'timestamp', cutoff),
-          attendance_challenges: await countOlderThan(db, 'attendance_challenges', 'expiresAtMs', cutoff),
-        }
+    const counts = await countLocalRowsBefore(cutoff)
 
     return NextResponse.json({
       ok: true,
@@ -96,7 +67,6 @@ export async function POST(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession || !isRegionalAdminSession(resolvedSession)) {
@@ -111,12 +81,7 @@ export async function POST(request) {
     const retentionDays = Math.max(7, Math.min(365, toNumber(body?.days, 30)))
     const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000)
 
-    const deleted = usePostgres
-      ? await deleteLocalRowsBefore(cutoff)
-      : {
-          scanEventsDeleted: await deleteOlderThan(db, 'scan_events', 'timestamp', cutoff),
-          attendanceChallengesDeleted: await deleteOlderThan(db, 'attendance_challenges', 'expiresAtMs', cutoff),
-        }
+    const deleted = await deleteLocalRowsBefore(cutoff)
     const deletedScanEvents = Number(deleted.scanEventsDeleted || 0)
     const deletedChallenges = Number(deleted.attendanceChallengesDeleted || 0)
 

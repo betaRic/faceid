@@ -7,21 +7,20 @@ export default function SummaryFilters({
   summaryLoading,
   summaryQuery,
   summaryOfficeFilter,
+  summaryDivisionFilter = 'all',
+  summaryDivisionOptions = [],
   summaryRows,
+  showDivisionFilter = false,
   visibleOffices,
   onOpenDtr,
   onSetSummaryDate,
   onSetSummaryEmployeeFilter,
   onSetSummaryQuery,
   onSetSummaryOfficeFilter,
+  onSetSummaryDivisionFilter = () => {},
 }) {
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,2fr)] lg:items-end">
-      <div className="min-w-0">
-        <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Summary</div>
-        <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Daily Report</h2>
-      </div>
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2 xl:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
         <Field label="Date">
           <input
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
@@ -42,7 +41,7 @@ export default function SummaryFilters({
             ))}
           </select>
         </Field>
-        <Field className="col-span-2 xl:col-span-1" label="Employee">
+        <Field label="Employee">
           <select
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
             disabled={summaryLoading}
@@ -57,7 +56,15 @@ export default function SummaryFilters({
             ))}
           </select>
         </Field>
-        <Field className="col-span-2 xl:col-span-1" label="Search">
+        {showDivisionFilter ? (
+          <Field label="Division">
+            <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={event => onSetSummaryDivisionFilter(event.target.value)} value={summaryDivisionFilter}>
+              <option value="all">All divisions</option>
+              {summaryDivisionOptions.map(division => <option key={division.id} value={division.id}>{division.name}</option>)}
+            </select>
+          </Field>
+        ) : null}
+        <Field label="Search">
           <input
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
             onChange={event => onSetSummaryQuery(event.target.value)}
@@ -68,7 +75,7 @@ export default function SummaryFilters({
         </Field>
         <div className="flex items-end">
           <button
-            className="w-full rounded-xl border border-navy px-4 py-2 text-sm font-semibold text-navy transition hover:bg-navy/5 disabled:opacity-50"
+            className="min-h-[38px] whitespace-nowrap rounded-xl border border-navy px-4 py-2 text-sm font-semibold text-navy transition hover:bg-navy/5 disabled:opacity-50"
             disabled={summaryLoading}
             onClick={onOpenDtr}
             type="button"
@@ -76,7 +83,6 @@ export default function SummaryFilters({
             Generate DTR
           </button>
         </div>
-      </div>
     </div>
   )
 }

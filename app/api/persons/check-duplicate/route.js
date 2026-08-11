@@ -4,8 +4,6 @@ import { NextResponse } from 'next/server'
 import { DESCRIPTOR_LENGTH } from '@/lib/config'
 import { createOriginGuard } from '@/lib/csrf'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
-import { checkDuplicateFace } from '@/lib/persons/enrollment'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { checkLocalDuplicateFace } from '@/lib/postgres/person-store'
 
 function toHttpStatus(value) {
@@ -19,7 +17,6 @@ export async function POST(request) {
   if (originError) return originError
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
 
     const ip = getRequestIp(request)
@@ -44,13 +41,7 @@ export async function POST(request) {
       }
     }
 
-    const duplicateFace = usePostgres
-      ? await checkLocalDuplicateFace(descriptors, String(body.personId || '').trim())
-      : await checkDuplicateFace(
-          db,
-          descriptors,
-          String(body.personId || '').trim(),
-        )
+    const duplicateFace = await checkLocalDuplicateFace(descriptors, String(body.personId || '').trim())
 
     if (duplicateFace?.duplicate) {
       // Do not expose which employee matched — a duplicate check is public/unauthenticated

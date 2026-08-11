@@ -4,12 +4,14 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { startTransition } from 'react'
 import { useEmployees, useOffices } from '@/lib/admin/hooks'
-import { Field, Badge, StatusBadge, ApprovalBadge } from '@/components/shared/ui'
+import { Field, Badge } from '@/components/shared/ui'
 import EmployeeAccessCodeExportActions from './EmployeeAccessCodeExportActions'
-import {
-  PERSON_APPROVAL_APPROVED,
-  PERSON_APPROVAL_REJECTED,
-} from '@/lib/person-approval'
+
+function LifecycleBadge({ status }) {
+  const value = status || 'inactive'
+  const palette = value === 'active' ? 'bg-emerald-100 text-emerald-800' : value === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] ${palette}`}>{value === 'pending' ? 'Pending review' : value}</span>
+}
 
 function ActionButton({ children, onClick, disabled, className = '', busy }) {
   return (
@@ -19,7 +21,7 @@ function ActionButton({ children, onClick, disabled, className = '', busy }) {
       onClick={onClick}
       type="button"
     >
-      {busy ? '...' : children}
+      {busy ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />Processing...</> : children}
     </button>
   )
 }
@@ -44,13 +46,18 @@ function EmployeesPanelInner() {
     employeeHasMore, employeeHistoryLength,
     employeeQuery, setEmployeeQuery,
     employeeOfficeFilter, setEmployeeOfficeFilter,
+    employeeDivisionFilter, setEmployeeDivisionFilter,
     employeeStatusFilter, setEmployeeStatusFilter,
-    employeeApprovalFilter, setEmployeeApprovalFilter,
     handlePreviousPage, handleNextPage, refreshEmployees,
     handleBulkEmployeeUpdate,
     setEditingEmployee, setDeletingEmployee,
   } = useEmployees()
   const { visibleOffices } = useOffices()
+  const selectedOffice = useMemo(
+    () => visibleOffices.find((office) => office.id === employeeOfficeFilter) || null,
+    [employeeOfficeFilter, visibleOffices],
+  )
+  const officeDivisions = Array.isArray(selectedOffice?.divisions) ? selectedOffice.divisions : []
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([])
   const [bulkAction, setBulkAction] = useState('')
   const selectedEmployeeIdSet = useMemo(() => new Set(selectedEmployeeIds), [selectedEmployeeIds])
@@ -60,9 +67,11 @@ function EmployeesPanelInner() {
   )
   const allPageSelected = employees.length > 0 && selectedEmployeeIds.length === employees.length
   const pendingOnPage = useMemo(
-    () => employees.filter((person) => person.approvalStatus === 'pending'),
+    () => employees.filter((person) => person.lifecycleStatus === 'pending'),
     [employees],
   )
+  const employeePage = employeeHistoryLength + 1
+  const employeePageCount = Math.max(1, Math.ceil(employeeTotal / 24))
 
   const onSearchChange = useCallback((e) => {
     startTransition(() => setEmployeeQuery(e.target.value))
@@ -90,26 +99,14 @@ function EmployeesPanelInner() {
     setBulkAction(mode)
 
     const configs = {
-      approve: {
-        updates: { approvalStatus: PERSON_APPROVAL_APPROVED },
-        successMessage: `Approved ${selectedEmployees.length} employee(s)`,
-        failureMessage: 'Bulk approval incomplete',
-        pendingKey: 'employees-bulk-approve',
-      },
-      reject: {
-        updates: { approvalStatus: PERSON_APPROVAL_REJECTED },
-        successMessage: `Rejected ${selectedEmployees.length} employee(s)`,
-        failureMessage: 'Bulk rejection incomplete',
-        pendingKey: 'employees-bulk-reject',
-      },
       activate: {
-        updates: { active: true },
+        updates: { lifecycleStatus: 'active' },
         successMessage: `Activated ${selectedEmployees.length} employee(s)`,
         failureMessage: 'Bulk activation incomplete',
         pendingKey: 'employees-bulk-activate',
       },
       deactivate: {
-        updates: { active: false },
+        updates: { lifecycleStatus: 'inactive' },
         successMessage: `Deactivated ${selectedEmployees.length} employee(s)`,
         failureMessage: 'Bulk deactivation incomplete',
         pendingKey: 'employees-bulk-deactivate',
@@ -130,16 +127,11 @@ function EmployeesPanelInner() {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden"
+      className="flex min-h-0 flex-col gap-2 bg-white p-3 sm:p-4 md:h-full md:overflow-hidden"
       initial={{ opacity: 0, y: 18 }}
       transition={{ duration: 0.35 }}
     >
-      <div className="grid gap-3 lg:grid-cols-[minmax(160px,0.55fr)_minmax(0,2.2fr)] lg:items-end">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-widest text-navy-dark">Employees</div>
-          <h2 className="mt-1 font-display text-2xl font-bold text-ink sm:text-3xl">Directory</h2>
-        </div>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
           <Field className="col-span-2 xl:col-span-1" label="Search">
             <input className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={onSearchChange} placeholder="Name or ID" value={employeeQuery} />
           </Field>
@@ -153,21 +145,21 @@ function EmployeesPanelInner() {
             <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setEmployeeStatusFilter(e.target.value)} value={employeeStatusFilter}>
               <option value="all">All status</option>
               <option value="active">Active</option>
+              <option value="pending">Pending review</option>
               <option value="inactive">Inactive</option>
             </select>
           </Field>
-          <Field label="Approval">
-            <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setEmployeeApprovalFilter(e.target.value)} value={employeeApprovalFilter}>
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </Field>
-        </div>
+          {officeDivisions.length > 0 ? (
+            <Field label="Division">
+              <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy" onChange={(e) => setEmployeeDivisionFilter(e.target.value)} value={employeeDivisionFilter}>
+                <option value="all">All divisions</option>
+                {officeDivisions.map((division) => <option key={division.id} value={division.id}>{division.name}</option>)}
+              </select>
+            </Field>
+          ) : null}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-black/5 bg-stone-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-4">
+      <div className="flex flex-col gap-2 rounded-xl border border-black/5 bg-stone-50 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
         <span className="text-muted">
           {employeesLoaded ? `Showing ${employeeTotal} records` : 'Loading...'}
         </span>
@@ -178,24 +170,20 @@ function EmployeesPanelInner() {
           <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={pendingOnPage.length === 0} onClick={() => setSelectedEmployeeIds(pendingOnPage.map((person) => person.id))}>
             Select pending
           </ActionButton>
-          <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={employeeHistoryLength === 0} onClick={handlePreviousPage}>
+          <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={!employeesLoaded || employeeHistoryLength === 0} onClick={handlePreviousPage}>
             ← Prev
           </ActionButton>
-          <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={!employeeHasMore} onClick={handleNextPage}>
+          <span aria-live="polite" className="col-span-2 self-center whitespace-nowrap px-1 text-center text-xs font-semibold text-muted sm:col-auto">
+            Page {employeePage} of {employeePageCount}
+          </span>
+          <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" disabled={!employeesLoaded || !employeeHasMore} onClick={handleNextPage}>
             Next →
           </ActionButton>
           <ActionButton className="border-black/10 bg-white text-ink hover:bg-stone-100" onClick={refreshEmployees} busy={!employeesLoaded}>
             Refresh
           </ActionButton>
+          <EmployeeAccessCodeExportActions />
         </div>
-      </div>
-
-      <div className="flex flex-col gap-2 rounded-xl border border-navy/10 bg-navy/[0.025] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-        <div>
-          <div className="text-sm font-semibold text-ink">Employee access-code list</div>
-          <div className="text-xs text-muted">Grouped by Office Assignment and alphabetized by Complete Name.</div>
-        </div>
-        <EmployeeAccessCodeExportActions />
       </div>
 
       {selectedEmployees.length > 0 ? (
@@ -218,24 +206,8 @@ function EmployeesPanelInner() {
           <div className="flex flex-wrap gap-2">
             <ActionButton
               disabled={Boolean(bulkAction)}
-              busy={bulkAction === 'approve'}
-              className="border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
-              onClick={() => runBulkUpdate('approve')}
-            >
-              Approve selected
-            </ActionButton>
-            <ActionButton
-              disabled={Boolean(bulkAction)}
-              busy={bulkAction === 'reject'}
-              className="border-red-200 bg-white text-red-700 hover:bg-red-50"
-              onClick={() => runBulkUpdate('reject')}
-            >
-              Reject selected
-            </ActionButton>
-            <ActionButton
-              disabled={Boolean(bulkAction)}
               busy={bulkAction === 'activate'}
-              className="border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
+              className="border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
               onClick={() => runBulkUpdate('activate')}
             >
               Activate selected
@@ -285,14 +257,13 @@ function EmployeesPanelInner() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    <StatusBadge active={person.active !== false} />
+                    <LifecycleBadge status={person.lifecycleStatus} />
                     {selectedEmployeeIdSet.has(person.id) ? (
                       <Badge variant="info">Selected</Badge>
                     ) : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <ApprovalBadge status={person.approvalStatus} />
                   <Badge>{person.officeName}{person.divisionName ? ` — ${person.divisionName}` : ''}</Badge>
                   <Badge>{`${person.sampleCount ?? 0} sample(s)`}</Badge>
                   {person.duplicateReviewRequired ? <Badge variant="warning">Duplicate review</Badge> : null}
@@ -302,7 +273,7 @@ function EmployeesPanelInner() {
                     className="border-black/10 bg-white text-ink hover:bg-stone-100"
                     onClick={() => setEditingEmployee(person)}
                   >
-                    {person.approvalStatus === 'pending' ? 'Review record' : 'Manage record'}
+                    {person.lifecycleStatus === 'pending' ? 'Review record' : 'Manage record'}
                   </ActionButton>
                   <ActionButton
                     className="border-red-200 bg-white text-red-700 hover:bg-red-50"
@@ -330,8 +301,7 @@ function EmployeesPanelInner() {
               <th className="px-5 py-3">Employee</th>
               <th className="px-5 py-3">Office</th>
               <th className="px-5 py-3">Samples</th>
-              <th className="px-5 py-3">Approval</th>
-              <th className="px-5 py-3">Status</th>
+              <th className="px-5 py-3">Lifecycle</th>
               <th className="px-5 py-3">Actions</th>
             </tr>
           </thead>
@@ -340,7 +310,7 @@ function EmployeesPanelInner() {
               Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
             ) : employees.length === 0 ? (
               <tr>
-                <td className="px-5 py-10 text-center text-muted" colSpan={7}>No employees match the current filters.</td>
+                <td className="px-5 py-10 text-center text-muted" colSpan={6}>No employees match the current filters.</td>
               </tr>
             ) : (
               employees.map((person) => (
@@ -380,15 +350,14 @@ function EmployeesPanelInner() {
                     ) : null}
                   </td>
                   <td className="px-5 py-3 text-muted">{person.sampleCount ?? 0}</td>
-                  <td className="px-5 py-3"><ApprovalBadge status={person.approvalStatus} /></td>
-                  <td className="px-5 py-3"><StatusBadge active={person.active !== false} /></td>
+                  <td className="px-5 py-3"><LifecycleBadge status={person.lifecycleStatus} /></td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
                       <ActionButton
                         className="border-black/10 bg-white text-ink hover:bg-stone-100"
                         onClick={() => setEditingEmployee(person)}
                       >
-                        {person.approvalStatus === 'pending' ? 'Review' : 'Manage'}
+                        {person.lifecycleStatus === 'pending' ? 'Review' : 'Manage'}
                       </ActionButton>
                       <ActionButton
                         className="border-red-200 bg-white text-red-700 hover:bg-red-50"

@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
 import { downloadResponseBlob } from '@/lib/browser-download'
 import { getDaysInMonth } from '@/lib/dtr'
 import DtrSelectionView from './DtrSelectionView'
@@ -13,6 +12,7 @@ export default function DtrModal({ onClose }) {
   const [customStartDay, setCustomStartDay] = useState(1)
   const [customEndDay, setCustomEndDay] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate())
   const [search, setSearch] = useState('')
+  const [divisionId, setDivisionId] = useState('all')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [signatoryName, setSignatoryName] = useState('')
   const [signatoryPosition, setSignatoryPosition] = useState('')
@@ -40,7 +40,7 @@ export default function DtrModal({ onClose }) {
     async function loadDtrEmployees() {
       setEmployeesLoading(true)
       try {
-        const response = await fetch('/api/hr/dtr/employees', {
+        const response = await fetch(`/api/hr/dtr/employees${divisionId !== 'all' ? `?divisionId=${encodeURIComponent(divisionId)}` : ''}`, {
           credentials: 'include',
           cache: 'no-store',
           signal: controller.signal,
@@ -56,7 +56,9 @@ export default function DtrModal({ onClose }) {
     }
     loadDtrEmployees()
     return () => controller.abort()
-  }, [])
+  }, [divisionId])
+
+  const divisions = useMemo(() => [...new Map(employees.filter(employee => employee.divisionId).map(employee => [employee.divisionId, employee.divisionName || employee.divisionId])).entries()], [employees])
 
   const uniqueEmployees = useMemo(() => (
     [...new Map(employees.map(employee => [employee.id, employee])).values()]
@@ -151,25 +153,14 @@ export default function DtrModal({ onClose }) {
   }, [])
 
   return (
-    <motion.div
-      animate={{ opacity: 1 }}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/50 p-3 print:bg-white print:p-0 sm:p-4"
-      exit={{ opacity: 0 }}
-      initial={{ opacity: 0 }}
-      onClick={event => {
-        if (event.target === event.currentTarget && !dtrLoading) onClose()
-      }}
-    >
-      <motion.div
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-2xl rounded-2xl bg-white shadow-xl print:max-w-none print:rounded-none print:shadow-none"
-        exit={{ opacity: 0, y: 24 }}
-        initial={{ opacity: 0, y: 24 }}
-      >
+    <section className="flex h-full min-h-0 flex-col bg-white p-3 sm:p-6">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
         <DtrSelectionView
           allVisibleSelected={allVisibleSelected}
           customEndDay={customEndDay}
           customStartDay={customStartDay}
+          divisionId={divisionId}
+          divisions={divisions}
           daysInMonth={daysInMonth}
           dtrLoading={dtrLoading}
           employeesLoading={employeesLoading}
@@ -186,6 +177,7 @@ export default function DtrModal({ onClose }) {
           onSelectAll={handleSelectAll}
           onSetCustomEndDay={setCustomEndDay}
           onSetCustomStartDay={setCustomStartDay}
+          onSetDivisionId={setDivisionId}
           onSetDtrMonth={setDtrMonth}
           onSetDtrRange={setDtrRange}
           onSetDtrYear={setDtrYear}
@@ -198,7 +190,7 @@ export default function DtrModal({ onClose }) {
           signatoryPosition={signatoryPosition}
           uniqueEmployees={uniqueEmployees}
         />
-      </motion.div>
-    </motion.div>
+      </div>
+    </section>
   )
 }

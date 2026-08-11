@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useAdminStore } from '@/lib/admin/store'
+import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
 
 const EmployeeReenrollPanel = dynamic(
   () => import('@/components/admin/EmployeeReenrollPanel'),
@@ -14,8 +15,7 @@ function LoadingState() {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center">
       <div className="text-center">
-        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-        <p className="mt-4 text-sm font-medium text-ink">Loading re-enrollment...</p>
+        <DilgLoadingIndicator compact label="Loading re-enrollment…" />
       </div>
     </div>
   )

@@ -10,10 +10,10 @@ import { Field } from '@/components/shared/ui'
 import { buildEmployeeDisplayName } from '@/lib/person-name'
 import { normalizeEmployeeWfhDays } from '@/lib/employee-wfh'
 import {
-  getEffectivePersonApprovalStatus,
-  PERSON_APPROVAL_APPROVED,
-  PERSON_APPROVAL_PENDING,
-  PERSON_APPROVAL_REJECTED,
+  getPersonLifecycleStatus,
+  PERSON_LIFECYCLE_ACTIVE,
+  PERSON_LIFECYCLE_INACTIVE,
+  PERSON_LIFECYCLE_PENDING,
 } from '@/lib/person-approval'
 
 export default function EmployeeEditorModal({ person, onSave, onCancel }) {
@@ -38,9 +38,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   const [employeeId, setEmployeeId] = useState('')
   const [position, setPosition] = useState('')
   const [divisionId, setDivisionId] = useState('')
-  const [active, setActive] = useState(true)
-  const [approvalStatus, setApprovalStatus] = useState(PERSON_APPROVAL_PENDING)
+  const [lifecycleStatus, setLifecycleStatus] = useState(PERSON_LIFECYCLE_PENDING)
   const [individualWfhDays, setIndividualWfhDays] = useState([])
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  const [weeklySchedule, setWeeklySchedule] = useState({})
+  const [flexitimeEnabled, setFlexitimeEnabled] = useState(false)
+  const [flexitimeRequiredMinutes, setFlexitimeRequiredMinutes] = useState(480)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [panelMode, setPanelMode] = useState('details')
   const [photoUrl, setPhotoUrl] = useState('')
@@ -56,9 +59,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     setOfficeId(person.officeId || '')
     setPosition(person.position || '')
     setDivisionId(person.divisionId || '')
-    setActive(person.active !== false)
-    setApprovalStatus(getEffectivePersonApprovalStatus(person))
+    setLifecycleStatus(getPersonLifecycleStatus(person))
     setIndividualWfhDays(normalizeEmployeeWfhDays(person.individualWfhDays))
+    setScheduleEnabled(Object.keys(person.weeklySchedule || {}).length > 0)
+    setWeeklySchedule(person.weeklySchedule || {})
+    setFlexitimeEnabled(person.flexitime?.enabled === true)
+    setFlexitimeRequiredMinutes(Number(person.flexitime?.requiredMinutes) || 480)
     setResetConfirmOpen(false)
     setPanelMode('details')
     setPhotoUrl(person.photoUrl || '')
@@ -71,17 +77,17 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   const isSaving = isPending(`employee-update-${person.id}`)
   const isUploadingPhoto = isPending(`employee-photo-${person.id}`)
   const isRegeneratingAccessCode = isPending(`employee-access-code-${person.id}`)
-  const currentApproval = getEffectivePersonApprovalStatus(person)
+  const currentLifecycle = getPersonLifecycleStatus(person)
 
   async function handleQuickApprove() {
     setPending(`employee-approve-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { approvalStatus: PERSON_APPROVAL_APPROVED })
+      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
       refreshEmployees()
-      addToast(`${person.name} approved`, 'success')
-      onSave(person, { approvalStatus: PERSON_APPROVAL_APPROVED })
+      addToast(`${person.name} activated`, 'success')
+      onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
     } catch (err) {
-      addToast(err?.message || 'Approval failed', 'error')
+      addToast(err?.message || 'Activation failed', 'error')
     }
     setPending(`employee-approve-${person.id}`, false)
   }
@@ -89,10 +95,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleQuickReject() {
     setPending(`employee-reject-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { approvalStatus: PERSON_APPROVAL_REJECTED })
+      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
       refreshEmployees()
-      addToast(`${person.name} rejected`, 'success')
-      onSave(person, { approvalStatus: PERSON_APPROVAL_REJECTED })
+      addToast(`${person.name} set inactive`, 'success')
+      onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
     } catch (err) {
       addToast(err?.message || 'Rejection failed', 'error')
     }
@@ -102,10 +108,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleQuickActivate() {
     setPending(`employee-activate-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { active: true })
+      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
       refreshEmployees()
       addToast(`${person.name} activated`, 'success')
-      onSave(person, { active: true })
+      onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
     } catch (err) {
       addToast(err?.message || 'Activation failed', 'error')
     }
@@ -115,14 +121,27 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleQuickDeactivate() {
     setPending(`employee-deactivate-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { active: false })
+      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
       refreshEmployees()
       addToast(`${person.name} deactivated`, 'success')
-      onSave(person, { active: false })
+      onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
     } catch (err) {
       addToast(err?.message || 'Deactivation failed', 'error')
     }
     setPending(`employee-deactivate-${person.id}`, false)
+  }
+
+  async function handleMoveToReview() {
+    setPending(`employee-review-${person.id}`, true)
+    try {
+      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_PENDING })
+      refreshEmployees()
+      onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_PENDING })
+      addToast(`${person.name} moved to pending review`, 'success')
+    } catch (err) {
+      addToast(err?.message || 'Could not move employee to review', 'error')
+    }
+    setPending(`employee-review-${person.id}`, false)
   }
 
   async function handleBiometricReset() {
@@ -137,7 +156,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
       if (data.ok) {
         refreshEmployees()
         addToast(`Face data reset — ${person.name} must re-enroll in admin or registration`, 'success')
-        onSave(person, { sampleCount: 0, approvalStatus: PERSON_APPROVAL_PENDING })
+        onSave(person, { sampleCount: 0, lifecycleStatus: PERSON_LIFECYCLE_PENDING })
       } else {
         addToast(data.message || 'Reset failed', 'error')
       }
@@ -159,10 +178,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     }
     if (!trimmedFirstName) {
       addToast('First name is required.', 'error')
-      return
-    }
-    if (!trimmedEmployeeId) {
-      addToast('Employee ID is required.', 'error')
       return
     }
     const isRegional = String(selectedOffice?.officeType || '') === 'Regional Office'
@@ -191,10 +206,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         divisionId: isRegional ? divisionId : '',
         divisionName: isRegional ? (division?.name || '') : '',
         individualWfhDays,
-        active,
-        approvalStatus,
+        weeklySchedule: scheduleEnabled ? weeklySchedule : {},
+        flexitime: { enabled: flexitimeEnabled, requiredMinutes: flexitimeRequiredMinutes },
+        lifecycleStatus,
       })
       refreshEmployees()
+      addToast(`${trimmedFirstName} ${trimmedLastName} updated`, 'success')
       onSave(person, {
         lastName: trimmedLastName,
         firstName: trimmedFirstName,
@@ -206,11 +223,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
           middleName: trimmedMiddleName,
         }),
         officeId,
-        active,
-        approvalStatus,
+        lifecycleStatus,
         position: trimmedPosition,
         divisionId: isRegional ? divisionId : '',
         individualWfhDays,
+        weeklySchedule: scheduleEnabled ? weeklySchedule : {},
+        flexitime: { enabled: flexitimeEnabled, requiredMinutes: flexitimeRequiredMinutes },
       })
     } catch (err) {
       addToast(err?.message || 'Update failed', 'error')
@@ -297,6 +315,40 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     ))
   }
 
+  function updateScheduleDay(day, field, value) {
+    setWeeklySchedule(current => ({
+      ...current,
+      [day]: {
+        working: (selectedOffice?.workPolicy?.workingDays || [1, 2, 3, 4, 5]).includes(day),
+        morningIn: selectedOffice?.workPolicy?.morningIn || '08:00',
+        morningOut: selectedOffice?.workPolicy?.morningOut || '12:00',
+        afternoonIn: selectedOffice?.workPolicy?.afternoonIn || '13:00',
+        afternoonOut: selectedOffice?.workPolicy?.afternoonOut || '17:00',
+        ...(current?.[day] || {}),
+        [field]: value,
+      },
+    }))
+  }
+
+  function setScheduleDayOverride(day, enabled) {
+    setWeeklySchedule(current => {
+      if (!enabled) {
+        const { [day]: ignored, ...inheritedDays } = current || {}
+        return inheritedDays
+      }
+      return {
+        ...current,
+        [day]: {
+          working: (selectedOffice?.workPolicy?.workingDays || [1, 2, 3, 4, 5]).includes(day),
+          morningIn: selectedOffice?.workPolicy?.morningIn || '08:00',
+          morningOut: selectedOffice?.workPolicy?.morningOut || '12:00',
+          afternoonIn: selectedOffice?.workPolicy?.afternoonIn || '13:00',
+          afternoonOut: selectedOffice?.workPolicy?.afternoonOut || '17:00',
+        },
+      }
+    })
+  }
+
   const formatSubmittedDate = () => {
     if (!person.submittedAt) return null
     try {
@@ -331,10 +383,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
+    <section className="h-full min-h-0 bg-white p-3 sm:p-6">
       <motion.div
         animate={{ opacity: 1, scale: 1 }}
-        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-black/5 bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-black/5 bg-white shadow-sm"
         initial={{ opacity: 0, scale: 0.95 }}
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
@@ -354,7 +406,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             <h2 className="text-xl font-bold text-ink">{person.name}</h2>
             <p className="mt-0.5 text-sm text-muted">{person.employeeId}</p>
             {accessCode ? <p className="mt-1 text-xs font-semibold text-navy">VeriFace access code: {accessCode}</p> : null}
-            {submittedLabel && currentApproval === PERSON_APPROVAL_PENDING && (
+            {submittedLabel && currentLifecycle === PERSON_LIFECYCLE_PENDING && (
               <p className="mt-1 text-xs text-amber-600">{submittedLabel}</p>
             )}
           </div>
@@ -416,10 +468,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
           ) : null}
         </div>
 
-        {currentApproval === PERSON_APPROVAL_PENDING && (
+        {currentLifecycle === PERSON_LIFECYCLE_PENDING && (
           <div className="mt-5 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4">
-            <h3 className="text-sm font-semibold text-amber-900">Pending Approval</h3>
-            <p className="mt-1 text-sm text-amber-700">Review this enrollment before approving.</p>
+            <h3 className="text-sm font-semibold text-amber-900">Pending review</h3>
+            <p className="mt-1 text-sm text-amber-700">Review this enrollment before activating the employee.</p>
             {person.duplicateReviewRequired ? (
               <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-900">
                 <div className="font-semibold">Duplicate review required</div>
@@ -440,7 +492,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 onClick={handleQuickApprove}
                 type="button"
               >
-                {isPending(`employee-approve-${person.id}`) ? 'Approving...' : 'Approve'}
+                {isPending(`employee-approve-${person.id}`) ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Activating...</> : 'Activate'}
               </button>
               <button
                 className="flex-1 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
@@ -448,7 +500,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 onClick={handleQuickReject}
                 type="button"
               >
-                {isPending(`employee-reject-${person.id}`) ? 'Rejecting...' : 'Reject'}
+                {isPending(`employee-reject-${person.id}`) ? <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px]" /> Setting inactive...</> : 'Set inactive'}
               </button>
             </div>
             <button
@@ -461,18 +513,18 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
           </div>
         )}
 
-        {currentApproval === PERSON_APPROVAL_APPROVED && (
+        {currentLifecycle === PERSON_LIFECYCLE_ACTIVE && (
           <div className="mt-5">
             <div className="mb-4 flex items-center justify-between rounded-xl border border-black/5 bg-stone-50 p-4">
               <div>
                 <p className="text-sm font-medium text-ink">Account Status</p>
                 <p className="text-xs text-muted">
-                  {person.active !== false ? 'Employee can clock in' : 'Employee is deactivated'}
+                  {currentLifecycle === PERSON_LIFECYCLE_ACTIVE ? 'Employee can clock in' : 'Employee is inactive'}
                 </p>
               </div>
               <button
                 className={`rounded-xl px-4 py-2 text-sm font-semibold transition disabled:opacity-50 ${
-                  person.active === false
+                  currentLifecycle !== PERSON_LIFECYCLE_ACTIVE
                     ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                     : 'border border-red-200 bg-white text-red-700 hover:bg-red-50'
                 }`}
@@ -480,12 +532,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                   isPending(`employee-activate-${person.id}`) ||
                   isPending(`employee-deactivate-${person.id}`)
                 }
-                onClick={person.active === false ? handleQuickActivate : handleQuickDeactivate}
+                onClick={currentLifecycle !== PERSON_LIFECYCLE_ACTIVE ? handleQuickActivate : handleQuickDeactivate}
                 type="button"
               >
-                {person.active === false
-                  ? (isPending(`employee-activate-${person.id}`) ? 'Activating...' : 'Activate')
-                  : (isPending(`employee-deactivate-${person.id}`) ? 'Deactivating...' : 'Deactivate')
+                {currentLifecycle !== PERSON_LIFECYCLE_ACTIVE
+                  ? (isPending(`employee-activate-${person.id}`) ? <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px]" /> Activating...</> : 'Activate')
+                  : (isPending(`employee-deactivate-${person.id}`) ? <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px]" /> Deactivating...</> : 'Deactivate')
                 }
               </button>
             </div>
@@ -521,11 +573,11 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 </Field>
               </div>
 
-              <Field label="Employee ID">
+              <Field label="Employee ID (optional)">
                 <input
                   className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-navy"
                   onChange={(e) => setEmployeeId(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Employee ID"
+                  placeholder="Leave blank if unavailable"
                   type="text"
                   value={employeeId}
                 />
@@ -575,6 +627,39 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 </div>
               </Field>
 
+              <div className="rounded-xl border border-navy/15 bg-navy/[0.025] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-navy-dark">Employee schedule override</p>
+                    <p className="mt-0.5 text-xs text-muted">Leave a day unchecked to inherit the division or office work hours. Override only the days this employee has different AM/PM hours.</p>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-ink">
+                    <input checked={scheduleEnabled} onChange={(event) => setScheduleEnabled(event.target.checked)} type="checkbox" />
+                    Edit schedule
+                  </label>
+                </div>
+                {scheduleEnabled ? (
+                  <div className="mt-3 space-y-2">
+                    {[['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6], ['Sun', 0]].map(([label, day]) => {
+                      const overridden = Boolean(weeklySchedule[day])
+                      const entry = weeklySchedule[day] || { working: (selectedOffice?.workPolicy?.workingDays || [1, 2, 3, 4, 5]).includes(day), morningIn: selectedOffice?.workPolicy?.morningIn || '08:00', morningOut: selectedOffice?.workPolicy?.morningOut || '12:00', afternoonIn: selectedOffice?.workPolicy?.afternoonIn || '13:00', afternoonOut: selectedOffice?.workPolicy?.afternoonOut || '17:00' }
+                      return <div className="grid grid-cols-[34px_58px_44px_1fr_1fr] items-center gap-2 text-xs" key={day}>
+                        <span className="font-semibold text-muted">{label}</span>
+                        <label className="flex items-center gap-1"><input checked={overridden} onChange={(event) => setScheduleDayOverride(day, event.target.checked)} type="checkbox" />Set</label>
+                        <label className="flex items-center gap-1"><input checked={entry.working !== false} disabled={!overridden} onChange={(event) => updateScheduleDay(day, 'working', event.target.checked)} type="checkbox" />Work</label>
+                        <div className="grid grid-cols-2 gap-1"><input aria-label={`${label} AM in`} className="min-w-0 rounded border border-black/10 px-1 py-1.5 disabled:bg-stone-100" disabled={!overridden || entry.working === false} onChange={(event) => updateScheduleDay(day, 'morningIn', event.target.value)} type="time" value={entry.morningIn || '08:00'} /><input aria-label={`${label} AM out`} className="min-w-0 rounded border border-black/10 px-1 py-1.5 disabled:bg-stone-100" disabled={!overridden || entry.working === false} onChange={(event) => updateScheduleDay(day, 'morningOut', event.target.value)} type="time" value={entry.morningOut || '12:00'} /></div>
+                        <div className="grid grid-cols-2 gap-1"><input aria-label={`${label} PM in`} className="min-w-0 rounded border border-black/10 px-1 py-1.5 disabled:bg-stone-100" disabled={!overridden || entry.working === false} onChange={(event) => updateScheduleDay(day, 'afternoonIn', event.target.value)} type="time" value={entry.afternoonIn || '13:00'} /><input aria-label={`${label} PM out`} className="min-w-0 rounded border border-black/10 px-1 py-1.5 disabled:bg-stone-100" disabled={!overridden || entry.working === false} onChange={(event) => updateScheduleDay(day, 'afternoonOut', event.target.value)} type="time" value={entry.afternoonOut || '17:00'} /></div>
+                      </div>
+                    })}
+                  </div>
+                ) : null}
+                <div className="mt-3 border-t border-navy/10 pt-3">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-ink"><input checked={flexitimeEnabled} onChange={(event) => setFlexitimeEnabled(event.target.checked)} type="checkbox" />Flexible daily-hours rule</label>
+                  <p className="mt-1 text-xs text-muted">When enabled, only the required daily work minutes matter; no lateness is calculated. Use 480 minutes for 8 hours or 600 minutes for a 4-day, 10-hour schedule.</p>
+                  {flexitimeEnabled ? <label className="mt-2 flex items-center gap-2 text-xs text-muted">Required minutes per work day <input className="w-20 rounded border border-black/10 px-2 py-1" min="1" onChange={(event) => setFlexitimeRequiredMinutes(Number(event.target.value) || 480)} type="number" value={flexitimeRequiredMinutes} /></label> : null}
+                </div>
+              </div>
+
               <div className="rounded-xl border border-navy/15 bg-navy/5 px-3 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -620,7 +705,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                   <p className="text-sm font-medium text-red-900">Reset face data for {person.name}?</p>
                   <p className="mt-1 text-xs text-red-700">
                     All stored face samples will be cleared. Use live re-enrollment here afterward, or
-                    send them to /registration and re-approve them before the kiosk will recognise them again.
+                    send them to /registration and move them through review before the kiosk will recognise them again.
                   </p>
                   <div className="mt-3 flex gap-2">
                     <button
@@ -659,28 +744,28 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                   onClick={handleSave}
                   type="button"
                 >
-                  {isSaving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : null}
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isSaving ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving...</> : 'Save Changes'}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {currentApproval === PERSON_APPROVAL_REJECTED && (
+        {currentLifecycle === PERSON_LIFECYCLE_INACTIVE && (
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
-            <p className="text-sm text-red-700">This enrollment was rejected.</p>
+            <p className="text-sm text-red-700">This employee is inactive.</p>
             <button
               className="mt-3 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-              onClick={() => setApprovalStatus(PERSON_APPROVAL_PENDING)}
+              disabled={isPending(`employee-review-${person.id}`)}
+              onClick={handleMoveToReview}
               type="button"
             >
-              Move back to Pending
+              {isPending(`employee-review-${person.id}`) ? 'Moving…' : 'Move to pending review'}
             </button>
           </div>
         )}
         </div>
       </motion.div>
-    </div>
+    </section>
   )
 }
