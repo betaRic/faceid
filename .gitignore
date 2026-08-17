@@ -2,6 +2,7 @@
 node_modules/
 .claude/
 .next/
+.worktrees/
 dist/
 datasets/
 reports/biometric-shadow/
