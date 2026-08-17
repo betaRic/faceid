@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
-import { writeAuditLog } from '@/lib/audit-log'
+import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
 import { createOriginGuard } from '@/lib/csrf'
 import { kvDel } from '@/lib/kv-utils'
@@ -170,6 +170,7 @@ export async function POST(request) {
       actorRole: resolvedSession.role,
       actorScope: resolvedSession.scope,
       actorOfficeId: resolvedSession.officeId,
+      ...auditActorFromSession(resolvedSession),
       action: 'attendance_override_add',
       targetType: 'attendance',
       targetId: attendanceId,

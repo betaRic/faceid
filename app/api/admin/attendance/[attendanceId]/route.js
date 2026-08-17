@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
-import { writeAuditLog } from '@/lib/audit-log'
+import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { kvDel } from '@/lib/kv-utils'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
@@ -76,6 +76,7 @@ export async function DELETE(request, { params }) {
       actorRole: resolvedSession.role,
       actorScope: resolvedSession.scope,
       actorOfficeId: resolvedSession.officeId,
+      ...auditActorFromSession(resolvedSession),
       action: 'attendance_override_delete',
       targetType: 'attendance',
       targetId: attendanceId,
@@ -124,6 +125,7 @@ export async function PATCH(request, { params }) {
       actorRole: resolvedSession.role,
       actorScope: resolvedSession.scope,
       actorOfficeId: resolvedSession.officeId,
+      ...auditActorFromSession(resolvedSession),
       action: `field_duty_${status}`,
       targetType: 'attendance',
       targetId: attendanceId,

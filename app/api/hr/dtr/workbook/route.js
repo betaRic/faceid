@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { loadPersonByEmployeeIdentifier, resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
 import { buildEmployeeDtrDocument } from '@/lib/dtr-server'
 import { postgresEnabled } from '@/lib/postgres/client'
+import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
 import {
   buildDtrWorkbookBytes,
   buildDtrWorkbookFilename,
@@ -80,6 +81,29 @@ export async function POST(request) {
       month: targetMonth,
       year: targetYear,
       rangeLabel: dtrs[0]?.rangeSpec?.label,
+    })
+
+    await writeAuditLog(null, {
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
+      ...auditActorFromSession(resolvedSession),
+      action: 'dtr_workbook_export',
+      targetType: 'dtr_workbook',
+      targetId: `${targetYear}-${String(targetMonth).padStart(2, '0')}:${dtrs.length}`,
+      officeId: resolvedSession.officeId || '',
+      summary: `Exported DTR workbook for ${dtrs.length} employee${dtrs.length === 1 ? '' : 's'}.`,
+      metadata: {
+        employeeIds: dtrs.map(dtr => dtr.employee?.employeeId || dtr.employee?.id || '').filter(Boolean),
+        employeeCount: dtrs.length,
+        month: targetMonth,
+        year: targetYear,
+        range,
+        customStartDay: customStartDay || '',
+        customEndDay: customEndDay || '',
+        filename,
+        signatoryOverride: Boolean(signatoryName || signatoryPosition),
+      },
     })
 
     return createDtrWorkbookResponse(bytes, filename)

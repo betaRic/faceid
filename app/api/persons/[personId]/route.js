@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { writeAuditLog } from '@/lib/audit-log'
+import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
 import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/employee-access'
@@ -70,13 +70,13 @@ export async function PUT(request, { params }) {
       ? `person_lifecycle_${updateResult.nextPerson.lifecycleStatus}`
       : updateResult.officeChanged ? 'person_transfer' : 'person_update'
     await writeAuditLog(null, {
-      actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId, action,
+      actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId, ...auditActorFromSession(session), action,
       targetType: 'person', targetId: personId, officeId: office.id, summary: `Updated employee record for ${body.name}`,
       metadata: { employeeId: updateResult.existing.employeeId || '', officeName: office.name, lifecycleStatus: updateResult.nextPerson.lifecycleStatus },
     })
     if (scheduleChanged) {
       await writeAuditLog(null, {
-        actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId,
+        actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId, ...auditActorFromSession(session),
         action: 'workforce.update', targetType: 'workforce_employee_schedule', targetId: personId, officeId: office.id,
         summary: `Updated employee schedule and flexitime for ${body.name}`,
         metadata: {
@@ -112,7 +112,7 @@ export async function DELETE(request, { params }) {
     const { deleteLocalEnrollmentPhoto } = await import('@/lib/postgres/photo-store')
     const photoDeleted = await deleteLocalEnrollmentPhoto(person)
     await writeAuditLog(null, {
-      actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId,
+      actorRole: session.role, actorScope: session.scope, actorOfficeId: session.officeId, ...auditActorFromSession(session),
       action: hardDelete ? 'person_hard_delete' : 'person_delete', targetType: 'person', targetId: personId, officeId: person.officeId || '',
       summary: `${hardDelete ? 'Hard deleted' : 'Deleted'} employee record for ${person.name || personId}`,
       metadata: { employeeId: person.employeeId || '', officeName: person.officeName || '', ...(deleted?.counts || {}), photoDeleted },

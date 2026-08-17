@@ -8,7 +8,7 @@ import {
 } from "@/lib/employee-access";
 import { createOriginGuard } from "@/lib/csrf";
 import { queryPostgres, withPostgresTransaction } from "@/lib/postgres/client";
-import { writeLocalAuditLog } from "@/lib/postgres/audit-store";
+import { auditActorFromSession, writeAuditLog } from "@/lib/audit-log";
 import {
   LEAVE_TYPES,
   normalizeWeeklySchedule,
@@ -55,10 +55,11 @@ async function auditWorkforce(
   session,
   { action, type, id, officeId = "", before = null, after = null, summary },
 ) {
-  await writeLocalAuditLog({
+  await writeAuditLog(null, {
     actorRole: session.role,
     actorScope: session.scope,
     actorOfficeId: session.officeId,
+    ...auditActorFromSession(session),
     action: `workforce.${action}`,
     targetType: `workforce_${type}`,
     targetId: id,

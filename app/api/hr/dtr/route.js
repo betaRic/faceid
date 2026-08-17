@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { loadPersonByEmployeeIdentifier, resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
 import { buildEmployeeDtrDocument } from '@/lib/dtr-server'
 import { postgresEnabled } from '@/lib/postgres/client'
+import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -56,6 +57,27 @@ export async function GET(request) {
       range,
       customStartDay,
       customEndDay,
+    })
+
+    await writeAuditLog(null, {
+      actorRole: resolvedSession.role,
+      actorScope: resolvedSession.scope,
+      actorOfficeId: resolvedSession.officeId,
+      ...auditActorFromSession(resolvedSession),
+      action: 'dtr_preview',
+      targetType: 'dtr',
+      targetId: personData.id || employeeId,
+      officeId,
+      summary: `Generated DTR preview for ${personData.name || employeeId}.`,
+      metadata: {
+        employeeId: personData.employeeId || employeeId,
+        month: targetMonth,
+        year: targetYear,
+        range,
+        customStartDay: customStartDay || '',
+        customEndDay: customEndDay || '',
+        signatoryOverride: Boolean(signatoryName || signatoryPosition),
+      },
     })
 
     return NextResponse.json({ ok: true, dtr })
