@@ -52,8 +52,8 @@ export function assertSafeTestDatabaseUrl(value = process.env.FACEID_TEST_DATABA
   return url
 }
 
-export async function migrateTestDatabase({ projectRoot = process.cwd() } = {}) {
-  const targetUrl = assertSafeTestDatabaseUrl()
+export async function migrateTestDatabase({ projectRoot = process.cwd(), databaseUrl } = {}) {
+  const targetUrl = assertSafeTestDatabaseUrl(databaseUrl)
   const targetDatabase = getDatabaseName(targetUrl)
   const adminUrl = new URL(targetUrl)
   adminUrl.pathname = '/postgres'

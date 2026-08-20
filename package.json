@@ -11,12 +11,19 @@
     "build": "next build",
     "build:hosting": "node scripts/clean-next-dev.mjs && next build",
     "start": "next start",
-    "test": "node tests/run-tests.mjs",
+    "test": "node --test tests/postgres/test-database.test.mjs && node tests/run-tests.mjs && node tests/run-contract-tests.mjs",
+    "test:contracts": "node tests/run-contract-tests.mjs",
+    "test:routes": "node tests/postgres/run-route-tests.mjs",
     "openvino:smoke": "node scripts/openvino-smoke.mjs",
     "postgres:migrate": "node scripts/postgres-migrate.mjs",
     "postgres:start": "node scripts/postgres-control.mjs start",
     "postgres:status": "node scripts/postgres-control.mjs status",
-    "postgres:stop": "node scripts/postgres-control.mjs stop"
+    "postgres:stop": "node scripts/postgres-control.mjs stop",
+    "postgres:test:init": "node scripts/postgres-test.mjs init",
+    "postgres:test:start": "node scripts/postgres-test.mjs start",
+    "postgres:test:stop": "node scripts/postgres-test.mjs stop",
+    "postgres:test:reset": "node scripts/postgres-test.mjs reset",
+    "postgres:test:status": "node scripts/postgres-test.mjs status"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

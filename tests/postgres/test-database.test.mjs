@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertSafeTestDatabaseUrl } from './test-database.mjs'
+import { sameOriginRequest } from './route-request.mjs'
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 test('accepts only loopback faceid_rc databases', () => {
   const url = assertSafeTestDatabaseUrl('postgres://postgres@127.0.0.1:55432/faceid_rc_local')
@@ -20,6 +28,160 @@ test('does not fall back to DATABASE_URL', () => {
     else process.env.FACEID_TEST_DATABASE_URL = originalTestUrl
     if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL
     else process.env.DATABASE_URL = originalDatabaseUrl
+  }
+})
+
+test('postgres test command requires FACEID_TEST_DATABASE_URL', () => {
+  const env = { ...process.env }
+  delete env.FACEID_TEST_DATABASE_URL
+  const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'verify'], {
+    cwd: projectRoot,
+    env,
+    encoding: 'utf8',
+    shell: false,
+  })
+
+  assert.notEqual(result.status, 0)
+  assert.match(`${result.stdout}\n${result.stderr}`, /FACEID_TEST_DATABASE_URL/)
+})
+
+test('postgres test command requires an IPv4 loopback URL for its IPv4-only cluster', () => {
+  const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'verify'], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      FACEID_TEST_DATABASE_URL: 'postgres://postgres@[::1]:55432/faceid_rc_local',
+    },
+    encoding: 'utf8',
+    shell: false,
+  })
+
+  assert.notEqual(result.status, 0)
+  assert.match(`${result.stdout}\n${result.stderr}`, /127\.0\.0\.1/)
+})
+
+test('postgres lifecycle commands reject data outside the dedicated test root', () => {
+  const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'status'], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+      FACEID_TEST_PG_DATA: path.join(os.tmpdir(), 'faceattend-postgres-test'),
+    },
+    encoding: 'utf8',
+    shell: false,
+  })
+
+  assert.notEqual(result.status, 0)
+  assert.match(`${result.stdout}\n${result.stderr}`, /FACEID_TEST_PG_DATA must be inside D:\\faceattend-test-data/)
+})
+
+test('sameOriginRequest keeps an explicit origin for CSRF rejection tests', () => {
+  const request = sameOriginRequest('/api/example', {
+    headers: { origin: 'https://untrusted.example' },
+  })
+
+  assert.equal(request.headers.get('origin'), 'https://untrusted.example')
+})
+
+test('route loader resolves extensionless local imports below an alias import', () => {
+  const loaderUrl = pathToFileURL(path.join(projectRoot, 'tests', 'postgres', 'route-loader.mjs')).href
+  const result = spawnSync(process.execPath, [
+    '--loader', loaderUrl,
+    '--input-type=module',
+    '--eval',
+    "await import('@/app/api/system/status/route.js')",
+  ], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+      DATA_BACKEND: 'postgres',
+    },
+    encoding: 'utf8',
+    shell: false,
+  })
+
+  assert.equal(result.status, 0, result.stderr)
+})
+
+test('route test runner requires the controller IPv4 test-cluster URL', () => {
+  const result = spawnSync(process.execPath, ['tests/postgres/run-route-tests.mjs'], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      FACEID_TEST_DATABASE_URL: 'postgres://postgres@[::1]:55432/faceid_rc_local',
+    },
+    encoding: 'utf8',
+    shell: false,
+  })
+
+  assert.notEqual(result.status, 0)
+  assert.match(`${result.stdout}\n${result.stderr}`, /127\.0\.0\.1/)
+})
+
+test('test-cluster configuration applies port 55432 when the URL omits a port', () => {
+  const result = spawnSync(process.execPath, [
+    '--input-type=module',
+    '--eval',
+    "import { getSafeTestClusterConfig } from './tests/postgres/test-cluster.mjs'; console.log(getSafeTestClusterConfig().targetUrl.toString())",
+  ], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1/faceid_rc_local',
+    },
+    encoding: 'utf8',
+    shell: false,
+  })
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /127\.0\.0\.1:55432\/faceid_rc_local/)
+})
+
+test('route harness rejects an owned-looking but stopped PostgreSQL cluster', async () => {
+  const dataRoot = 'D:\\faceattend-test-data'
+  await mkdir(dataRoot, { recursive: true })
+  const dataDir = await mkdtemp(path.join(dataRoot, 'route-harness-stopped-'))
+  try {
+    await writeFile(path.join(dataDir, 'PG_VERSION'), '18\n')
+    await writeFile(path.join(dataDir, '.faceattend-test-postgres-18'), 'faceattend-test-postgres-18\n')
+    const { assertRunningPostgres18Cluster } = await import('./test-cluster.mjs')
+
+    assert.throws(
+      () => assertRunningPostgres18Cluster({
+        dataDir,
+        targetUrl: new URL('postgres://postgres@127.0.0.1:55432/faceid_rc_local'),
+      }),
+      /must be running/,
+    )
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('postgres reset rejects an owned-looking but stopped PostgreSQL cluster', async () => {
+  const dataRoot = 'D:\\faceattend-test-data'
+  await mkdir(dataRoot, { recursive: true })
+  const dataDir = await mkdtemp(path.join(dataRoot, 'reset-harness-stopped-'))
+  try {
+    await writeFile(path.join(dataDir, 'PG_VERSION'), '18\n')
+    await writeFile(path.join(dataDir, '.faceattend-test-postgres-18'), 'faceattend-test-postgres-18\n')
+    const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'reset'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /must be running/)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
   }
 })
 
