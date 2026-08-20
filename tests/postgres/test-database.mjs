@@ -6,12 +6,14 @@ const { Client } = pg
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
 
 function getDatabaseName(url) {
-  const databaseName = decodeURIComponent(url.pathname.slice(1))
-  if (!databaseName || databaseName.includes('/')) {
+  let databaseName
+  try {
+    databaseName = decodeURIComponent(url.pathname.slice(1))
+  } catch {
     throw new Error('FACEID_TEST_DATABASE_URL must identify one database')
   }
-  if (!databaseName.startsWith('faceid_rc_')) {
-    throw new Error('FACEID_TEST_DATABASE_URL database must start with faceid_rc_')
+  if (!/^faceid_rc_[A-Za-z0-9_-]+$/.test(databaseName)) {
+    throw new Error('FACEID_TEST_DATABASE_URL database must be one faceid_rc_ name')
   }
   return databaseName
 }
@@ -35,6 +37,10 @@ export function assertSafeTestDatabaseUrl(value = process.env.FACEID_TEST_DATABA
 
   if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
     throw new Error('FACEID_TEST_DATABASE_URL must use postgres:// or postgresql://')
+  }
+
+  if (url.search || url.hash) {
+    throw new Error('FACEID_TEST_DATABASE_URL must not include routing overrides')
   }
 
   const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
