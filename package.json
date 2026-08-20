@@ -22,8 +22,7 @@
     "postgres:test:init": "node scripts/postgres-test.mjs init",
     "postgres:test:start": "node scripts/postgres-test.mjs start",
     "postgres:test:stop": "node scripts/postgres-test.mjs stop",
-    "postgres:test:reset": "node scripts/postgres-test.mjs reset",
-    "postgres:test:status": "node scripts/postgres-test.mjs status"
+    "postgres:test:reset": "node scripts/postgres-test.mjs reset"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

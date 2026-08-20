@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -45,6 +45,42 @@ test('postgres test command requires FACEID_TEST_DATABASE_URL', () => {
   assert.match(`${result.stdout}\n${result.stderr}`, /FACEID_TEST_DATABASE_URL/)
 })
 
+test('postgres test command defaults to verify without cluster access', async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-postgres-default-'))
+  try {
+    const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /FACEID_TEST_DATABASE_URL verified/)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('postgres test command rejects removed status command', () => {
+  const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'status'], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+    },
+    encoding: 'utf8',
+    shell: false,
+  })
+
+  assert.notEqual(result.status, 0)
+  assert.match(`${result.stdout}\n${result.stderr}`, /verify\|init\|start\|stop\|reset/)
+})
+
 test('postgres test command requires an IPv4 loopback URL for its IPv4-only cluster', () => {
   const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'verify'], {
     cwd: projectRoot,
@@ -60,20 +96,122 @@ test('postgres test command requires an IPv4 loopback URL for its IPv4-only clus
   assert.match(`${result.stdout}\n${result.stderr}`, /127\.0\.0\.1/)
 })
 
-test('postgres lifecycle commands reject data outside the dedicated test root', () => {
-  const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'status'], {
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
-      FACEID_TEST_PG_DATA: path.join(os.tmpdir(), 'faceattend-postgres-test'),
-    },
-    encoding: 'utf8',
-    shell: false,
-  })
+test('alternate absolute data path remains marker-guarded for mutating commands', async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-postgres-alt-'))
+  try {
+    const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'reset'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
 
-  assert.notEqual(result.status, 0)
-  assert.match(`${result.stdout}\n${result.stderr}`, /FACEID_TEST_PG_DATA must be inside D:\\faceattend-test-data/)
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /test-owned PostgreSQL 18 cluster/)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('postgres init refuses a pre-existing unmarked data directory', async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-postgres-existing-'))
+  try {
+    const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'init'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+        FACEID_TEST_PG_BIN: path.join(dataDir, 'missing-bin'),
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /must not already exist before init/)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('alternate absolute data path is accepted for portable test clusters', async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-postgres-config-'))
+  try {
+    const result = spawnSync(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      "import { getSafeTestClusterConfig } from './tests/postgres/test-cluster.mjs'; console.log(getSafeTestClusterConfig().dataDir)",
+    ], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout.trim(), path.resolve(dataDir))
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('test-cluster configuration rejects empty and relative data paths', () => {
+  for (const dataDir of ['', 'relative-test-data']) {
+    const result = spawnSync(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      "import { getSafeTestClusterConfig } from './tests/postgres/test-cluster.mjs'; getSafeTestClusterConfig()",
+    ], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /FACEID_TEST_PG_DATA must be a non-empty absolute path/)
+  }
+})
+
+test('route runner fails when no route tests exist', async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-route-empty-'))
+  try {
+    await writeFile(path.join(dataDir, 'PG_VERSION'), '18\n')
+    await writeFile(path.join(dataDir, '.faceattend-test-postgres-18'), 'faceattend-test-postgres-18\n')
+    const result = spawnSync(process.execPath, ['tests/postgres/run-route-tests.mjs'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /No PostgreSQL route tests found/)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('route runner uses Node experimental loader spelling', async () => {
+  const source = await readFile(path.join(projectRoot, 'tests', 'postgres', 'run-route-tests.mjs'), 'utf8')
+  assert.match(source, /--experimental-loader/)
 })
 
 test('sameOriginRequest keeps an explicit origin for CSRF rejection tests', () => {

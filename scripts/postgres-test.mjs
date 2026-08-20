@@ -12,11 +12,11 @@ import {
 } from '../tests/postgres/test-cluster.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const command = String(process.argv[2] || 'status').toLowerCase()
-const commands = new Set(['verify', 'init', 'start', 'stop', 'reset', 'status'])
+const command = String(process.argv[2] || 'verify').toLowerCase()
+const commands = new Set(['verify', 'init', 'start', 'stop', 'reset'])
 
 function usage() {
-  console.error('Usage: node scripts/postgres-test.mjs <verify|init|start|stop|reset|status>')
+  console.error('Usage: node scripts/postgres-test.mjs <verify|init|start|stop|reset>')
 }
 
 function run(executable, args) {
@@ -55,6 +55,9 @@ if (!commands.has(command)) {
         break
       case 'init':
         if (!existsSync(path.join(dataDir, 'PG_VERSION'))) {
+          if (existsSync(dataDir)) {
+            throw new Error('FACEID_TEST_PG_DATA must not already exist before init unless it is a test-owned PostgreSQL 18 cluster')
+          }
           mkdirSync(dataDir, { recursive: true })
           run(initDb, ['-D', dataDir, '-U', 'postgres', '--encoding=UTF8', '--auth-local=trust', '--auth-host=trust'])
           assertOwnedPostgres18Cluster(dataDir, { requireMarker: false })
@@ -76,10 +79,6 @@ if (!commands.has(command)) {
         assertOwnedPostgres18Cluster(dataDir)
         assertRunningPostgres18Cluster({ dataDir, targetUrl })
         await migrateTestDatabase({ projectRoot, databaseUrl: targetUrl.toString() })
-        break
-      case 'status':
-        assertOwnedPostgres18Cluster(dataDir)
-        run(pgCtl, ['-D', dataDir, 'status'])
         break
     }
   } catch (error) {

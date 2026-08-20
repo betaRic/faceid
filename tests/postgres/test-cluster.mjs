@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { assertSafeTestDatabaseUrl } from './test-database.mjs'
 
-const testDataRoot = path.resolve('D:\\faceattend-test-data')
 const clusterMarker = '.faceattend-test-postgres-18'
 const markerValue = 'faceattend-test-postgres-18'
 
@@ -14,11 +13,13 @@ export function getSafeTestClusterConfig() {
   }
   if (!targetUrl.port) targetUrl.port = '55432'
 
-  const dataDir = path.resolve(String(process.env.FACEID_TEST_PG_DATA || 'D:\\faceattend-test-data\\postgres-18').trim())
-  const relative = path.relative(testDataRoot, dataDir)
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error('FACEID_TEST_PG_DATA must be inside D:\\faceattend-test-data')
+  const rawDataDir = process.env.FACEID_TEST_PG_DATA === undefined
+    ? 'D:\\faceattend-test-data\\postgres-18'
+    : String(process.env.FACEID_TEST_PG_DATA).trim()
+  if (!rawDataDir || !path.isAbsolute(rawDataDir)) {
+    throw new Error('FACEID_TEST_PG_DATA must be a non-empty absolute path')
   }
+  const dataDir = path.resolve(rawDataDir)
 
   return { targetUrl, dataDir }
 }

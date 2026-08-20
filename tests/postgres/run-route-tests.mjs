@@ -20,13 +20,14 @@ const testFiles = entries
   .sort()
 
 if (testFiles.length === 0) {
-  console.log('No PostgreSQL route tests found.')
+  console.error('No PostgreSQL route tests found.')
+  process.exitCode = 1
 } else {
   assertRunningPostgres18Cluster({ dataDir, targetUrl })
   await migrateTestDatabase({ projectRoot, databaseUrl: targetUrl.toString() })
   const loaderUrl = pathToFileURL(path.join(projectRoot, 'tests', 'postgres', 'route-loader.mjs')).href
   const result = spawnSync(process.execPath, [
-    '--loader', loaderUrl,
+    '--experimental-loader', loaderUrl,
     '--test',
     ...process.argv.slice(2),
     ...testFiles,
