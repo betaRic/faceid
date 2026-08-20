@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { migrateTestDatabase } from './test-database.mjs'
+import { discoverRouteTestFiles, requireRouteTestFiles } from './route-test-files.mjs'
 import {
   assertOwnedPostgres18Cluster,
   assertRunningPostgres18Cluster,
@@ -13,16 +13,17 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const { targetUrl, dataDir } = getSafeTestClusterConfig()
 assertOwnedPostgres18Cluster(dataDir)
 
-const entries = await readdir(path.join(projectRoot, 'tests', 'postgres'), { withFileTypes: true })
-const testFiles = entries
-  .filter(entry => entry.isFile() && entry.name.endsWith('.routes.test.mjs'))
-  .map(entry => path.join(projectRoot, 'tests', 'postgres', entry.name))
-  .sort()
-
-if (testFiles.length === 0) {
-  console.error('No PostgreSQL route tests found.')
+let testFiles
+try {
+  testFiles = requireRouteTestFiles(
+    await discoverRouteTestFiles(path.join(projectRoot, 'tests', 'postgres')),
+  )
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error)
   process.exitCode = 1
-} else {
+}
+
+if (testFiles) {
   assertRunningPostgres18Cluster({ dataDir, targetUrl })
   await migrateTestDatabase({ projectRoot, databaseUrl: targetUrl.toString() })
   const loaderUrl = pathToFileURL(path.join(projectRoot, 'tests', 'postgres', 'route-loader.mjs')).href

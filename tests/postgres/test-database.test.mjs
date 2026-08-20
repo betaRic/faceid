@@ -117,9 +117,33 @@ test('alternate absolute data path remains marker-guarded for mutating commands'
   }
 })
 
-test('postgres init refuses a pre-existing unmarked data directory', async () => {
+test('postgres init allows an existing empty data directory', async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-postgres-existing-'))
   try {
+    const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'init'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+        FACEID_TEST_PG_BIN: path.join(dataDir, 'missing-bin'),
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /must not already exist before init/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /ENOENT/)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('postgres init refuses a nonempty unmarked data directory', async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-postgres-nonempty-'))
+  try {
+    await writeFile(path.join(dataDir, 'unknown.txt'), 'do not adopt')
     const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'init'], {
       cwd: projectRoot,
       env: {
@@ -186,32 +210,28 @@ test('test-cluster configuration rejects empty and relative data paths', () => {
   }
 })
 
-test('route runner fails when no route tests exist', async () => {
-  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'faceattend-route-empty-'))
-  try {
-    await writeFile(path.join(dataDir, 'PG_VERSION'), '18\n')
-    await writeFile(path.join(dataDir, '.faceattend-test-postgres-18'), 'faceattend-test-postgres-18\n')
-    const result = spawnSync(process.execPath, ['tests/postgres/run-route-tests.mjs'], {
-      cwd: projectRoot,
-      env: {
-        ...process.env,
-        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
-        FACEID_TEST_PG_DATA: dataDir,
-      },
-      encoding: 'utf8',
-      shell: false,
-    })
-
-    assert.notEqual(result.status, 0)
-    assert.match(`${result.stdout}\n${result.stderr}`, /No PostgreSQL route tests found/)
-  } finally {
-    await rm(dataDir, { recursive: true, force: true })
-  }
-})
-
 test('route runner uses Node experimental loader spelling', async () => {
   const source = await readFile(path.join(projectRoot, 'tests', 'postgres', 'run-route-tests.mjs'), 'utf8')
   assert.match(source, /--experimental-loader/)
+})
+
+test('route test discovery is isolated from repository route files', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'faceattend-route-discovery-'))
+  try {
+    const emptyDirectory = path.join(directory, 'empty')
+    await mkdir(emptyDirectory)
+    await writeFile(path.join(directory, 'future.routes.test.mjs'), '')
+    await writeFile(path.join(directory, 'ignored.test.mjs'), '')
+    const { discoverRouteTestFiles, requireRouteTestFiles } = await import('./route-test-files.mjs')
+
+    const files = await discoverRouteTestFiles(directory)
+    assert.deepEqual(files, [path.join(directory, 'future.routes.test.mjs')])
+    const emptyFiles = await discoverRouteTestFiles(emptyDirectory)
+    assert.deepEqual(emptyFiles, [])
+    assert.throws(() => requireRouteTestFiles(emptyFiles), /No PostgreSQL route tests found/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 test('sameOriginRequest keeps an explicit origin for CSRF rejection tests', () => {

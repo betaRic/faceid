@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -55,7 +55,7 @@ if (!commands.has(command)) {
         break
       case 'init':
         if (!existsSync(path.join(dataDir, 'PG_VERSION'))) {
-          if (existsSync(dataDir)) {
+          if (existsSync(dataDir) && readdirSync(dataDir).length > 0) {
             throw new Error('FACEID_TEST_PG_DATA must not already exist before init unless it is a test-owned PostgreSQL 18 cluster')
           }
           mkdirSync(dataDir, { recursive: true })
