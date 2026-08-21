@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { assertSafeTestDatabaseUrl } from './test-database.mjs'
+import { assertSafeTestDatabaseUrl, canonicalDataDirectory, migrateTestDatabase } from './test-database.mjs'
 import { sameOriginRequest } from './route-request.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -234,6 +234,179 @@ test('route test discovery is isolated from repository route files', async () =>
   }
 })
 
+test('route runtime storage is unique, contained, and removed exactly', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'faceattend-route-runtime-project-'))
+  try {
+    const { createRouteRuntimeDir, removeRouteRuntimeDir } = await import('./route-runtime.mjs')
+    const runtimeDir = await createRouteRuntimeDir(projectRoot)
+    const secondRuntimeDir = await createRouteRuntimeDir(projectRoot)
+    const runtimeRoot = path.join(projectRoot, '.faceattend-test-runtime')
+
+    assert.notEqual(runtimeDir, secondRuntimeDir)
+    assert.equal(path.relative(runtimeRoot, runtimeDir).startsWith('..'), false)
+    assert.equal((await stat(runtimeDir)).isDirectory(), true)
+    await removeRouteRuntimeDir(projectRoot, runtimeDir)
+    await removeRouteRuntimeDir(projectRoot, secondRuntimeDir)
+    await assert.rejects(stat(runtimeDir), /ENOENT/)
+    await assert.rejects(
+      removeRouteRuntimeDir(projectRoot, path.join(projectRoot, 'outside-runtime')),
+      /must stay inside the route test runtime root/,
+    )
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true })
+  }
+})
+
+test('migrations reject mismatched server identity before destructive SQL', async () => {
+  const queries = []
+  const client = {
+    async connect() {},
+    async end() {},
+    async query(sql) {
+      queries.push(sql)
+      return {
+        rowCount: 1,
+        rows: [{
+          data_directory: path.join(os.tmpdir(), 'different-postgres-data'),
+          server_version_num: '180006',
+          server_addr: '127.0.0.1',
+          server_port: 55432,
+        }],
+      }
+    },
+  }
+
+  await assert.rejects(
+    migrateTestDatabase({
+      databaseUrl: 'postgres://postgres@127.0.0.1:55432/faceid_rc_mismatch',
+      expectedDataDir: path.join(os.tmpdir(), 'expected-postgres-data'),
+      createClient: () => client,
+    }),
+    /data directory does not match FACEID_TEST_PG_DATA/,
+  )
+  assert.equal(queries.some(sql => /CREATE DATABASE|DROP SCHEMA/i.test(sql)), false)
+})
+
+test('canonical PostgreSQL data directories preserve case on case-sensitive platforms', () => {
+  assert.notEqual(
+    canonicalDataDirectory('/tmp/OwnedPostgres', 'linux'),
+    canonicalDataDirectory('/tmp/ownedpostgres', 'linux'),
+  )
+  assert.equal(
+    canonicalDataDirectory('D:\\OwnedPostgres', 'win32'),
+    canonicalDataDirectory('d:\\ownedpostgres', 'win32'),
+  )
+})
+
+test('migrations reject a target connection that does not match the owned server before DROP SCHEMA', async () => {
+  const expectedDataDir = path.join(os.tmpdir(), 'expected-postgres-data')
+  const queries = []
+  const admin = {
+    async connect() {},
+    async end() {},
+    async query(sql) {
+      queries.push(`admin:${sql}`)
+      if (/data_directory/i.test(sql)) {
+        return {
+          rowCount: 1,
+          rows: [{
+            data_directory: expectedDataDir,
+            server_version_num: '180006',
+            server_addr: '127.0.0.1/32',
+            server_port: 55432,
+          }],
+        }
+      }
+      return { rowCount: 1, rows: [] }
+    },
+  }
+  const target = {
+    async connect() {},
+    async end() {},
+    async query(sql) {
+      queries.push(`target:${sql}`)
+      return {
+        rowCount: 1,
+        rows: [{
+          data_directory: path.join(os.tmpdir(), 'different-postgres-data'),
+          server_version_num: '180006',
+          server_addr: '127.0.0.1/32',
+          server_port: 55432,
+        }],
+      }
+    },
+  }
+  const clients = [admin, target]
+
+  await assert.rejects(
+    migrateTestDatabase({
+      databaseUrl: 'postgres://postgres@127.0.0.1:55432/faceid_rc_mismatch',
+      expectedDataDir,
+      createClient: () => clients.shift(),
+    }),
+    /data directory does not match FACEID_TEST_PG_DATA/,
+  )
+  assert.equal(queries.some(sql => /target:.*DROP SCHEMA/i.test(sql)), false)
+})
+
+test('migrations keep validated admin connection open through target schema reset', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'faceattend-migration-project-'))
+  const expectedDataDir = path.join(os.tmpdir(), 'owned-postgres-data')
+  const events = []
+  const admin = {
+    async connect() { events.push('admin-connect') },
+    async end() { events.push('admin-end') },
+    async query(sql) {
+      events.push(`admin:${sql.trim().slice(0, 16)}`)
+      if (/data_directory/i.test(sql)) {
+        return {
+          rowCount: 1,
+          rows: [{
+            data_directory: expectedDataDir,
+            server_version_num: '180006',
+            server_addr: '127.0.0.1/32',
+            server_port: 55432,
+          }],
+        }
+      }
+      return { rowCount: 1, rows: [] }
+    },
+  }
+  const target = {
+    async connect() { events.push('target-connect') },
+    async end() { events.push('target-end') },
+    async query(sql) {
+      events.push(`target:${sql.trim().slice(0, 16)}`)
+      if (/data_directory/i.test(sql)) {
+        return {
+          rowCount: 1,
+          rows: [{
+            data_directory: expectedDataDir,
+            server_version_num: '180006',
+            server_addr: '127.0.0.1/32',
+            server_port: 55432,
+          }],
+        }
+      }
+      return { rowCount: 1, rows: [] }
+    },
+  }
+  const clients = [admin, target]
+  try {
+    await mkdir(path.join(projectRoot, 'db', 'migrations'), { recursive: true })
+    await migrateTestDatabase({
+      projectRoot,
+      databaseUrl: 'postgres://postgres@127.0.0.1:55432/faceid_rc_owned',
+      expectedDataDir,
+      createClient: () => clients.shift(),
+    })
+
+    assert.ok(events.indexOf('admin-end') > events.findIndex(event => event.startsWith('target:DROP SCHEMA')))
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true })
+  }
+})
+
 test('sameOriginRequest keeps an explicit origin for CSRF rejection tests', () => {
   const request = sameOriginRequest('/api/example', {
     headers: { origin: 'https://untrusted.example' },
@@ -298,9 +471,7 @@ test('test-cluster configuration applies port 55432 when the URL omits a port', 
 })
 
 test('route harness rejects an owned-looking but stopped PostgreSQL cluster', async () => {
-  const dataRoot = 'D:\\faceattend-test-data'
-  await mkdir(dataRoot, { recursive: true })
-  const dataDir = await mkdtemp(path.join(dataRoot, 'route-harness-stopped-'))
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'route-harness-stopped-'))
   try {
     await writeFile(path.join(dataDir, 'PG_VERSION'), '18\n')
     await writeFile(path.join(dataDir, '.faceattend-test-postgres-18'), 'faceattend-test-postgres-18\n')
@@ -319,13 +490,34 @@ test('route harness rejects an owned-looking but stopped PostgreSQL cluster', as
 })
 
 test('postgres reset rejects an owned-looking but stopped PostgreSQL cluster', async () => {
-  const dataRoot = 'D:\\faceattend-test-data'
-  await mkdir(dataRoot, { recursive: true })
-  const dataDir = await mkdtemp(path.join(dataRoot, 'reset-harness-stopped-'))
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'reset-harness-stopped-'))
   try {
     await writeFile(path.join(dataDir, 'PG_VERSION'), '18\n')
     await writeFile(path.join(dataDir, '.faceattend-test-postgres-18'), 'faceattend-test-postgres-18\n')
     const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'reset'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        FACEID_TEST_DATABASE_URL: 'postgres://postgres@127.0.0.1:55432/faceid_rc_local',
+        FACEID_TEST_PG_DATA: dataDir,
+      },
+      encoding: 'utf8',
+      shell: false,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /must be running/)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('postgres stop rejects an owned-looking but stopped cluster', async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'stop-harness-stopped-'))
+  try {
+    await writeFile(path.join(dataDir, 'PG_VERSION'), '18\n')
+    await writeFile(path.join(dataDir, '.faceattend-test-postgres-18'), 'faceattend-test-postgres-18\n')
+    const result = spawnSync(process.execPath, ['scripts/postgres-test.mjs', 'stop'], {
       cwd: projectRoot,
       env: {
         ...process.env,

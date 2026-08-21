@@ -73,12 +73,17 @@ if (!commands.has(command)) {
         break
       case 'stop':
         assertOwnedPostgres18Cluster(dataDir)
+        assertRunningPostgres18Cluster({ dataDir, targetUrl })
         run(pgCtl, ['-D', dataDir, '-m', 'fast', '-w', 'stop'])
         break
       case 'reset':
         assertOwnedPostgres18Cluster(dataDir)
         assertRunningPostgres18Cluster({ dataDir, targetUrl })
-        await migrateTestDatabase({ projectRoot, databaseUrl: targetUrl.toString() })
+        await migrateTestDatabase({
+          projectRoot,
+          databaseUrl: targetUrl.toString(),
+          expectedDataDir: dataDir,
+        })
         break
     }
   } catch (error) {

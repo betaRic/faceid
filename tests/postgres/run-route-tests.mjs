@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { migrateTestDatabase } from './test-database.mjs'
 import { discoverRouteTestFiles, requireRouteTestFiles } from './route-test-files.mjs'
+import { createRouteRuntimeDir, removeRouteRuntimeDir } from './route-runtime.mjs'
 import {
   assertOwnedPostgres18Cluster,
   assertRunningPostgres18Cluster,
@@ -25,25 +26,35 @@ try {
 
 if (testFiles) {
   assertRunningPostgres18Cluster({ dataDir, targetUrl })
-  await migrateTestDatabase({ projectRoot, databaseUrl: targetUrl.toString() })
-  const loaderUrl = pathToFileURL(path.join(projectRoot, 'tests', 'postgres', 'route-loader.mjs')).href
-  const result = spawnSync(process.execPath, [
-    '--experimental-loader', loaderUrl,
-    '--test',
-    ...process.argv.slice(2),
-    ...testFiles,
-  ], {
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      DATABASE_URL: targetUrl.toString(),
-      DATA_BACKEND: 'postgres',
-      NODE_ENV: 'test',
-      NEXT_PUBLIC_SITE_URL: 'http://127.0.0.1:3000',
-    },
-    shell: false,
-    stdio: 'inherit',
+  await migrateTestDatabase({
+    projectRoot,
+    databaseUrl: targetUrl.toString(),
+    expectedDataDir: dataDir,
   })
-  if (result.error) throw result.error
-  process.exitCode = result.status === null ? 1 : result.status
+  const loaderUrl = pathToFileURL(path.join(projectRoot, 'tests', 'postgres', 'route-loader.mjs')).href
+  const routeRuntimeDir = await createRouteRuntimeDir(projectRoot)
+  try {
+    const result = spawnSync(process.execPath, [
+      '--experimental-loader', loaderUrl,
+      '--test',
+      ...process.argv.slice(2),
+      ...testFiles,
+    ], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        DATABASE_URL: targetUrl.toString(),
+        DATA_BACKEND: 'postgres',
+        NODE_ENV: 'test',
+        NEXT_PUBLIC_SITE_URL: 'http://127.0.0.1:3000',
+        LOCAL_FILE_STORAGE_DIR: routeRuntimeDir,
+      },
+      shell: false,
+      stdio: 'inherit',
+    })
+    if (result.error) throw result.error
+    process.exitCode = result.status === null ? 1 : result.status
+  } finally {
+    await removeRouteRuntimeDir(projectRoot, routeRuntimeDir)
+  }
 }
