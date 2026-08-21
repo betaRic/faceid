@@ -4,7 +4,8 @@ import sharp from 'sharp'
 import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
 import { createPersonsPostHandler } from '../../lib/routes/persons-route.js'
 import { closePostgresPool, queryPostgres } from '../../lib/postgres/client.js'
-import { enrollLocalPerson, refreshLocalPersonBiometrics } from '../../lib/postgres/person-store.js'
+import { enrollLocalPerson, getLocalPersonById, refreshLocalPersonBiometrics } from '../../lib/postgres/person-store.js'
+import { issueAttendanceChallenge } from '../../lib/attendance-challenge.js'
 import {
   getLocalFileStorageRoot,
   saveNormalizedEnrollmentPhoto,
@@ -18,6 +19,7 @@ import {
 } from '../../lib/admin-auth.js'
 import {
   createEmployeeViewSessionCookieValue,
+  parseEmployeeViewSessionCookieValue,
 } from '../../lib/employee-view-auth.js'
 import { GET as getPersons } from '../../app/api/persons/route.js'
 import { PUT as updatePerson } from '../../app/api/persons/[personId]/route.js'
@@ -27,6 +29,7 @@ import {
 } from '../../app/api/persons/[personId]/reenroll/route.js'
 import { GET as getAttendanceTable } from '../../app/api/attendance/table/route.js'
 import { GET as getAttendanceDtr } from '../../app/api/attendance/dtr/route.js'
+import { createAttendanceV2PostHandler } from '../../app/api/attendance/v2/route.js'
 
 const office = {
   id: 'office-route-test',
@@ -40,9 +43,11 @@ before(async () => {
   process.env.ADMIN_SESSION_SECRET = 'route-test-admin-session-secret'
   process.env.EMPLOYEE_VIEW_SESSION_SECRET = 'route-test-employee-session-secret'
   await queryPostgres(`
-    INSERT INTO offices (id, name, name_lower, office_type, divisions)
-    VALUES ($1, $2, $3, $4, $5::jsonb)
-  `, [office.id, office.name, office.name.toLowerCase(), office.officeType, '[]'])
+    INSERT INTO offices (
+      id, name, name_lower, office_type, latitude, longitude, radius_meters, divisions
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+  `, [office.id, office.name, office.name.toLowerCase(), office.officeType, 6.1164, 125.1716, 500, '[]'])
   await queryPostgres(`
     INSERT INTO admin_users (
       id, email, email_lower, name, role, scope, office_id, active, data
@@ -134,6 +139,19 @@ function adminCookie() {
     scope: 'regional',
   })
   return `${getAdminSessionCookieName()}=${value}`
+}
+
+async function transitionLifecycle(personId, lifecycleStatus, reason = `Route test transition to ${lifecycleStatus}`) {
+  const response = await updatePerson(
+    sameOriginRequest(`/api/persons/${personId}`, {
+      method: 'PUT',
+      headers: { cookie: adminCookie() },
+      body: { command: 'transitionLifecycle', lifecycleStatus, reason },
+    }),
+    { params: Promise.resolve({ personId }) },
+  )
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()))
+  return response
 }
 
 function registrationHandler(overrides = {}) {
@@ -652,4 +670,184 @@ test('employee with no Employee ID can load attendance by canonical session pers
   }))
   assert.equal(dtr.status, 200, await dtr.clone().text())
   assert.match(String(dtr.headers.get('content-type') || ''), /spreadsheetml/)
+})
+
+test('kiosk persists the matched person ID and rejects unsafe submissions without attendance writes', async () => {
+  const personAResponse = await register(registrationFixture({
+    employeeId: '',
+    lastName: 'KioskA',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const personBResponse = await register(registrationFixture({
+    employeeId: '',
+    lastName: 'KioskB',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const pendingResponse = await register(registrationFixture({
+    employeeId: '',
+    lastName: 'KioskPending',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const personARegistration = await personAResponse.json()
+  const personBRegistration = await personBResponse.json()
+  const pendingRegistration = await pendingResponse.json()
+  assert.equal(personAResponse.status, 200, JSON.stringify(personARegistration))
+  assert.equal(personBResponse.status, 200, JSON.stringify(personBRegistration))
+  assert.equal(pendingResponse.status, 200, JSON.stringify(pendingRegistration))
+  await transitionLifecycle(personARegistration.personId, 'active', 'Activate canonical kiosk identity test')
+
+  const personA = await getLocalPersonById(personARegistration.personId)
+  const pendingPerson = await getLocalPersonById(pendingRegistration.personId)
+  const validLivenessEvidence = {
+    earSamples: [0.24, 0.17, 0.25],
+    meshDeltas: [0.31, 0.29],
+    irisDeltas: [0.22, 0.24],
+    avgAntispoof: 0.92,
+    avgLiveness: 0.88,
+    hasEyeSignal: true,
+    hasMotionSignal: true,
+    frameCount: 3,
+    pass: true,
+  }
+  const authoritativeDescriptor = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))
+  let matchedPerson = personA
+  const services = {
+    buildAuthoritativeAttendancePayload: async () => ({
+      descriptor: authoritativeDescriptor,
+      descriptors: [authoritativeDescriptor, authoritativeDescriptor],
+      descriptorSpread: 0.1,
+      antispoof: 0.92,
+      liveness: 0.88,
+      acceptedFrames: [],
+      rejectedFrames: [],
+      processedCount: 2,
+      diagnostics: {
+        modelVersion: 'route-test-attendance-model-v1',
+        acceptedCount: 2,
+        rejectedCount: 0,
+        averagePerformanceMs: 1,
+      },
+    }),
+    findClaimedEmployeeMatch: async (_db, _offices, _descriptor, options = {}) => {
+      if (options.entry?.employeeId === '0000') {
+        return { ok: false, decisionCode: 'blocked_unknown_access_code', message: 'Access code was not found.' }
+      }
+      return {
+        ok: true,
+        person: matchedPerson,
+        personId: matchedPerson.id,
+        confidence: 0.99,
+        decisionCode: 'matched_person',
+        debug: {},
+      }
+    },
+  }
+  const postAttendance = createAttendanceV2PostHandler({ services })
+
+  const buildBody = (accessCode, overrides = {}) => ({
+    employeeId: accessCode,
+    name: 'Client-supplied identity',
+    officeId: 'client-supplied-office',
+    officeName: 'Client-supplied office',
+    latitude: 6.1164,
+    longitude: 125.1716,
+    scanFrames: [
+      { frameDataUrl: 'data:image/jpeg;base64,AAA' },
+      { frameDataUrl: 'data:image/jpeg;base64,BBB' },
+    ],
+    captureContext: {
+      capturePolicyVersion: 'scan-v4',
+      verificationFrames: 3,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      mobile: false,
+    },
+    scanDiagnostics: { strictFrames: 3, descriptorSpread: 0.1 },
+    livenessEvidence: validLivenessEvidence,
+    kioskContext: { kioskId: 'route-test-kiosk', source: 'web-scan' },
+    ...overrides,
+  })
+  const submit = async (body, handler = postAttendance) => {
+    const challenge = await issueAttendanceChallenge(null, {
+      employeeId: body.employeeId,
+      kioskId: body.kioskContext.kioskId,
+      source: body.kioskContext.source,
+    })
+    return handler(sameOriginRequest('/api/attendance/v2', {
+      method: 'POST',
+      body: { ...body, challenge },
+    }))
+  }
+  const attendanceCount = async () => Number((await queryPostgres('SELECT count(*)::integer AS count FROM attendance')).rows[0].count)
+
+  const countBefore = await attendanceCount()
+  const accepted = await submit(buildBody(personBRegistration.accessCode))
+  const acceptedPayload = await accepted.json()
+  assert.equal(accepted.status, 200, JSON.stringify(acceptedPayload))
+  assert.equal(acceptedPayload.entry.personId, personA.id)
+  assert.equal(acceptedPayload.entry.employeeId, '')
+  assert.equal(await attendanceCount(), countBefore + 1)
+  const stored = await queryPostgres('SELECT * FROM attendance ORDER BY created_at DESC LIMIT 1')
+  assert.equal(stored.rows[0].person_id, personA.id)
+  assert.equal(stored.rows[0].employee_id, '')
+  assert.equal(stored.rows[0].name, personA.name)
+  assert.equal(stored.rows[0].office_id, personA.officeId)
+  assert.equal(stored.rows[0].office_name, office.name)
+  const storedDaily = await queryPostgres('SELECT person_id, employee_id FROM attendance_daily WHERE person_id = $1', [personA.id])
+  assert.deepEqual(storedDaily.rows[0], { person_id: personA.id, employee_id: '' })
+  const acceptedScan = await queryPostgres(
+    `SELECT person_id, employee_id FROM scan_events WHERE status = 'accepted' ORDER BY id DESC LIMIT 1`,
+  )
+  assert.deepEqual(acceptedScan.rows[0], { person_id: personA.id, employee_id: '' })
+  assert.equal(parseEmployeeViewSessionCookieValue(acceptedPayload.employeeViewSession)?.personId, personA.id)
+  const lock = await queryPostgres('SELECT * FROM attendance_locks WHERE employee_id = $1', [personA.id])
+  assert.equal(lock.rowCount, 1)
+
+  const expectBlockedWithoutWrite = async (body, expectedStatus, expectedDecisionCode) => {
+    const before = await attendanceCount()
+    const response = await submit(body)
+    const payload = await response.json()
+    assert.equal(response.status, expectedStatus, JSON.stringify(payload))
+    assert.equal(payload.decisionCode, expectedDecisionCode)
+    assert.equal(await attendanceCount(), before)
+  }
+
+  await expectBlockedWithoutWrite(buildBody('0000'), 403, 'blocked_unknown_access_code')
+  matchedPerson = { ...personA, active: false }
+  await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode), 403, 'blocked_inactive')
+  matchedPerson = pendingPerson
+  await expectBlockedWithoutWrite(buildBody(pendingRegistration.accessCode), 403, 'blocked_pending_approval')
+  const productionMatcherPost = createAttendanceV2PostHandler({
+    services: { buildAuthoritativeAttendancePayload: services.buildAuthoritativeAttendancePayload },
+  })
+  const beforeProductionPending = await attendanceCount()
+  const productionPending = await submit(buildBody(pendingRegistration.accessCode), productionMatcherPost)
+  const productionPendingPayload = await productionPending.json()
+  assert.equal(productionPending.status, 403, JSON.stringify(productionPendingPayload))
+  assert.equal(productionPendingPayload.decisionCode, 'blocked_pending_approval')
+  assert.equal(await attendanceCount(), beforeProductionPending)
+  matchedPerson = personA
+  await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode), 409, 'blocked_recent_duplicate')
+  const cooldownScan = await queryPostgres(
+    `SELECT person_id, employee_id FROM scan_events WHERE decision_code = 'blocked_recent_duplicate' ORDER BY id DESC LIMIT 1`,
+  )
+  assert.deepEqual(cooldownScan.rows[0], { person_id: personA.id, employee_id: '' })
+  matchedPerson = { ...personA, id: '' }
+  await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode), 403, 'blocked_no_reliable_match')
+  matchedPerson = personA
+  await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode, {
+    livenessEvidence: {
+      earSamples: [0.25, 0.25, 0.25],
+      meshDeltas: [0.34, 0.39],
+      irisDeltas: [0.02, 0.03],
+      avgAntispoof: 0.82,
+      avgLiveness: 0.74,
+      frameCount: 3,
+    },
+  }), 403, 'blocked_liveness')
+  await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode, {
+    latitude: 0,
+    longitude: 0,
+  }), 403, 'blocked_geofence')
 })

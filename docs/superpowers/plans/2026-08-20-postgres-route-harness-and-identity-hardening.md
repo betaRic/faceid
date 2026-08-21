@@ -491,19 +491,24 @@ git commit -m "fix: bind reenrollment to canonical person"
 **Files:**
 - Modify: `lib/attendance/process.js`
 - Modify: `lib/attendance/write.js`
+- Modify: `lib/attendance/logs.js`
+- Modify: `lib/attendance/match.js`
+- Modify: `lib/daily-attendance.js`
+- Modify: `lib/postgres/attendance-store.js`
+- Modify: `lib/scan-events.js`
 - Modify: `app/api/attendance/v2/route.js`
 - Test: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write accept/reject identity tests**
+- [x] **Step 1: Write accept/reject identity tests**
 
-Seed person A and person B with null/duplicate Employee IDs. Construct `createAttendanceV2PostHandler` with deterministic authoritative embedding/match services while leaving validation, authorization, office policy, and persistence real. Assert an accepted scan matched to person A writes `attendance.person_id = personA.id`, uses person A's office/unit, and never uses a claimed person B ID. Assert inactive, pending, invalid-liveness, geofence, cooldown, and wrong-access-code cases write no accepted attendance row and return stable decision codes.
+Seed person A and person B with null/duplicate Employee IDs. Construct `createAttendanceV2PostHandler` with deterministic authoritative embedding/match services while leaving challenge consumption, validation, authorization, office policy, and persistence real. Assert an accepted scan matched to person A writes person A's canonical ID through raw attendance, daily projection, lock, scan event, response, and employee session; uses person A's office/unit; and never persists a claimed person B identity. Assert missing canonical ID, inactive, pending, invalid-liveness, geofence, cooldown, and wrong-access-code cases write no accepted attendance row and return stable decision codes. Exercise the production matcher for pending lifecycle behavior.
 
-- [ ] **Step 2: Verify the current missing-person assignment fails**
+- [x] **Step 2: Verify the current missing-person assignment fails**
 
 Run: `npm run test:routes -- --test-name-pattern="kiosk"`
 Expected: FAIL because `entry.personId` is not replaced after `const person = personMatch.person`.
 
-- [ ] **Step 3: Assign authoritative identity before all downstream work**
+- [x] **Step 3: Assign authoritative identity before all downstream work**
 
 Immediately after the matched person is accepted:
 
@@ -523,15 +528,17 @@ entry.id = `${entry.personId}_${entry.timestamp}`
 
 Pass `entry.personId` to daily-log queries, locks, attendance insert, daily projection, scan events, and employee-view sessions. Use `personId` in lock keys; Employee ID is display data.
 
+PostgreSQL office/person mappers keep normalized columns authoritative over legacy JSON. Map SQL latitude, longitude, and radius into `office.gps`, which is the shape consumed by geofence checks.
+
 `processAttendanceSubmission` accepts an optional `services` object whose default is a frozen production service map. `createAttendanceV2PostHandler` passes the supplied map. Tests replace only `buildAuthoritativeAttendancePayload` and `findClaimedEmployeeMatch`; the route has no environment-variable bypass and cannot activate test behavior in production.
 
-- [ ] **Step 4: Run kiosk tests and commit**
+- [x] **Step 4: Run kiosk tests and commit**
 
 Run: `npm run test:routes -- --test-name-pattern="kiosk"`
 Expected: PASS.
 
 ```powershell
-git add lib/attendance/process.js lib/attendance/write.js app/api/attendance/v2/route.js tests/postgres/identity.routes.test.mjs
+git add lib/attendance/process.js lib/attendance/write.js lib/attendance/logs.js lib/attendance/match.js lib/daily-attendance.js lib/postgres/attendance-store.js lib/scan-events.js app/api/attendance/v2/route.js tests/postgres/identity.routes.test.mjs
 git commit -m "fix: persist matched kiosk person identity"
 ```
 
