@@ -178,7 +178,7 @@ export default function KioskView({
 
     if (kioskState === 'confirmed') {
       playAudioCue('success')
-      if (currentMatch?.employeeId) {
+      if (currentMatch?.personId || currentMatch?.employeeId) {
         try {
           saveAttendanceMatch(currentMatch)
         } catch {}
@@ -186,8 +186,9 @@ export default function KioskView({
     }
     if (kioskState === 'blocked' && previous !== 'blocked') {
       playAudioCue('notify')
-      // Only save if employee was identified (has employeeId) - not for unknown faces
-      if (currentMatch?.employeeId) {
+      // Save only identified people; a canonical person ID supports employees
+      // whose optional Employee ID is blank.
+      if (currentMatch?.personId || currentMatch?.employeeId) {
         try {
           saveAttendanceMatch(currentMatch)
         } catch {}
@@ -206,7 +207,7 @@ export default function KioskView({
   const isReviewableBlockedState = Boolean(
     isBlocked
     && currentMatch?.resultState === 'already-recorded'
-    && currentMatch?.employeeId,
+    && (currentMatch?.personId || currentMatch?.employeeId),
   )
   const showResultScreen = Boolean(currentMatch && (isConfirmed || isReviewableBlockedState))
 
@@ -216,11 +217,11 @@ export default function KioskView({
       return
     }
 
-    const resultKey = `${currentMatch?.employeeId || ''}:${currentMatch?.timestamp || ''}:${currentMatch?.resultState || 'confirmed'}`
+    const resultKey = `${currentMatch?.personId || currentMatch?.employeeId || ''}:${currentMatch?.timestamp || ''}:${currentMatch?.resultState || 'confirmed'}`
     if (resultKey && resultKey !== resultKeyRef.current) {
       resultKeyRef.current = resultKey
     }
-  }, [currentMatch?.employeeId, currentMatch?.resultState, currentMatch?.timestamp, showResultScreen])
+  }, [currentMatch?.employeeId, currentMatch?.personId, currentMatch?.resultState, currentMatch?.timestamp, showResultScreen])
 
   const handleBackToKiosk = useCallback(() => {
     clearAttendanceMatch()

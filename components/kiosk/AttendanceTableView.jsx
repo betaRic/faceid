@@ -143,7 +143,7 @@ export default function AttendanceTableView({
   }, [customStartDay, customEndDay])
 
   useEffect(() => {
-    if (!currentMatch?.employeeId) {
+    if (!currentMatch?.personId && !currentMatch?.employeeId) {
       setLoading(false)
       return
     }
@@ -154,7 +154,7 @@ export default function AttendanceTableView({
 
       try {
         const res = await fetch(
-          `/api/attendance/table?employeeId=${encodeURIComponent(currentMatch.employeeId)}&month=${currentMonth}&year=${currentYear}`,
+          `/api/attendance/table?employeeId=${encodeURIComponent(currentMatch.employeeId || '')}&month=${currentMonth}&year=${currentYear}`,
           {
             headers: buildEmployeeViewHeaders(currentMatch),
             cache: 'no-store',
@@ -178,16 +178,16 @@ export default function AttendanceTableView({
     }
 
     fetchData()
-  }, [currentMatch?.employeeId, currentMatch?.employeeViewSession, currentMonth, currentYear])
+  }, [currentMatch?.employeeId, currentMatch?.employeeViewSession, currentMatch?.personId, currentMonth, currentYear])
 
   const handleGenerateDtr = useCallback(async () => {
-    if (!currentMatch?.employeeId) return
+    if (!currentMatch?.personId && !currentMatch?.employeeId) return
     setError(null)
     setDownloading(true)
 
     try {
       const params = new URLSearchParams({
-        employeeId: currentMatch.employeeId,
+        employeeId: currentMatch.employeeId || '',
         month: String(currentMonth),
         year: String(currentYear),
         range: selectedRange,
@@ -240,7 +240,7 @@ export default function AttendanceTableView({
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-center text-sm font-semibold text-ink sm:text-lg">{currentMatch.name}</h2>
                 <div className="mt-0.5 flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted sm:text-xs">
-                  <span>{currentMatch.employeeId}</span>
+                  <span>{currentMatch.employeeId || 'Employee ID not provided'}</span>
                 </div>
               </div>
 

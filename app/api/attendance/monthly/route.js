@@ -13,10 +13,6 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const employeeId = searchParams.get('employeeId')
 
-  if (!employeeId) {
-    return Response.json({ ok: false, message: 'Employee ID required' }, { status: 400 })
-  }
-
   try {
     const db = null
     const access = await resolveAttendanceViewer(request, db, employeeId)
@@ -29,7 +25,8 @@ export async function GET(request) {
     const { attendanceStartOfMonth, attendanceEndOfMonth } = getMonthRange(currentYear, currentMonth)
 
     const personId = String(access.person?.id || '').trim()
-    const dailyRecords = await listEmployeeDailyAttendanceRecordsForMonth(db, personId, currentYear, currentMonth, employeeId)
+    const resolvedEmployeeId = String(access.person?.employeeId || employeeId || '').trim()
+    const dailyRecords = await listEmployeeDailyAttendanceRecordsForMonth(db, personId, currentYear, currentMonth, resolvedEmployeeId)
     if (dailyRecords.length > 0) {
       const records = dailyRecords
         .filter(record => hasDailyAttendanceLogs(record))

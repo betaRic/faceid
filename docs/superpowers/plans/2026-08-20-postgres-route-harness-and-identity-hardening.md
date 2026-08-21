@@ -442,18 +442,27 @@ git commit -m "fix: make employee lifecycle transactional"
 
 **Files:**
 - Modify: `app/api/persons/[personId]/reenroll/route.js`
-- Modify: `lib/data-store.js`
 - Modify: `lib/employee-access.js`
+- Modify: `lib/employee-view-auth.js`
+- Modify: `lib/attendance-match.js`
+- Modify: `lib/postgres/attendance-store.js`
 - Modify: `lib/postgres/person-store.js`
+- Modify: `hooks/useKioskLoop.js`
+- Modify: `components/KioskView.jsx`
+- Modify: `components/kiosk/AttendanceTableView.jsx`
+- Modify: `components/kiosk/KioskSuccessScreen.jsx`
+- Modify: `app/(public)/summary/page.jsx`
+- Modify: `app/api/attendance/{table,monthly,me,dtr}/route.js`
 - Test: `tests/postgres/identity.routes.test.mjs`
+- Test: `tests/run-tests.mjs`
 
-- [ ] **Step 1: Write failing ownership and preservation tests**
+- [x] **Step 1: Write failing ownership and preservation tests**
 
-Seed two people with the same legacy Employee ID. Verify a token for person A cannot re-enroll person B. Verify public/employee re-enrollment cannot change `lifecycle_status`, `approval_status`, `active`, `office_id`, `organization_unit_id`, access code, attendance, or audit history; only descriptors/model/photo fields change.
+Seed two people with the same legacy Employee ID. Verify a token for person A cannot re-enroll person B and returns the same forbidden response for a nonexistent foreign ID. Verify public/employee re-enrollment cannot change `lifecycle_status`, `approval_status`, `active`, `office_id`, `organization_unit_id`, access code, attendance, or audit history; only descriptors/model/photo fields change. Force a late transaction failure and prove person data, biometric index, old photo bytes, audit rows, and directory contents all roll back.
 
-- [ ] **Step 2: Replace OR ownership checks**
+- [x] **Step 2: Replace OR ownership checks**
 
-The employee token payload and route authorization must compare canonical IDs only:
+The employee token payload requires canonical `personId`; Employee ID remains optional display/reference data. Route authorization compares canonical IDs only:
 
 ```javascript
 if (!session?.personId || session.personId !== personId) {
@@ -461,17 +470,19 @@ if (!session?.personId || session.personId !== personId) {
 }
 ```
 
-- [ ] **Step 3: Restrict the PostgreSQL update set**
+- [x] **Step 3: Restrict the PostgreSQL update set**
 
 Create `refreshLocalPersonBiometrics(personId, { descriptors, biometricModelVersion, photo })` whose SQL updates only biometric/photo columns and `updated_at`. Do not route employee self-service through general profile/lifecycle update code.
 
-- [ ] **Step 4: Run tests and commit**
+Carry canonical `personId` through kiosk result state and browser storage. Employee attendance/table/monthly/DTR routes resolve a signed employee session by person ID, so the optional Employee ID can remain blank; staff lookup continues to require Employee ID.
+
+- [x] **Step 4: Run tests and commit**
 
 Run: `npm run test:routes -- --test-name-pattern="re-enrollment"`
 Expected: PASS.
 
 ```powershell
-git add app/api/persons/[personId]/reenroll/route.js lib/data-store.js lib/employee-access.js lib/postgres/person-store.js tests/postgres/identity.routes.test.mjs
+git add app/api/persons/[personId]/reenroll/route.js app/api/attendance app/(public)/summary/page.jsx components/KioskView.jsx components/kiosk/AttendanceTableView.jsx components/kiosk/KioskSuccessScreen.jsx hooks/useKioskLoop.js lib/attendance-match.js lib/employee-access.js lib/employee-view-auth.js lib/postgres/attendance-store.js lib/postgres/person-store.js tests/postgres/identity.routes.test.mjs tests/run-tests.mjs
 git commit -m "fix: bind reenrollment to canonical person"
 ```
 

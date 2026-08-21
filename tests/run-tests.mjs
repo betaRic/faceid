@@ -78,6 +78,7 @@ const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 const reportWindowModule = await importLocalModule('../lib/report-window.js')
 const employeeAccessCodeExportModule = await importLocalModule('../lib/employee-access-code-export.js')
+const attendanceMatchModule = await importLocalModule('../lib/attendance-match.js')
 
 const {
   calculateDistanceMeters,
@@ -177,6 +178,7 @@ const {
   buildEmployeeAccessCodeWorkbookBytes,
   groupEmployeesByOffice,
 } = employeeAccessCodeExportModule
+const { loadAttendanceMatch, saveAttendanceMatch } = attendanceMatchModule
 
 function createMinimalFaceMesh({
   leftEye = { x: 100, y: 100 },
@@ -2507,6 +2509,39 @@ await run('pending profiles can trigger review but cannot hard-block enrollment'
   assert.equal(evaluation?.duplicate, false)
   assert.equal(evaluation?.reviewRequired, true)
   assert.equal(evaluation?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
+})
+
+await run('attendance match storage keeps canonical person identity when Employee ID is absent', () => {
+  class MemoryStorage {
+    constructor() { this.values = new Map() }
+    getItem(key) { return this.values.has(key) ? this.values.get(key) : null }
+    removeItem(key) { this.values.delete(key) }
+    setItem(key, value) { this.values.set(key, String(value)) }
+  }
+
+  const previousLocalStorage = globalThis.localStorage
+  const previousSessionStorage = globalThis.sessionStorage
+  globalThis.localStorage = new MemoryStorage()
+  globalThis.sessionStorage = new MemoryStorage()
+  try {
+    saveAttendanceMatch({
+      personId: 'person-with-optional-id',
+      employeeId: '',
+      name: 'Optional ID Employee',
+      employeeViewSession: 'signed-session',
+      employeeViewSessionExpiresAt: Date.now() + 60_000,
+    })
+    const stored = loadAttendanceMatch()
+    assert.equal(stored.personId, 'person-with-optional-id')
+    assert.equal(stored.employeeId, '')
+    assert.equal(stored.employeeViewSession, 'signed-session')
+    assert.equal(globalThis.sessionStorage.getItem('currentEmployeeId'), null)
+  } finally {
+    if (previousLocalStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = previousLocalStorage
+    if (previousSessionStorage === undefined) delete globalThis.sessionStorage
+    else globalThis.sessionStorage = previousSessionStorage
+  }
 })
 
 await run('employee access-code export groups offices and sorts complete names alphabetically', () => {
