@@ -9,7 +9,13 @@ import EmployeeAccessCodeExportActions from './EmployeeAccessCodeExportActions'
 
 function LifecycleBadge({ status }) {
   const value = status || 'inactive'
-  const palette = value === 'active' ? 'bg-emerald-100 text-emerald-800' : value === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+  const palette = value === 'active'
+    ? 'bg-emerald-100 text-emerald-800'
+    : value === 'pending'
+      ? 'bg-amber-100 text-amber-800'
+      : value === 'rejected'
+        ? 'bg-red-100 text-red-800'
+        : 'bg-slate-100 text-slate-700'
   return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] ${palette}`}>{value === 'pending' ? 'Pending review' : value}</span>
 }
 
@@ -104,12 +110,14 @@ function EmployeesPanelInner() {
         successMessage: `Activated ${selectedEmployees.length} employee(s)`,
         failureMessage: 'Bulk activation incomplete',
         pendingKey: 'employees-bulk-activate',
+        reason: 'Activated employee using a bulk directory action.',
       },
       deactivate: {
         updates: { lifecycleStatus: 'inactive' },
         successMessage: `Deactivated ${selectedEmployees.length} employee(s)`,
         failureMessage: 'Bulk deactivation incomplete',
         pendingKey: 'employees-bulk-deactivate',
+        reason: 'Deactivated employee using a bulk directory action.',
       },
     }
 
@@ -147,6 +155,7 @@ function EmployeesPanelInner() {
               <option value="active">Active</option>
               <option value="pending">Pending review</option>
               <option value="inactive">Inactive</option>
+              <option value="rejected">Rejected</option>
             </select>
           </Field>
           {officeDivisions.length > 0 ? (

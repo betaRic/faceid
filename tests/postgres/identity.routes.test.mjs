@@ -12,6 +12,12 @@ import {
 import { sameOriginRequest } from './route-request.mjs'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import {
+  createAdminSessionCookieValue,
+  getAdminSessionCookieName,
+} from '../../lib/admin-auth.js'
+import { GET as getPersons } from '../../app/api/persons/route.js'
+import { PUT as updatePerson } from '../../app/api/persons/[personId]/route.js'
 
 const office = {
   id: 'office-route-test',
@@ -22,10 +28,21 @@ const office = {
 let registrationSequence = 0
 
 before(async () => {
+  process.env.ADMIN_SESSION_SECRET = 'route-test-admin-session-secret'
   await queryPostgres(`
     INSERT INTO offices (id, name, name_lower, office_type, divisions)
     VALUES ($1, $2, $3, $4, $5::jsonb)
   `, [office.id, office.name, office.name.toLowerCase(), office.officeType, '[]'])
+  await queryPostgres(`
+    INSERT INTO admin_users (
+      id, email, email_lower, name, role, scope, office_id, active, data
+    ) VALUES ($1, $2, $2, $3, 'admin', 'regional', '', true, $4::jsonb)
+  `, [
+    'route-test-admin',
+    'route-test-admin@example.test',
+    'Route Test Admin',
+    JSON.stringify({ permissions: ['employees'] }),
+  ])
 })
 
 after(async () => {
@@ -49,7 +66,8 @@ function registrationFixture({
   lastName = 'Route',
   photoDataUrl,
 } = {}) {
-  const resolvedEmployeeId = employeeId || String(700000 + registrationSequence++)
+  const fixtureIndex = registrationSequence++
+  const resolvedEmployeeId = employeeId === undefined ? String(700000 + fixtureIndex) : employeeId
   const phaseIds = ['center', 'center', 'side_a', 'side_a', 'side_b', 'side_b', 'chin_down', 'chin_down']
   return {
     profile: {
@@ -69,6 +87,7 @@ function registrationFixture({
         genuinelyDiverse: true,
         keptCount: 8,
         phaseSampleCounts: { center: 2, side_a: 2, side_b: 2, chin_down: 2 },
+        testDescriptorOffset: (fixtureIndex * 16) % 112,
       },
     },
     sampleFrames: phaseIds.map((phaseId, index) => ({
@@ -78,15 +97,25 @@ function registrationFixture({
   }
 }
 
-async function deterministicEnrollmentPayload() {
+async function deterministicEnrollmentPayload(_sampleFrames, captureMetadata = {}) {
+  const offset = Number(captureMetadata.testDescriptorOffset || 0)
   return {
     descriptors: Array.from({ length: 8 }, (_, sampleIndex) => (
-      Array.from({ length: 128 }, (_, dimension) => (dimension === sampleIndex ? 1 : 0))
+      Array.from({ length: 128 }, (_, dimension) => (dimension === sampleIndex + offset ? 1 : 0))
     )),
     captureMetadata: { qualityScore: 0.9 },
     biometricModelVersion: 'route-test-model-v1',
     diagnostics: {},
   }
+}
+
+function adminCookie() {
+  const value = createAdminSessionCookieValue({
+    email: 'route-test-admin@example.test',
+    uid: 'route-test-admin',
+    scope: 'regional',
+  })
+  return `${getAdminSessionCookieName()}=${value}`
 }
 
 function registrationHandler(overrides = {}) {
@@ -226,4 +255,164 @@ test('public error response hides database and filesystem details', async () => 
   assert.equal(response.status, 500)
   assert.equal(payload.message, 'Registration could not be completed. Please try again or contact HR.')
   assert.doesNotMatch(JSON.stringify(payload), /bind|SQL|D:\\|node_modules/i)
+})
+
+test('post-commit biometric index warning is structured without changing registration success', async () => {
+  const response = await register(
+    registrationFixture({ photoDataUrl: await pngDataUrl() }),
+    {
+      enrollLocalPerson: async () => ({
+        transactionResult: {
+          personId: 'committed-warning-person',
+          uniqueCount: 8,
+          nextPerson: {
+            accessCode: '1234',
+            lifecycleStatus: 'pending',
+            duplicateReviewStatus: 'clear',
+          },
+        },
+        sampleCount: 8,
+        indexSyncWarning: 'Biometric index refresh is pending.',
+        duplicateReviewRequired: false,
+      }),
+    },
+  )
+  const payload = await response.json()
+  assert.equal(response.status, 200, JSON.stringify(payload))
+  assert.deepEqual(payload.warnings, ['Biometric index refresh is pending.'])
+  assert.doesNotMatch(payload.message, /warning/i)
+})
+
+test('registration is visible as pending and lifecycle transitions are audited', async () => {
+  const registration = await register(registrationFixture({
+    employeeId: '823456',
+    lastName: 'Lifecycle',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const registered = await registration.json()
+  assert.equal(registration.status, 200, JSON.stringify(registered))
+  assert.equal(registered.lifecycleStatus, 'pending')
+
+  const cookie = adminCookie()
+  const pendingResponse = await getPersons(sameOriginRequest(
+    '/api/persons?mode=directory&approval=pending',
+    { headers: { cookie } },
+  ))
+  const pending = await pendingResponse.json()
+  assert.equal(pendingResponse.status, 200, JSON.stringify(pending))
+  assert.equal(pending.persons.some(person => person.id === registered.personId), true)
+
+  const transition = lifecycleStatus => updatePerson(
+    sameOriginRequest(`/api/persons/${registered.personId}`, {
+      method: 'PUT',
+      headers: { cookie },
+      body: {
+        command: 'transitionLifecycle',
+        lifecycleStatus,
+        reason: `Route test transition to ${lifecycleStatus}`,
+      },
+    }),
+    { params: Promise.resolve({ personId: registered.personId }) },
+  )
+
+  const activeResponse = await transition('active')
+  assert.equal(activeResponse.status, 200, JSON.stringify(await activeResponse.clone().json()))
+  const duplicateActive = await transition('active')
+  assert.equal(duplicateActive.status, 409)
+  const backToPending = await transition('pending')
+  assert.equal(backToPending.status, 200, JSON.stringify(await backToPending.clone().json()))
+  const rejectedResponse = await transition('rejected')
+  assert.equal(rejectedResponse.status, 200, JSON.stringify(await rejectedResponse.clone().json()))
+
+  const profileResponse = await updatePerson(
+    sameOriginRequest(`/api/persons/${registered.personId}`, {
+      method: 'PUT',
+      headers: { cookie },
+      body: {
+        lastName: 'Lifecycle',
+        firstName: 'Test',
+        middleName: '',
+        employeeId: '823456',
+        position: 'Tester',
+        officeId: office.id,
+        officeName: office.name,
+        divisionId: '',
+        lifecycleStatus: 'active',
+      },
+    }),
+    { params: Promise.resolve({ personId: registered.personId }) },
+  )
+  assert.equal(profileResponse.status, 200, JSON.stringify(await profileResponse.clone().json()))
+
+  const stored = await queryPostgres(
+    'SELECT lifecycle_status, active, approval_status FROM persons WHERE id = $1',
+    [registered.personId],
+  )
+  assert.deepEqual(stored.rows[0], {
+    lifecycle_status: 'rejected',
+    active: false,
+    approval_status: 'rejected',
+  })
+  const audits = await queryPostgres(`
+    SELECT actor_email, metadata
+    FROM audit_logs
+    WHERE target_id = $1 AND action = 'person_lifecycle_transition'
+    ORDER BY id
+  `, [registered.personId])
+  assert.equal(audits.rowCount, 3)
+  assert.equal(audits.rows[0].actor_email, 'route-test-admin@example.test')
+  assert.equal(audits.rows[0].metadata.before.lifecycleStatus, 'pending')
+  assert.equal(audits.rows[0].metadata.after.lifecycleStatus, 'active')
+  assert.equal(audits.rows[1].metadata.before.lifecycleStatus, 'active')
+  assert.equal(audits.rows[1].metadata.after.lifecycleStatus, 'pending')
+  assert.equal(audits.rows[2].metadata.before.lifecycleStatus, 'pending')
+  assert.equal(audits.rows[2].metadata.after.lifecycleStatus, 'rejected')
+})
+
+test('missing Employee ID does not bypass duplicate face rejection', async () => {
+  const candidateResponse = await register(registrationFixture({
+    employeeId: '923456',
+    lastName: 'DuplicateSource',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const candidate = await candidateResponse.json()
+  assert.equal(candidateResponse.status, 200, JSON.stringify(candidate))
+  const activated = await updatePerson(
+    sameOriginRequest(`/api/persons/${candidate.personId}`, {
+      method: 'PUT',
+      headers: { cookie: adminCookie() },
+      body: {
+        command: 'transitionLifecycle',
+        lifecycleStatus: 'active',
+        reason: 'Activate duplicate test source',
+      },
+    }),
+    { params: Promise.resolve({ personId: candidate.personId }) },
+  )
+  assert.equal(activated.status, 200, JSON.stringify(await activated.clone().json()))
+
+  const source = await queryPostgres(
+    `
+      SELECT descriptor
+      FROM biometric_index
+      WHERE person_id = $1
+      ORDER BY sample_index
+    `,
+    [candidate.personId],
+  )
+  assert.equal(source.rowCount, 8)
+  const response = await register(
+    registrationFixture({ employeeId: '', lastName: 'DuplicateFace', photoDataUrl: await pngDataUrl() }),
+    {
+      buildAuthoritativeEnrollmentPayload: async () => ({
+        descriptors: source.rows.map(row => row.descriptor),
+        captureMetadata: { qualityScore: 0.9 },
+        biometricModelVersion: 'route-test-model-v1',
+        diagnostics: {},
+      }),
+    },
+  )
+  const payload = await response.json()
+  assert.equal(response.status, 409, JSON.stringify(payload))
+  assert.equal(payload.message, 'This registration matches an existing employee record and cannot be submitted again.')
 })

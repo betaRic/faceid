@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
 import { useAdminStore } from '@/lib/admin/store'
-import { updatePersonRecord } from '@/lib/data-store'
+import { transitionPersonLifecycle, updatePersonRecord } from '@/lib/data-store'
 import { Field } from '@/components/shared/ui'
 import { buildEmployeeDisplayName } from '@/lib/person-name'
 import { normalizeEmployeeWfhDays } from '@/lib/employee-wfh'
@@ -14,6 +14,7 @@ import {
   PERSON_LIFECYCLE_ACTIVE,
   PERSON_LIFECYCLE_INACTIVE,
   PERSON_LIFECYCLE_PENDING,
+  PERSON_LIFECYCLE_REJECTED,
 } from '@/lib/person-approval'
 
 export default function EmployeeEditorModal({ person, onSave, onCancel }) {
@@ -38,7 +39,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   const [employeeId, setEmployeeId] = useState('')
   const [position, setPosition] = useState('')
   const [divisionId, setDivisionId] = useState('')
-  const [lifecycleStatus, setLifecycleStatus] = useState(PERSON_LIFECYCLE_PENDING)
   const [individualWfhDays, setIndividualWfhDays] = useState([])
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [weeklySchedule, setWeeklySchedule] = useState({})
@@ -59,7 +59,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     setOfficeId(person.officeId || '')
     setPosition(person.position || '')
     setDivisionId(person.divisionId || '')
-    setLifecycleStatus(getPersonLifecycleStatus(person))
     setIndividualWfhDays(normalizeEmployeeWfhDays(person.individualWfhDays))
     setScheduleEnabled(Object.keys(person.weeklySchedule || {}).length > 0)
     setWeeklySchedule(person.weeklySchedule || {})
@@ -82,7 +81,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleQuickApprove() {
     setPending(`employee-approve-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
+      await transitionPersonLifecycle(person, PERSON_LIFECYCLE_ACTIVE, 'Approved employee registration after HR review.')
       refreshEmployees()
       addToast(`${person.name} activated`, 'success')
       onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
@@ -95,10 +94,10 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleQuickReject() {
     setPending(`employee-reject-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
+      await transitionPersonLifecycle(person, PERSON_LIFECYCLE_REJECTED, 'Rejected employee registration after HR review.')
       refreshEmployees()
-      addToast(`${person.name} set inactive`, 'success')
-      onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
+      addToast(`${person.name} registration rejected`, 'success')
+      onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_REJECTED })
     } catch (err) {
       addToast(err?.message || 'Rejection failed', 'error')
     }
@@ -108,7 +107,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleQuickActivate() {
     setPending(`employee-activate-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
+      await transitionPersonLifecycle(person, PERSON_LIFECYCLE_ACTIVE, 'Reactivated employee record.')
       refreshEmployees()
       addToast(`${person.name} activated`, 'success')
       onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_ACTIVE })
@@ -121,7 +120,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleQuickDeactivate() {
     setPending(`employee-deactivate-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
+      await transitionPersonLifecycle(person, PERSON_LIFECYCLE_INACTIVE, 'Deactivated employee record.')
       refreshEmployees()
       addToast(`${person.name} deactivated`, 'success')
       onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_INACTIVE })
@@ -134,7 +133,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   async function handleMoveToReview() {
     setPending(`employee-review-${person.id}`, true)
     try {
-      await updatePersonRecord(person, { lifecycleStatus: PERSON_LIFECYCLE_PENDING })
+      await transitionPersonLifecycle(person, PERSON_LIFECYCLE_PENDING, 'Returned employee record to pending review.')
       refreshEmployees()
       onSave(person, { lifecycleStatus: PERSON_LIFECYCLE_PENDING })
       addToast(`${person.name} moved to pending review`, 'success')
@@ -208,7 +207,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
         individualWfhDays,
         weeklySchedule: scheduleEnabled ? weeklySchedule : {},
         flexitime: { enabled: flexitimeEnabled, requiredMinutes: flexitimeRequiredMinutes },
-        lifecycleStatus,
       })
       refreshEmployees()
       addToast(`${trimmedFirstName} ${trimmedLastName} updated`, 'success')
@@ -223,7 +221,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
           middleName: trimmedMiddleName,
         }),
         officeId,
-        lifecycleStatus,
         position: trimmedPosition,
         divisionId: isRegional ? divisionId : '',
         individualWfhDays,
@@ -487,7 +484,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             ) : null}
             <div className="mt-4 flex gap-3">
               <button
-                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isPending(`employee-approve-${person.id}`)}
                 onClick={handleQuickApprove}
                 type="button"
@@ -495,12 +492,12 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 {isPending(`employee-approve-${person.id}`) ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Activating...</> : 'Activate'}
               </button>
               <button
-                className="flex-1 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isPending(`employee-reject-${person.id}`)}
                 onClick={handleQuickReject}
                 type="button"
               >
-                {isPending(`employee-reject-${person.id}`) ? <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px]" /> Setting inactive...</> : 'Set inactive'}
+                {isPending(`employee-reject-${person.id}`) ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> Rejecting...</> : 'Reject enrollment'}
               </button>
             </div>
             <button
@@ -751,11 +748,15 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
           </div>
         )}
 
-        {currentLifecycle === PERSON_LIFECYCLE_INACTIVE && (
-          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
-            <p className="text-sm text-red-700">This employee is inactive.</p>
+        {(currentLifecycle === PERSON_LIFECYCLE_INACTIVE || currentLifecycle === PERSON_LIFECYCLE_REJECTED) && (
+          <div className={`mt-5 rounded-2xl border p-4 ${currentLifecycle === PERSON_LIFECYCLE_REJECTED ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
+            <p className={`text-sm font-medium ${currentLifecycle === PERSON_LIFECYCLE_REJECTED ? 'text-red-800' : 'text-slate-700'}`}>
+              {currentLifecycle === PERSON_LIFECYCLE_REJECTED
+                ? 'This enrollment was rejected and cannot use the attendance kiosk.'
+                : 'This employee is inactive and cannot use the attendance kiosk.'}
+            </p>
             <button
-              className="mt-3 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
+              className="mt-3 min-h-[44px] rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={isPending(`employee-review-${person.id}`)}
               onClick={handleMoveToReview}
               type="button"

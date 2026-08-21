@@ -104,6 +104,7 @@ const {
   getEffectivePersonApprovalStatus,
   isPersonBiometricActive,
   PERSON_APPROVAL_PENDING,
+  resolvePersonLifecycleTransition,
 } = personApprovalModule
 const {
   normalizeEnrollmentDescriptorBatch,
@@ -663,6 +664,8 @@ await run('person directory search mode distinguishes names from employee IDs', 
   assert.equal(inferPersonDirectorySearchMode('Jane Doe'), 'name')
   assert.equal(normalizePersonDirectorySearchValue('  Jane Doe  ', 'name'), 'jane doe')
   assert.equal(normalizePersonDirectorySearchValue(' EMP-001 ', 'employeeId'), 'EMP-001')
+  assert.equal(clampPersonDirectoryLimit(null), 25)
+  assert.equal(clampPersonDirectoryLimit(''), 25)
   assert.equal(clampPersonDirectoryLimit(200), 50)
 })
 
@@ -693,6 +696,37 @@ await run('person approval defaults legacy records to approved and blocks pendin
   assert.equal(getEffectivePersonApprovalStatus({ approvalStatus: PERSON_APPROVAL_PENDING }), 'pending')
   assert.equal(isPersonBiometricActive({ active: true }), true)
   assert.equal(isPersonBiometricActive({ active: true, approvalStatus: PERSON_APPROVAL_PENDING }), false)
+})
+
+await run('person lifecycle transitions derive compatibility fields and reject no-op changes', () => {
+  assert.deepEqual(resolvePersonLifecycleTransition('pending', 'active'), {
+    previousLifecycleStatus: 'pending',
+    lifecycleStatus: 'active',
+    active: true,
+    approvalStatus: 'approved',
+  })
+  assert.deepEqual(resolvePersonLifecycleTransition('pending', 'rejected'), {
+    previousLifecycleStatus: 'pending',
+    lifecycleStatus: 'rejected',
+    active: false,
+    approvalStatus: 'rejected',
+  })
+  assert.throws(
+    () => resolvePersonLifecycleTransition('active', 'active'),
+    error => error?.status === 409 && /already active/i.test(error.message),
+  )
+  assert.throws(
+    () => resolvePersonLifecycleTransition('pending', 'unknown'),
+    error => error?.status === 400 && /not valid/i.test(error.message),
+  )
+  assert.throws(
+    () => resolvePersonLifecycleTransition('active', 'rejected'),
+    error => error?.status === 409 && /cannot change/i.test(error.message),
+  )
+  assert.throws(
+    () => resolvePersonLifecycleTransition('rejected', 'active'),
+    error => error?.status === 409 && /cannot change/i.test(error.message),
+  )
 })
 
 await run('person biometrics summary wraps descriptor embeddings for local indexing', async () => {

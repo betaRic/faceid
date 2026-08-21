@@ -37,13 +37,17 @@ function LifecycleBadge({ status }) {
       ? "bg-emerald-100 text-emerald-800"
       : lifecycle === "pending"
         ? "bg-amber-100 text-amber-800"
-        : "bg-stone-200 text-stone-700";
+        : lifecycle === "rejected"
+          ? "bg-red-100 text-red-800"
+          : "bg-stone-200 text-stone-700";
   const label =
     lifecycle === "active"
       ? "Active"
       : lifecycle === "pending"
         ? "Pending review"
-        : "Inactive";
+        : lifecycle === "rejected"
+          ? "Rejected"
+          : "Inactive";
   return (
     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${tone}`}>
       {label}
@@ -120,6 +124,7 @@ function HrEmployeesPanelInner() {
               <option value="active">Active</option>
               <option value="pending">Pending review</option>
               <option value="inactive">Inactive</option>
+              <option value="rejected">Rejected</option>
             </select>
           </div>
         </div>

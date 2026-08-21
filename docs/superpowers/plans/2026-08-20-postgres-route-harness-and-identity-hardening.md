@@ -33,7 +33,8 @@
 - Modify `app/api/attendance/v2/route.js`: expose a thin dependency-injected POST factory for route tests while production uses real services.
 - Modify `lib/data-store.js` and `lib/employee-access.js`: stop accepting Employee ID as re-enrollment ownership proof.
 - Modify `lib/csrf.js`, `lib/rate-limit.js`, and `next.config.mjs`: trusted proxy/origin boundary, safe defaults, CSP/security regression coverage.
-- Create `db/migrations/0014_security_rate_limits.sql` and `lib/postgres/rate-limit-store.js`: durable shared rate-limit buckets.
+- Create `db/migrations/0014_add_rejected_employee_lifecycle.sql`: preserve rejected registration as a lifecycle distinct from inactive employment.
+- Create `db/migrations/0015_security_rate_limits.sql` and `lib/postgres/rate-limit-store.js`: durable shared rate-limit buckets.
 - Create `lib/offices/hr-office-settings.js` and modify `app/api/hr/office-settings/route.js`: allowlisted Office HR DTO and mutations.
 - Modify `lib/bootstrap-pin.js`, `lib/admin-auth.js`, threshold/PIN/session routes: safe bootstrap, cookie, and privileged-threshold contracts.
 
@@ -382,16 +383,23 @@ git commit -m "fix: normalize stored enrollment photos"
 ### Task 5: Registration visibility and lifecycle commands
 
 **Files:**
+- Create: `db/migrations/0014_add_rejected_employee_lifecycle.sql`
 - Modify: `lib/postgres/person-store.js`
 - Modify: `app/api/persons/route.js`
 - Modify: `lib/routes/persons-route.js`
 - Modify: `app/api/persons/[personId]/route.js`
 - Modify: `lib/person-approval.js`
+- Modify: `lib/data-store.js`
+- Modify: `lib/admin/hooks/useEmployees.js`
+- Modify: `components/admin/EmployeeEditorModal.jsx`
+- Modify: `components/admin/EmployeesPanel.jsx`
+- Modify: `components/admin/HrEmployeesPanel.jsx`
+- Test: `tests/run-tests.mjs`
 - Test: `tests/postgres/identity.routes.test.mjs`
 
 - [ ] **Step 1: Write failing real-database tests**
 
-Test successful registration returns `lifecycleStatus: 'pending'`; `GET /api/persons?mode=directory&approval=pending` includes the new `personId`; approval changes it to active; rejection changes it to rejected; an invalid transition returns 409; every transition writes actor/prior/new state to `audit_logs`; duplicate Employee ID absence does not hide a face duplicate.
+Test successful registration returns `lifecycleStatus: 'pending'`; `GET /api/persons?mode=directory&approval=pending` includes the new `personId`; approval changes it to active; only a pending application may be rejected; rejected records must return to pending review before activation; an invalid transition returns 409; every transition writes actor/prior/new state to `audit_logs`; duplicate Employee ID absence does not hide a face duplicate.
 
 - [ ] **Step 2: Verify failures are behavioral, not fixture failures**
 
@@ -412,6 +420,8 @@ Route input becomes:
 
 The server loads the current row `FOR UPDATE`, validates the transition with `resolvePersonLifecycleTransition`, derives `active` and `approval_status`, and inserts the audit row using the same transaction client.
 
+Add `rejected` to the lifecycle constraint without rewriting existing rows. Profile Save must not carry lifecycle state; admin status controls call the explicit command with a meaningful audit reason. Rejected and inactive remain visibly and filterably distinct.
+
 Move the current POST orchestration into `createPersonsPostHandler({ buildAuthoritativeEnrollmentPayload, enrollLocalPerson, normalizeDataImage, writeTelemetry })`. `app/api/persons/route.js` constructs and exports the real handler. Tests construct the same handler with only `buildAuthoritativeEnrollmentPayload` replaced by a deterministic fixture service; duplicate checks and PostgreSQL persistence remain real.
 
 - [ ] **Step 4: Keep registration write and required audit in one transaction**
@@ -424,7 +434,7 @@ Run: `npm run test:routes -- --test-name-pattern="registration|lifecycle"`
 Expected: PASS.
 
 ```powershell
-git add lib/routes/persons-route.js lib/postgres/person-store.js lib/person-approval.js app/api/persons/route.js app/api/persons/[personId]/route.js tests/postgres/identity.routes.test.mjs
+git add db/migrations/0014_add_rejected_employee_lifecycle.sql lib/routes/persons-route.js lib/postgres/person-store.js lib/person-approval.js lib/data-store.js lib/admin/hooks/useEmployees.js app/api/persons/route.js app/api/persons/[personId]/route.js components/admin/EmployeeEditorModal.jsx components/admin/EmployeesPanel.jsx components/admin/HrEmployeesPanel.jsx tests/run-tests.mjs tests/postgres/identity.routes.test.mjs
 git commit -m "fix: make employee lifecycle transactional"
 ```
 
@@ -548,7 +558,7 @@ The route defaults to deactivation. Hard deletion requires `{ command: 'hardDele
 
 - [ ] **Step 3: Add durable rate-limit buckets**
 
-Create `0014_security_rate_limits.sql` with `request_rate_limits(key_hash text, window_start timestamptz, request_count integer, expires_at timestamptz)`, a composite primary key on `(key_hash, window_start)`, and an expiry index. `consumePostgresRateLimit` hashes keys before storage, increments through `INSERT ... ON CONFLICT ... DO UPDATE`, and returns remaining/reset data. In-memory limiting may remain only as an explicitly labeled local fallback when PostgreSQL is unavailable; security-sensitive public routes fail conservatively instead of silently becoming unlimited.
+Create `0015_security_rate_limits.sql` with `request_rate_limits(key_hash text, window_start timestamptz, request_count integer, expires_at timestamptz)`, a composite primary key on `(key_hash, window_start)`, and an expiry index. `consumePostgresRateLimit` hashes keys before storage, increments through `INSERT ... ON CONFLICT ... DO UPDATE`, and returns remaining/reset data. In-memory limiting may remain only as an explicitly labeled local fallback when PostgreSQL is unavailable; security-sensitive public routes fail conservatively instead of silently becoming unlimited.
 
 - [ ] **Step 4: Make proxy/origin handling explicit**
 
@@ -573,7 +583,7 @@ Expected: all pass; the test logs name only `faceid_rc_` databases.
 - [ ] **Step 7: Commit Phase 1 guards**
 
 ```powershell
-git add db/migrations/0014_security_rate_limits.sql lib/postgres/rate-limit-store.js lib/postgres/person-store.js app/api/persons/[personId]/route.js lib/csrf.js lib/rate-limit.js next.config.mjs tests/postgres/identity.routes.test.mjs tests/run-tests.mjs
+git add db/migrations/0015_security_rate_limits.sql lib/postgres/rate-limit-store.js lib/postgres/person-store.js app/api/persons/[personId]/route.js lib/csrf.js lib/rate-limit.js next.config.mjs tests/postgres/identity.routes.test.mjs tests/run-tests.mjs
 git commit -m "fix: preserve employee records and harden guards"
 ```
 
