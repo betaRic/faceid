@@ -62,6 +62,14 @@ export async function POST(request, { params }) {
     const assessment = getBiometricReenrollmentAssessment(result.person)
     return NextResponse.json({ ok: true, sampleCount: accepted.length, needsReenrollment: assessment.needed, reenrollmentReason: assessment.reasonCode, reenrollmentMessage: assessment.message, message: assessment.needed ? `Face data updated, but another refresh is recommended. ${assessment.message}` : `Face data updated. ${person.name} ${nextApproval === PERSON_APPROVAL_APPROVED ? 'is active on the kiosk.' : 'still needs admin approval.'}` })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Re-enrollment failed.' }, { status: toHttpStatus(error?.status) })
+    const status = toHttpStatus(error?.status)
+    console.error('[PersonReenrollAPI] Re-enrollment failed', { code: error?.code, message: error?.message })
+    return NextResponse.json({
+      ok: false,
+      code: error?.code || 'reenrollment_failed',
+      message: status === 400
+        ? 'Re-enrollment data is invalid. Retake the guided capture and try again.'
+        : 'Re-enrollment could not be completed. Please try again or contact HR.',
+    }, { status })
   }
 }

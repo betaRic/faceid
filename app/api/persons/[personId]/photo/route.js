@@ -6,6 +6,11 @@ import { createOriginGuard } from '@/lib/csrf'
 import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/employee-access'
 import { getLocalPersonById } from '@/lib/postgres/person-store'
 
+function toHttpStatus(value) {
+  const status = Number(value)
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
+}
+
 export async function GET(request, { params }) {
   const { personId } = await params
   if (!personId) {
@@ -42,8 +47,9 @@ export async function GET(request, { params }) {
       },
     })
   } catch (error) {
+    console.error('[PersonPhotoAPI] Photo read failed', { code: error?.code, message: error?.message })
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load employee photo.' },
+      { ok: false, message: 'Failed to load employee photo.' },
       { status: 500 },
     )
   }
@@ -61,11 +67,8 @@ export async function POST(request, { params }) {
 
   const body = await request.json().catch(() => null)
   const photoDataUrl = String(body?.photoDataUrl || '').trim()
-  if (!/^data:image\/(?:jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(photoDataUrl)) {
+  if (!photoDataUrl) {
     return NextResponse.json({ ok: false, message: 'Choose a valid JPEG, PNG, or WebP image.' }, { status: 400 })
-  }
-  if (photoDataUrl.length > 7 * 1024 * 1024) {
-    return NextResponse.json({ ok: false, message: 'Profile photo must be 5 MB or smaller.' }, { status: 400 })
   }
 
   try {
@@ -106,9 +109,11 @@ export async function POST(request, { params }) {
       photoUrl: `/api/persons/${personId}/photo`,
     })
   } catch (error) {
+    const status = toHttpStatus(error?.status)
+    console.error('[PersonPhotoAPI] Photo save failed', { code: error?.code, message: error?.message })
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to save profile photo.' },
-      { status: 500 },
+      { ok: false, message: status === 400 ? 'Choose a valid JPEG, PNG, or WebP image.' : 'Failed to save profile photo.' },
+      { status },
     )
   }
 }
