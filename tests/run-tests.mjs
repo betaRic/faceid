@@ -78,6 +78,7 @@ const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 const reportWindowModule = await importLocalModule('../lib/report-window.js')
 const employeeAccessCodeExportModule = await importLocalModule('../lib/employee-access-code-export.js')
+const nextConfig = (await import('../next.config.mjs')).default
 const attendanceMatchModule = await importLocalModule('../lib/attendance-match.js')
 
 const {
@@ -1830,6 +1831,48 @@ await run('origin guard rejects unconfigured production remote host', () => {
     if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
     else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl
   }
+})
+
+await run('origin guard ignores spoofed forwarding headers', () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+  const previousTrustProxy = process.env.TRUST_SMARTASP_PROXY
+
+  process.env.NODE_ENV = 'production'
+  process.env.NEXT_PUBLIC_SITE_URL = 'https://attendance.example.test'
+  delete process.env.TRUST_SMARTASP_PROXY
+
+  try {
+    const spoofed = new Request('https://attendance.example.test/api/attendance/v2', {
+      headers: {
+        origin: 'https://evil.example.test',
+        'x-forwarded-host': 'evil.example.test',
+        'x-forwarded-proto': 'https',
+      },
+    })
+    assert.equal(validateOrigin(spoofed), false)
+    assert.equal(validateOrigin(new Request('https://attendance.example.test/api/attendance/v2', {
+      headers: { origin: 'https://attendance.example.test' },
+    })), true)
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl
+    if (previousTrustProxy === undefined) delete process.env.TRUST_SMARTASP_PROXY
+    else process.env.TRUST_SMARTASP_PROXY = previousTrustProxy
+  }
+})
+
+await run('security headers publish a reviewed CSP in report-only mode', async () => {
+  const rules = await nextConfig.headers()
+  const globalHeaders = rules.find(rule => rule.source === '/(.*)')?.headers || []
+  const csp = globalHeaders.find(header => header.key === 'Content-Security-Policy-Report-Only')?.value || ''
+  const permissions = globalHeaders.find(header => header.key === 'Permissions-Policy')?.value || ''
+  assert.match(csp, /default-src 'self'/)
+  assert.match(csp, /worker-src 'self' blob:/)
+  assert.match(csp, /object-src 'none'/)
+  assert.match(permissions, /camera=\(self\)/)
 })
 
 await run('attendance normalization preserves iris liveness evidence for server validation', () => {

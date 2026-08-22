@@ -385,6 +385,8 @@ git commit -m "fix: normalize stored enrollment photos"
 **Files:**
 - Create: `db/migrations/0014_add_rejected_employee_lifecycle.sql`
 - Modify: `lib/postgres/person-store.js`
+- Modify: `lib/postgres/attendance-store.js`
+- Modify: `lib/postgres/photo-store.js`
 - Modify: `app/api/persons/route.js`
 - Modify: `lib/routes/persons-route.js`
 - Modify: `app/api/persons/[personId]/route.js`
@@ -545,19 +547,28 @@ git commit -m "fix: persist matched kiosk person identity"
 ### Task 8: Unambiguous soft deletion and platform guards
 
 **Files:**
+- Modify: `.env.example`
 - Modify: `lib/postgres/person-store.js`
+- Modify: `lib/postgres/attendance-store.js`
+- Modify: `lib/postgres/photo-store.js`
+- Create: `lib/postgres/rate-limit-store.js`
+- Create: `db/migrations/0015_security_rate_limits.sql`
 - Modify: `app/api/persons/[personId]/route.js`
+- Modify: `lib/data-store.js`
+- Modify: `components/admin/EmployeeDeleteModal.jsx`
+- Modify: `components/admin/EmployeesPanel.jsx`
+- Modify: `components/admin/HrEmployeesPanel.jsx`
 - Modify: `lib/csrf.js`
 - Modify: `lib/rate-limit.js`
 - Modify: `next.config.mjs`
 - Test: `tests/postgres/identity.routes.test.mjs`
 - Test: `tests/run-tests.mjs`
 
-- [ ] **Step 1: Write failing deletion/security tests**
+- [x] **Step 1: Write failing deletion/security tests**
 
 Assert normal deletion changes lifecycle to inactive and preserves person, biometric, photo, attendance, and daily rows. Assert only an explicit Regional Admin hard-delete command with typed confirmation can physically delete, and referenced history blocks it. Assert spoofed forwarding headers do not bypass origin/rate identity. Assert security headers include a reviewed CSP and no raw server error is returned.
 
-- [ ] **Step 2: Split deactivate and hard delete APIs**
+- [x] **Step 2: Split deactivate and hard delete APIs**
 
 Rename current behavior into:
 
@@ -574,19 +585,21 @@ export async function hardDeleteLocalPerson(personId, actor, confirmation) {
 
 The route defaults to deactivation. Hard deletion requires `{ command: 'hardDelete', confirmation: person.name }`, Regional Admin scope, and zero protected references.
 
-- [ ] **Step 3: Add durable rate-limit buckets**
+The Admin and HR directory UIs offer deactivation only for active employees and keep invalid lifecycle actions disabled. The exceptional hard-delete command is not exposed as a routine employee-table action. Its audit insert and durable photo-deletion job use the locked person snapshot and are part of the same PostgreSQL transaction as the person deletion. Restrictive PostgreSQL references prevent concurrent attendance/daily/scan writes from becoming orphaned. Filesystem cleanup consumes the durable job after commit; a Regional Admin can retry the same hard-delete request after the person row is gone, so a failed unlink remains recoverable instead of becoming an invisible orphan.
 
-Create `0015_security_rate_limits.sql` with `request_rate_limits(key_hash text, window_start timestamptz, request_count integer, expires_at timestamptz)`, a composite primary key on `(key_hash, window_start)`, and an expiry index. `consumePostgresRateLimit` hashes keys before storage, increments through `INSERT ... ON CONFLICT ... DO UPDATE`, and returns remaining/reset data. In-memory limiting may remain only as an explicitly labeled local fallback when PostgreSQL is unavailable; security-sensitive public routes fail conservatively instead of silently becoming unlimited.
+- [x] **Step 3: Add durable rate-limit buckets**
 
-- [ ] **Step 4: Make proxy/origin handling explicit**
+Create `0015_security_rate_limits.sql` with `request_rate_limits(key_hash text, window_start timestamptz, request_count integer, expires_at timestamptz)`, a composite primary key on `(key_hash, window_start)`, and an expiry index. `consumePostgresRateLimit` hashes keys before storage, increments through `INSERT ... ON CONFLICT ... DO UPDATE`, opportunistically removes a bounded batch of globally expired identities, and returns remaining/reset data. In-memory limiting may remain only as an explicitly labeled local fallback when PostgreSQL is unavailable; security-sensitive public routes fail conservatively instead of silently becoming unlimited.
 
-Only honor forwarded host/protocol/IP when `TRUST_SMARTASP_PROXY=true`; otherwise use the socket/request URL. Keep origin allowlists explicit. Document in `.env.example` during the cleanup plan, without adding secrets.
+- [x] **Step 4: Make proxy/origin handling explicit**
 
-- [ ] **Step 5: Add reviewed CSP**
+Only honor forwarded client IP when `TRUST_SMARTASP_PROXY=true`; otherwise use a verified direct request identity. Production requests with neither a trusted proxy nor a server-provided peer address fail closed before touching rate-limit storage instead of collapsing into a shared global bucket. Origin validation is never inferred from forwarded host/protocol headers and uses only the explicit `NEXT_PUBLIC_SITE_URL` allowlist. Document the disabled-by-default proxy setting in `.env.example`, without adding secrets.
+
+- [x] **Step 5: Add reviewed CSP**
 
 Add a CSP compatible with Next.js, camera, same-origin models, images, and required workers. Start with report-only locally if current runtime needs inline script adjustments; do not claim enforcement until browser checks show no blocked essential assets.
 
-- [ ] **Step 6: Run all Phase 1 gates**
+- [x] **Step 6: Run all Phase 1 gates**
 
 Run:
 
@@ -598,7 +611,7 @@ git diff --check
 
 Expected: all pass; the test logs name only `faceid_rc_` databases.
 
-- [ ] **Step 7: Commit Phase 1 guards**
+- [x] **Step 7: Commit Phase 1 guards**
 
 ```powershell
 git add db/migrations/0015_security_rate_limits.sql lib/postgres/rate-limit-store.js lib/postgres/person-store.js app/api/persons/[personId]/route.js lib/csrf.js lib/rate-limit.js next.config.mjs tests/postgres/identity.routes.test.mjs tests/run-tests.mjs

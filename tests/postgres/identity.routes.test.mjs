@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import sharp from 'sharp'
 import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
 import { createPersonsPostHandler } from '../../lib/routes/persons-route.js'
-import { closePostgresPool, queryPostgres } from '../../lib/postgres/client.js'
+import { closePostgresPool, getPostgresPool, queryPostgres } from '../../lib/postgres/client.js'
 import { enrollLocalPerson, getLocalPersonById, refreshLocalPersonBiometrics } from '../../lib/postgres/person-store.js'
 import { issueAttendanceChallenge } from '../../lib/attendance-challenge.js'
 import {
@@ -22,7 +22,10 @@ import {
   parseEmployeeViewSessionCookieValue,
 } from '../../lib/employee-view-auth.js'
 import { GET as getPersons } from '../../app/api/persons/route.js'
-import { PUT as updatePerson } from '../../app/api/persons/[personId]/route.js'
+import {
+  DELETE as deletePerson,
+  PUT as updatePerson,
+} from '../../app/api/persons/[personId]/route.js'
 import {
   createPersonReenrollHandler,
   POST as reenrollPerson,
@@ -30,6 +33,8 @@ import {
 import { GET as getAttendanceTable } from '../../app/api/attendance/table/route.js'
 import { GET as getAttendanceDtr } from '../../app/api/attendance/dtr/route.js'
 import { createAttendanceV2PostHandler } from '../../app/api/attendance/v2/route.js'
+import { consumePostgresRateLimit, hashRateLimitKey } from '../../lib/postgres/rate-limit-store.js'
+import { enforceRateLimit, getRequestIp } from '../../lib/rate-limit.js'
 
 const office = {
   id: 'office-route-test',
@@ -56,6 +61,17 @@ before(async () => {
     'route-test-admin',
     'route-test-admin@example.test',
     'Route Test Admin',
+    JSON.stringify({ permissions: ['employees'] }),
+  ])
+  await queryPostgres(`
+    INSERT INTO admin_users (
+      id, email, email_lower, name, role, scope, office_id, active, data
+    ) VALUES ($1, $2, $2, $3, 'admin', 'office', $4, true, $5::jsonb)
+  `, [
+    'route-test-office-admin',
+    'route-test-office-admin@example.test',
+    'Route Test Office Admin',
+    office.id,
     JSON.stringify({ permissions: ['employees'] }),
   ])
 })
@@ -132,11 +148,17 @@ function seededDescriptor(seed) {
   return values.map(value => value / magnitude)
 }
 
-function adminCookie() {
+function adminCookie({
+  email = 'route-test-admin@example.test',
+  uid = 'route-test-admin',
+  scope = 'regional',
+  officeId = '',
+} = {}) {
   const value = createAdminSessionCookieValue({
-    email: 'route-test-admin@example.test',
-    uid: 'route-test-admin',
-    scope: 'regional',
+    email,
+    uid,
+    scope,
+    officeId,
   })
   return `${getAdminSessionCookieName()}=${value}`
 }
@@ -403,6 +425,399 @@ test('registration is visible as pending and lifecycle transitions are audited',
   assert.equal(audits.rows[1].metadata.after.lifecycleStatus, 'pending')
   assert.equal(audits.rows[2].metadata.before.lifecycleStatus, 'pending')
   assert.equal(audits.rows[2].metadata.after.lifecycleStatus, 'rejected')
+})
+
+test('employee deletion deactivates and preserves biometric, photo, and attendance history', async () => {
+  const registrationResponse = await register(registrationFixture({
+    employeeId: '873456',
+    lastName: 'PreserveDelete',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const registered = await registrationResponse.json()
+  assert.equal(registrationResponse.status, 200, JSON.stringify(registered))
+  await transitionLifecycle(registered.personId, 'active', 'Activate deletion preservation fixture')
+
+  const personBefore = await getLocalPersonById(registered.personId)
+  assert.ok(personBefore?.photoPath)
+  const photoPath = path.join(getLocalFileStorageRoot(), personBefore.photoPath)
+  assert.equal((await stat(photoPath)).isFile(), true)
+
+  await queryPostgres(`
+    INSERT INTO attendance (id, employee_id, person_id, name, action, timestamp_ms, date_key)
+    VALUES ($1, $2, $3, $4, 'checkin', 1787260800000, '2026-08-21')
+  `, [`delete-preserve-attendance-${registered.personId}`, personBefore.employeeId, registered.personId, personBefore.name])
+  await queryPostgres(`
+    INSERT INTO attendance_daily (id, employee_id, person_id, date_key, name, log_count)
+    VALUES ($1, $2, $3, '2026-08-21', $4, 1)
+  `, [`delete-preserve-daily-${registered.personId}`, personBefore.employeeId, registered.personId, personBefore.name])
+  await queryPostgres(`
+    INSERT INTO attendance_locks (employee_id, office_id, last_timestamp_ms, last_attendance_id)
+    VALUES ($1, $2, 1787260800000, $3)
+  `, [registered.personId, office.id, `delete-preserve-attendance-${registered.personId}`])
+  await queryPostgres(`
+    INSERT INTO scan_events (status, decision_code, timestamp_ms, employee_id, person_id, name, office_id)
+    VALUES ('accepted', 'accepted', 1787260800000, $1, $2, $3, $4)
+  `, [personBefore.employeeId, registered.personId, personBefore.name, office.id])
+
+  const preservedTables = ['biometric_index', 'attendance', 'attendance_daily', 'attendance_locks', 'scan_events']
+  const beforeCounts = {}
+  for (const table of preservedTables) {
+    const column = table === 'attendance_locks' ? 'employee_id' : 'person_id'
+    beforeCounts[table] = Number((await queryPostgres(
+      `SELECT count(*)::integer AS count FROM ${table} WHERE ${column} = $1`,
+      [registered.personId],
+    )).rows[0].count)
+  }
+
+  const response = await deletePerson(
+    sameOriginRequest(`/api/persons/${registered.personId}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie() },
+    }),
+    { params: Promise.resolve({ personId: registered.personId }) },
+  )
+  const payload = await response.json()
+  assert.equal(response.status, 200, JSON.stringify(payload))
+  assert.equal(payload.deactivated, true)
+  assert.equal(payload.hardDeleted, false)
+
+  const personAfter = await getLocalPersonById(registered.personId)
+  assert.equal(personAfter?.lifecycleStatus, 'inactive')
+  assert.equal(personAfter?.active, false)
+  assert.equal((await stat(photoPath)).isFile(), true)
+  for (const table of preservedTables) {
+    const column = table === 'attendance_locks' ? 'employee_id' : 'person_id'
+    const afterCount = Number((await queryPostgres(
+      `SELECT count(*)::integer AS count FROM ${table} WHERE ${column} = $1`,
+      [registered.personId],
+    )).rows[0].count)
+    assert.equal(afterCount, beforeCounts[table], `${table} should be preserved`)
+  }
+})
+
+test('hard deletion requires Regional Admin confirmation and rejects protected history', async () => {
+  const referencedResponse = await register(registrationFixture({
+    employeeId: '883456',
+    lastName: 'ReferencedDelete',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const referenced = await referencedResponse.json()
+  assert.equal(referencedResponse.status, 200, JSON.stringify(referenced))
+  const referencedPerson = await getLocalPersonById(referenced.personId)
+  const referencedPhotoPath = path.join(getLocalFileStorageRoot(), referencedPerson.photoPath)
+  await queryPostgres(`
+    INSERT INTO attendance (id, employee_id, person_id, name, action, timestamp_ms, date_key)
+    VALUES ($1, $2, $3, $4, 'checkin', 1787260800000, '2026-08-21')
+  `, [`hard-delete-reference-${referenced.personId}`, referencedPerson.employeeId, referenced.personId, referencedPerson.name])
+
+  const officeAdminCookie = adminCookie({
+    email: 'route-test-office-admin@example.test',
+    uid: 'route-test-office-admin',
+    scope: 'office',
+    officeId: office.id,
+  })
+  const officeAdminAttempt = await deletePerson(
+    sameOriginRequest(`/api/persons/${referenced.personId}`, {
+      method: 'DELETE',
+      headers: { cookie: officeAdminCookie },
+      body: { command: 'hardDelete', confirmation: referencedPerson.name },
+    }),
+    { params: Promise.resolve({ personId: referenced.personId }) },
+  )
+  assert.equal(officeAdminAttempt.status, 403, JSON.stringify(await officeAdminAttempt.clone().json()))
+
+  const wrongConfirmation = await deletePerson(
+    sameOriginRequest(`/api/persons/${referenced.personId}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie() },
+      body: { command: 'hardDelete', confirmation: referencedPerson.name.toLowerCase() },
+    }),
+    { params: Promise.resolve({ personId: referenced.personId }) },
+  )
+  assert.equal(wrongConfirmation.status, 400, JSON.stringify(await wrongConfirmation.clone().json()))
+
+  const referencedAttempt = await deletePerson(
+    sameOriginRequest(`/api/persons/${referenced.personId}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie() },
+      body: { command: 'hardDelete', confirmation: referencedPerson.name },
+    }),
+    { params: Promise.resolve({ personId: referenced.personId }) },
+  )
+  const referencedPayload = await referencedAttempt.json()
+  assert.equal(referencedAttempt.status, 409, JSON.stringify(referencedPayload))
+  assert.equal(referencedPayload.code, 'person_history_exists')
+  assert.ok(await getLocalPersonById(referenced.personId))
+  assert.equal((await stat(referencedPhotoPath)).isFile(), true)
+
+  const unreferencedResponse = await register(registrationFixture({
+    employeeId: '893456',
+    lastName: 'UnreferencedDelete',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const unreferenced = await unreferencedResponse.json()
+  assert.equal(unreferencedResponse.status, 200, JSON.stringify(unreferenced))
+  const unreferencedPerson = await getLocalPersonById(unreferenced.personId)
+  const unreferencedPhotoPath = path.join(getLocalFileStorageRoot(), unreferencedPerson.photoPath)
+
+  const deleted = await deletePerson(
+    sameOriginRequest(`/api/persons/${unreferenced.personId}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie() },
+      body: { command: 'hardDelete', confirmation: unreferencedPerson.name },
+    }),
+    { params: Promise.resolve({ personId: unreferenced.personId }) },
+  )
+  const deletedPayload = await deleted.json()
+  assert.equal(deleted.status, 200, JSON.stringify(deletedPayload))
+  assert.equal(deletedPayload.hardDeleted, true)
+  assert.equal(await getLocalPersonById(unreferenced.personId), null)
+  assert.equal(Number((await queryPostgres(
+    'SELECT count(*)::integer AS count FROM biometric_index WHERE person_id = $1',
+    [unreferenced.personId],
+  )).rows[0].count), 0)
+  await assert.rejects(
+    queryPostgres(`
+      INSERT INTO attendance (id, employee_id, person_id, name, action, timestamp_ms, date_key)
+      VALUES ($1, '', $2, 'Deleted employee', 'checkin', 1787260800000, '2026-08-21')
+    `, [`orphan-after-hard-delete-${unreferenced.personId}`, unreferenced.personId]),
+    error => error?.code === '23503',
+  )
+  await assert.rejects(stat(unreferencedPhotoPath), error => error?.code === 'ENOENT')
+  const audit = await queryPostgres(`
+    SELECT actor_scope, action
+    FROM audit_logs
+    WHERE target_id = $1 AND action = 'person_hard_delete'
+  `, [unreferenced.personId])
+  assert.deepEqual(audit.rows[0], { actor_scope: 'regional', action: 'person_hard_delete' })
+
+  const retryRelativePath = `photos/enrollments/retry-${unreferenced.personId}.jpg`
+  const retryAbsolutePath = path.join(getLocalFileStorageRoot(), ...retryRelativePath.split('/'))
+  await writeFile(retryAbsolutePath, 'queued-photo-cleanup')
+  await queryPostgres(
+    `
+      INSERT INTO enrollment_photo_deletion_jobs (person_id, photo_path, claim_token, claimed_at)
+      VALUES ($1, $2, 'other-cleanup-worker', now())
+    `,
+    [unreferenced.personId, retryRelativePath],
+  )
+  const leasedRetry = await deletePerson(
+    sameOriginRequest(`/api/persons/${unreferenced.personId}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie() },
+      body: { command: 'hardDelete', confirmation: unreferencedPerson.name },
+    }),
+    { params: Promise.resolve({ personId: unreferenced.personId }) },
+  )
+  const leasedPayload = await leasedRetry.json()
+  assert.equal(leasedRetry.status, 202, JSON.stringify(leasedPayload))
+  assert.equal(leasedPayload.cleanup.completed, 0)
+  assert.equal((await stat(retryAbsolutePath)).isFile(), true)
+
+  await queryPostgres(
+    "UPDATE enrollment_photo_deletion_jobs SET claimed_at = now() - interval '10 minutes' WHERE person_id = $1",
+    [unreferenced.personId],
+  )
+  const retried = await deletePerson(
+    sameOriginRequest(`/api/persons/${unreferenced.personId}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie() },
+      body: { command: 'hardDelete', confirmation: unreferencedPerson.name },
+    }),
+    { params: Promise.resolve({ personId: unreferenced.personId }) },
+  )
+  const retriedPayload = await retried.json()
+  assert.equal(retried.status, 200, JSON.stringify(retriedPayload))
+  assert.equal(retriedPayload.completed, true)
+  assert.equal(retriedPayload.cleanup.completed, 1)
+  await assert.rejects(stat(retryAbsolutePath), error => error?.code === 'ENOENT')
+})
+
+test('hard deletion queues the photo path from the locked person snapshot', async () => {
+  const response = await register(registrationFixture({
+    employeeId: '903456',
+    lastName: 'ConcurrentPhotoDelete',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const registered = await response.json()
+  assert.equal(response.status, 200, JSON.stringify(registered))
+  const before = await getLocalPersonById(registered.personId)
+  const oldAbsolutePath = path.join(getLocalFileStorageRoot(), ...before.photoPath.split('/'))
+  const client = await getPostgresPool().connect()
+  let savedPhoto
+  let deletePromise
+  try {
+    await client.query('BEGIN')
+    savedPhoto = await saveNormalizedEnrollmentPhoto(
+      registered.personId,
+      await normalizeDataImage(await pngDataUrl({ width: 3, height: 3 })),
+      { client },
+    )
+    const newAbsolutePath = path.join(getLocalFileStorageRoot(), ...savedPhoto.path.split('/'))
+    deletePromise = deletePerson(
+      sameOriginRequest(`/api/persons/${registered.personId}`, {
+        method: 'DELETE',
+        headers: { cookie: adminCookie() },
+        body: { command: 'hardDelete', confirmation: before.name },
+      }),
+      { params: Promise.resolve({ personId: registered.personId }) },
+    )
+
+    let lockObserved = false
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const activity = await queryPostgres(`
+        SELECT 1
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND query LIKE '%FROM persons WHERE id = $1 LIMIT 1 FOR UPDATE%'
+        LIMIT 1
+      `)
+      if (activity.rowCount > 0) {
+        lockObserved = true
+        break
+      }
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    assert.equal(lockObserved, true, 'hard delete should wait for the concurrent photo update lock')
+    await client.query('COMMIT')
+    await savedPhoto.finalize()
+
+    const deleted = await deletePromise
+    const payload = await deleted.json()
+    assert.equal(deleted.status, 200, JSON.stringify(payload))
+    assert.equal(payload.hardDeleted, true)
+    await assert.rejects(stat(newAbsolutePath), error => error?.code === 'ENOENT')
+    await assert.rejects(stat(oldAbsolutePath), error => error?.code === 'ENOENT')
+    const pending = await queryPostgres(
+      'SELECT count(*)::integer AS count FROM enrollment_photo_deletion_jobs WHERE person_id = $1',
+      [registered.personId],
+    )
+    assert.equal(pending.rows[0].count, 0)
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    await savedPhoto?.cleanup?.()
+    await deletePromise?.catch?.(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+})
+
+test('PostgreSQL rate limits hash identities and persist window counts', async () => {
+  const key = 'public-registration:Sensitive.User@example.test'
+  const nowMs = Date.parse('2026-08-21T01:02:03.000Z')
+  const first = await consumePostgresRateLimit({ key, limit: 2, windowMs: 60_000, nowMs })
+  const second = await consumePostgresRateLimit({ key, limit: 2, windowMs: 60_000, nowMs })
+  const blocked = await consumePostgresRateLimit({ key, limit: 2, windowMs: 60_000, nowMs })
+
+  assert.deepEqual(
+    [first.ok, second.ok, blocked.ok],
+    [true, true, false],
+  )
+  assert.equal(first.backend, 'postgres')
+  assert.equal(second.remaining, 0)
+  assert.equal(blocked.remaining, 0)
+  assert.equal(blocked.resetAt, nowMs - (nowMs % 60_000) + 60_000)
+
+  const rows = await queryPostgres(`
+    SELECT key_hash, request_count
+    FROM request_rate_limits
+    WHERE key_hash = $1
+  `, [hashRateLimitKey(key)])
+  assert.equal(rows.rowCount, 1)
+  assert.equal(rows.rows[0].request_count, 3)
+  assert.equal(rows.rows[0].key_hash.length, 64)
+  assert.notEqual(rows.rows[0].key_hash, key)
+})
+
+test('parallel PostgreSQL rate limits clean expired identities without row contention', async () => {
+  await queryPostgres(`
+    INSERT INTO request_rate_limits (key_hash, window_start, request_count, expires_at)
+    SELECT
+      md5('expired-rate-limit-' || value::text),
+      now() - interval '2 hours' - (value * interval '1 second'),
+      1,
+      now() - interval '1 hour'
+    FROM generate_series(1, 250) AS value
+  `)
+  await Promise.all(Array.from({ length: 4 }, (_, index) => consumePostgresRateLimit({
+    key: `rate-limit-cleanup-trigger-${index}`,
+    limit: 2,
+    windowMs: 60_000,
+  })))
+  const expired = await queryPostgres(`
+    SELECT count(*)::integer AS count
+    FROM request_rate_limits
+    WHERE expires_at <= now()
+  `)
+  assert.equal(expired.rows[0].count, 0)
+})
+
+test('forwarded client IP is ignored unless the SmartASP proxy is trusted', () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  const previousTrustProxy = process.env.TRUST_SMARTASP_PROXY
+  const request = sameOriginRequest('/api/attendance/v2', {
+    headers: {
+      'x-forwarded-for': '203.0.113.50, 10.0.0.2',
+      'x-real-ip': '203.0.113.51',
+    },
+  })
+  try {
+    process.env.NODE_ENV = 'production'
+    delete process.env.TRUST_SMARTASP_PROXY
+    assert.equal(getRequestIp(request), 'rate-limit-ip-unavailable')
+    process.env.TRUST_SMARTASP_PROXY = 'true'
+    assert.equal(getRequestIp(request), '203.0.113.50')
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+    if (previousTrustProxy === undefined) delete process.env.TRUST_SMARTASP_PROXY
+    else process.env.TRUST_SMARTASP_PROXY = previousTrustProxy
+  }
+})
+
+test('production rate limiting blocks an unavailable client identity before storage', async () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  let storageCalled = false
+  try {
+    const result = await enforceRateLimit(null, {
+      key: 'login-ip:rate-limit-ip-unavailable',
+      limit: 15,
+      windowMs: 600_000,
+    }, {
+      consume: async () => {
+        storageCalled = true
+        return { ok: true, remaining: 14, backend: 'postgres' }
+      },
+    })
+    assert.equal(storageCalled, false)
+    assert.deepEqual(result, { ok: false, remaining: 0, backend: 'identity-unavailable' })
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+  }
+})
+
+test('production rate limiting fails closed when PostgreSQL is unavailable', async () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  try {
+    const result = await enforceRateLimit(null, {
+      key: 'production-fail-closed',
+      limit: 5,
+      windowMs: 60_000,
+    }, {
+      consume: async () => {
+        throw Object.assign(new Error('simulated database outage'), { code: 'ECONNREFUSED' })
+      },
+    })
+    assert.deepEqual(result, { ok: false, remaining: 0, backend: 'unavailable' })
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+  }
 })
 
 test('missing Employee ID does not bypass duplicate face rejection', async () => {
