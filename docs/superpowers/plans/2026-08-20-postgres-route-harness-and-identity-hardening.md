@@ -672,12 +672,16 @@ git commit -m "fix: restrict Office HR settings scope"
 **Files:**
 - Create: `lib/staff-session-cookie.js`
 - Create: `lib/login-security.js`
+- Create: `db/migrations/0016_initialize_regional_pin_access.sql`
 - Modify: `lib/bootstrap-pin.js`
 - Modify: `lib/admin-auth.js`
 - Modify: `lib/hr-auth.js`
 - Modify: `lib/audit-log.js`
 - Modify: `lib/thresholds.js`
 - Modify: `lib/postgres/audit-store.js`
+- Modify: `lib/postgres/user-store.js`
+- Modify: `lib/postgres/rate-limit-store.js`
+- Modify: `lib/rate-limit.js`
 - Modify: `app/api/login/route.js`
 - Modify: `app/api/admin/regional-pin/route.js`
 - Modify: `app/api/admin/thresholds/route.js`
@@ -689,7 +693,7 @@ git commit -m "fix: restrict Office HR settings scope"
 - Test: `tests/postgres/identity.routes.test.mjs`
 - Test: `tests/staff-session-cookie.test.mjs`
 
-- [ ] **Step 1: Write failing shared-cookie contract tests**
+- [x] **Step 1: Write failing shared-cookie contract tests**
 
 Create `tests/staff-session-cookie.test.mjs` and assert the wished-for helper contract directly:
 
@@ -721,7 +725,7 @@ test('staff session cookie options are secure and bounded', () => {
 Run: `node --test tests/staff-session-cookie.test.mjs`
 Expected: FAIL because `lib/staff-session-cookie.js` does not exist.
 
-- [ ] **Step 2: Centralize cookie options**
+- [x] **Step 2: Centralize cookie options**
 
 Create `lib/staff-session-cookie.js` with one exported helper:
 
@@ -745,7 +749,7 @@ Use it in `app/api/login/route.js`, both session refresh routes, and both logout
 Run: `node --test tests/staff-session-cookie.test.mjs`
 Expected: PASS.
 
-- [ ] **Step 3: Write failing retained-PIN and durable-login-limit route tests**
+- [x] **Step 3: Write failing retained-PIN and durable-login-limit route tests**
 
 Extend the isolated PostgreSQL fixture with explicit named Admin and Office HR PIN hashes. Import `POST as login`, `GET/POST as regionalPin`, the session-cookie parsers, and `hashLocalPin`. Add separate tests proving:
 
@@ -771,7 +775,7 @@ Also prove named Admin and Office HR PIN success, shared-PIN disable without nam
 Run: `npm run test:routes -- --test-name-pattern="shared Regional PIN|named Admin PIN|Office HR PIN|login rate limit|invalid PIN audit"`
 Expected: FAIL because `authMethod`, credential throttling, and failure audit behavior do not yet exist.
 
-- [ ] **Step 4: Implement retained shared-PIN verification and login security**
+- [x] **Step 4: Implement retained shared-PIN verification and login security**
 
 Create `lib/login-security.js` with fixed-length timing-safe Regional PIN verification and a keyed credential fingerprint. The fingerprint key is `LOGIN_RATE_LIMIT_SECRET`, falling back only to an already-required staff session secret; production fails closed when no key is available. Export `enforceLoginRateLimits(request, pin)` to consume these durable PostgreSQL buckets before lookup:
 
@@ -785,19 +789,21 @@ const LOGIN_LIMITS = [
 
 The route must never place the raw PIN in a limiter key, log, response, or audit entry. It checks an explicitly configured and PostgreSQL-enabled shared Regional PIN without querying named-admin count, then checks named Admin and Office HR hashes. Successful sessions set `authMethod: 'shared_regional_pin'` or `authMethod: 'named_pin'`; parsers preserve the field and treat compatible pre-change named sessions as `named_pin`. Invalid credentials return one safe `401` contract. Internal failures return a generic `500` message rather than the raw exception.
 
+Shared Regional, named Admin, and Office HR matches are resolved together. More than one match fails closed with a non-enumerating response and safe collision audit, preventing a shared/named PIN collision from escalating an office-scoped user. Lockout audits are emitted only on the first blocked attempt for a durable bucket/window.
+
 `lib/bootstrap-pin.js` remains the enabled-state authority; no named-account count participates. Remove only hardcoded/default PIN values, not the required configured PIN path. Document optional `LOGIN_RATE_LIMIT_SECRET` in `.env.example` without a value.
 
 Run: `npm run test:routes -- --test-name-pattern="shared Regional PIN|named Admin PIN|Office HR PIN|login rate limit|invalid PIN audit"`
 Expected: PASS.
 
-- [ ] **Step 5: Write failing Regional PIN control transaction tests**
+- [x] **Step 5: Write failing Regional PIN control transaction tests**
 
 Add route tests proving Office HR and office-scoped Admin receive `403`, enabling fails with `400` when `ADMIN_REGIONAL_PIN` is absent, and a successful enable/disable writes both `system_config` and `audit_logs`. Inject a controlled audit failure and assert the configuration row rolls back.
 
 Run: `npm run test:routes -- --test-name-pattern="Regional PIN control"`
 Expected: FAIL because the current configuration update and audit use separate commits and enabling does not check configuration.
 
-- [ ] **Step 6: Make Regional PIN control atomic**
+- [x] **Step 6: Make Regional PIN control atomic**
 
 Allow `isRegionalPinEnabled({ client })` and `setRegionalPinEnabled(enabled, { client })` to use a supplied transaction client. Extend `writeAuditLog(db, entry, { client } = {})` to pass the client to `writeLocalAuditLog`. In `app/api/admin/regional-pin/route.js`, require `isRegionalAdminSession`, reject enable when `isRegionalPinConfigured()` is false, and wrap state plus audit in `withPostgresTransaction`:
 
@@ -810,26 +816,30 @@ await withPostgresTransaction(async client => {
 
 Use “Regional PIN” rather than obsolete “bootstrap PIN” language in summaries and responses.
 
+Migration `0016_initialize_regional_pin_access.sql` inserts an explicit enabled row only when no control row exists, preserving the retained production path while allowing `isRegionalPinEnabled` to fail closed on missing/malformed state. Existing disabled state is never overwritten.
+
 Run: `npm run test:routes -- --test-name-pattern="Regional PIN control"`
 Expected: PASS.
 
-- [ ] **Step 7: Write failing global-threshold authority and atomicity tests**
+- [x] **Step 7: Write failing global-threshold authority and atomicity tests**
 
 Add tests for both `GET` and `POST`: unauthenticated is `401`; Office HR and office-scoped Admin are `403`; Regional Admin succeeds. For updates, assert unknown fields, numeric strings, `NaN`/infinite values, and any out-of-range field reject the entire payload without a partial write. Assert a valid update records prior/new values. Force audit failure and prove the `system_config` update rolls back. Cover reset with the same atomic rule.
 
 Run: `npm run test:routes -- --test-name-pattern="global thresholds"`
 Expected: FAIL because GET currently accepts HR/office Admin, invalid fields are silently skipped, and mutation/audit are separate commits.
 
-- [ ] **Step 8: Restrict and atomically persist global thresholds**
+- [x] **Step 8: Restrict and atomically persist global thresholds**
 
 In `lib/thresholds.js`, remove the Firestore document fallback and require PostgreSQL for reads/writes. Export `validateThresholdUpdate(values)`, which builds an allowlist from `THRESHOLD_META` and rejects the complete request on the first unknown, non-number, non-finite, or out-of-range value. Add transaction-client options to threshold reads/writes and an explicit `invalidateThresholdCache()` called only after transaction commit.
 
 In `app/api/admin/thresholds/route.js`, resolve only an Admin session, require `isRegionalAdminSession` for GET and POST, then use `withPostgresTransaction` for the configuration mutation and `writeAuditLog(..., { client })`. Read prior values through the same client, record only changed numeric fields, commit, and invalidate the cache. Reset deletes the PostgreSQL row and writes its audit in the same transaction.
 
+Acquire a transaction-level PostgreSQL advisory lock before the prior-value read so concurrent updates/resets produce a truthful audit chain even when the configuration row is absent. Persist only supplied fields so unrelated customized thresholds are not reset to defaults.
+
 Run: `npm run test:routes -- --test-name-pattern="global thresholds"`
 Expected: PASS.
 
-- [ ] **Step 9: Run focused security regression and source-contract checks**
+- [x] **Step 9: Run focused security regression and source-contract checks**
 
 Run:
 
@@ -842,7 +852,7 @@ git diff --check
 
 Expected: tests PASS; searches return no obsolete bootstrap wording, Firestore threshold persistence, or independent staff-cookie option blocks; diff check exits 0.
 
-- [ ] **Step 10: Run final Phase 1 security gates and commit**
+- [x] **Step 10: Run final Phase 1 security gates and commit**
 
 Run:
 
@@ -857,7 +867,7 @@ git diff --check
 Expected: route suite and full suite PASS, hosting build exits 0, `.next/BUILD_ID` exists, and diff check exits 0.
 
 ```powershell
-git add .env.example lib/staff-session-cookie.js lib/login-security.js lib/bootstrap-pin.js lib/admin-auth.js lib/hr-auth.js lib/audit-log.js lib/thresholds.js lib/postgres/audit-store.js app/api/login/route.js app/api/admin/regional-pin app/api/admin/thresholds app/api/admin/session app/api/admin/logout app/api/hr/session app/api/hr/logout tests/postgres/identity.routes.test.mjs tests/staff-session-cookie.test.mjs docs/superpowers/plans/2026-08-20-postgres-route-harness-and-identity-hardening.md
+git add .env.example db/migrations/0016_initialize_regional_pin_access.sql lib/staff-session-cookie.js lib/login-security.js lib/bootstrap-pin.js lib/admin-auth.js lib/hr-auth.js lib/audit-log.js lib/thresholds.js lib/postgres/audit-store.js lib/postgres/user-store.js lib/postgres/rate-limit-store.js lib/rate-limit.js app/api/login/route.js app/api/admin/regional-pin app/api/admin/thresholds app/api/admin/session app/api/admin/logout app/api/hr/session app/api/hr/logout tests/postgres/identity.routes.test.mjs tests/staff-session-cookie.test.mjs docs/superpowers/plans/2026-08-20-postgres-route-harness-and-identity-hardening.md
 git commit -m "fix(security): harden retained PIN access"
 ```
 

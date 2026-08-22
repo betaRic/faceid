@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { parseAdminSessionCookieValue, createAdminSessionCookieValue, getAdminSessionCookieName, getAdminSessionMaxAge, sessionNeedsRefresh, sessionTimeRemaining, resolveAdminSession } from '@/lib/admin-auth'
 import { postgresEnabled } from '@/lib/postgres/client'
+import { staffSessionCookieOptions } from '@/lib/staff-session-cookie'
 
 export async function GET(request) {
   const session = parseAdminSessionCookieValue(
@@ -35,6 +36,7 @@ export async function GET(request) {
     officeId: resolvedSession.officeId,
     email: resolvedSession.email,
     uid: resolvedSession.uid,
+    authMethod: resolvedSession.authMethod,
   })
 
   const response = NextResponse.json({
@@ -45,13 +47,11 @@ export async function GET(request) {
     expiresIn: `${Math.floor(timeRemaining / 3600)} hours`,
   })
 
-  response.cookies.set(getAdminSessionCookieName(), newCookieValue, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: getAdminSessionMaxAge(),
-    path: '/',
-  })
+  response.cookies.set(
+    getAdminSessionCookieName(),
+    newCookieValue,
+    staffSessionCookieOptions({ maxAge: getAdminSessionMaxAge() }),
+  )
 
   return response
 }

@@ -1,5 +1,6 @@
 import test, { after, before } from 'node:test'
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import sharp from 'sharp'
 import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
 import { createPersonsPostHandler } from '../../lib/routes/persons-route.js'
@@ -16,6 +17,7 @@ import path from 'node:path'
 import {
   createAdminSessionCookieValue,
   getAdminSessionCookieName,
+  parseAdminSessionCookieValue,
 } from '../../lib/admin-auth.js'
 import {
   createEmployeeViewSessionCookieValue,
@@ -24,7 +26,23 @@ import {
 import {
   createHrSessionCookieValue,
   getHrSessionCookieName,
+  parseHrSessionCookieValue,
 } from '../../lib/hr-auth.js'
+import { hashLocalPin } from '../../lib/postgres/user-store.js'
+import { POST as login } from '../../app/api/login/route.js'
+import {
+  GET as getRegionalPinControl,
+  POST as updateRegionalPinControl,
+} from '../../app/api/admin/regional-pin/route.js'
+import {
+  GET as getGlobalThresholds,
+  POST as updateGlobalThresholds,
+} from '../../app/api/admin/thresholds/route.js'
+import {
+  DEFAULTS as THRESHOLD_DEFAULTS,
+  getActiveThresholdsForUpdate,
+} from '../../lib/thresholds.js'
+import { isRegionalPinEnabled } from '../../lib/bootstrap-pin.js'
 import { GET as getPersons } from '../../app/api/persons/route.js'
 import {
   DELETE as deletePerson,
@@ -62,6 +80,7 @@ before(async () => {
   process.env.ADMIN_SESSION_SECRET = 'route-test-admin-session-secret'
   process.env.EMPLOYEE_VIEW_SESSION_SECRET = 'route-test-employee-session-secret'
   process.env.HR_SESSION_SECRET = 'route-test-hr-session-secret'
+  process.env.LOCAL_PIN_SALT = 'route-test-local-pin-salt'
   await queryPostgres(`
     INSERT INTO offices (
       id, name, name_lower, office_type, latitude, longitude, radius_meters, divisions
@@ -109,6 +128,14 @@ before(async () => {
       ('route-test-office-hr', 'route-test-office-hr@example.test', 'route-test-office-hr@example.test', 'Route Test Office HR', 'Route Test Office HR', 'office', $1, true, $2::jsonb),
       ('route-test-regional-hr', 'route-test-regional-hr@example.test', 'route-test-regional-hr@example.test', 'Route Test Regional HR', 'Route Test Regional HR', 'regional', '', true, $2::jsonb)
   `, [office.id, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] })])
+  await queryPostgres(
+    'UPDATE admin_users SET pin_hash = $1 WHERE id = $2',
+    [hashLocalPin('7351'), 'route-test-admin'],
+  )
+  await queryPostgres(
+    'UPDATE hr_users SET pin_hash = $1 WHERE id = $2',
+    [hashLocalPin('8462'), 'route-test-office-hr'],
+  )
 })
 
 after(async () => {
@@ -238,6 +265,496 @@ async function register(body, overrides) {
     body,
   }))
 }
+
+test('shared Regional PIN remains usable while a named Regional Admin exists', async () => {
+  process.env.ADMIN_REGIONAL_PIN = '8042'
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('regional_pin_access', '{"enabled":true}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+
+  const response = await login(sameOriginRequest('/api/login', {
+    method: 'POST',
+    body: { loginType: 'pin', pin: '8042' },
+  }))
+
+  assert.equal(response.status, 200)
+  const cookie = response.cookies.get(getAdminSessionCookieName())
+  assert.ok(cookie?.value)
+  assert.equal(parseAdminSessionCookieValue(cookie.value).authMethod, 'shared_regional_pin')
+})
+
+test('shared Regional PIN requires an explicit enabled PostgreSQL control row', async () => {
+  await queryPostgres("DELETE FROM system_config WHERE key = 'regional_pin_access'")
+  assert.equal(await isRegionalPinEnabled(), false)
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('regional_pin_access', '{"enabled":true}'::jsonb, now())
+  `)
+})
+
+test('legacy shared Regional PIN session keeps shared attribution', () => {
+  const now = Math.floor(Date.now() / 1000)
+  const encoded = Buffer.from(JSON.stringify({
+    role: 'admin',
+    scope: 'regional',
+    officeId: '',
+    email: 'regional-pin-admin@local',
+    uid: 'regional-pin-admin',
+    iat: now,
+    exp: now + 3600,
+  })).toString('base64url')
+  const signature = crypto
+    .createHmac('sha256', process.env.ADMIN_SESSION_SECRET)
+    .update(encoded)
+    .digest('base64url')
+
+  const session = parseAdminSessionCookieValue(`${encoded}.${signature}`)
+  assert.equal(session.authMethod, 'shared_regional_pin')
+})
+
+test('named Admin PIN creates a named Admin session', async () => {
+  const response = await login(sameOriginRequest('/api/login', {
+    method: 'POST',
+    body: { loginType: 'pin', pin: '7351' },
+  }))
+
+  assert.equal(response.status, 200)
+  const cookie = response.cookies.get(getAdminSessionCookieName())
+  assert.ok(cookie?.value)
+  const session = parseAdminSessionCookieValue(cookie.value)
+  assert.equal(session.uid, 'route-test-admin')
+  assert.equal(session.authMethod, 'named_pin')
+})
+
+test('Office HR PIN creates a named office-scoped HR session', async () => {
+  const response = await login(sameOriginRequest('/api/login', {
+    method: 'POST',
+    body: { loginType: 'pin', pin: '8462' },
+  }))
+
+  assert.equal(response.status, 200)
+  const cookie = response.cookies.get(getHrSessionCookieName())
+  assert.ok(cookie?.value)
+  const session = parseHrSessionCookieValue(cookie.value)
+  assert.equal(session.hrUserId, 'route-test-office-hr')
+  assert.equal(session.officeId, office.id)
+  assert.equal(session.authMethod, 'named_pin')
+})
+
+test('disabled shared Regional PIN does not disable named Admin PIN', async () => {
+  process.env.ADMIN_REGIONAL_PIN = '8042'
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('regional_pin_access', '{"enabled":false}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+
+  const sharedResponse = await login(sameOriginRequest('/api/login', {
+    method: 'POST',
+    body: { loginType: 'pin', pin: '8042' },
+  }))
+  const namedResponse = await login(sameOriginRequest('/api/login', {
+    method: 'POST',
+    body: { loginType: 'pin', pin: '7351' },
+  }))
+
+  assert.equal(sharedResponse.status, 401)
+  assert.deepEqual(await sharedResponse.json(), { ok: false, message: 'Invalid PIN.' })
+  assert.equal(namedResponse.status, 200)
+})
+
+test('unconfigured shared Regional PIN uses the non-enumerating invalid PIN response', async () => {
+  const previous = process.env.ADMIN_REGIONAL_PIN
+  delete process.env.ADMIN_REGIONAL_PIN
+  try {
+    const response = await login(sameOriginRequest('/api/login', {
+      method: 'POST',
+      body: { loginType: 'pin', pin: '8042' },
+    }))
+    assert.equal(response.status, 401)
+    assert.deepEqual(await response.json(), { ok: false, message: 'Invalid PIN.' })
+  } finally {
+    if (previous === undefined) delete process.env.ADMIN_REGIONAL_PIN
+    else process.env.ADMIN_REGIONAL_PIN = previous
+  }
+})
+
+test('login rate limit blocks repeated attempts for one credential identity', async () => {
+  const statuses = []
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const response = await login(sameOriginRequest('/api/login', {
+      method: 'POST',
+      body: { loginType: 'pin', pin: '9917' },
+    }))
+    statuses.push(response.status)
+  }
+  assert.deepEqual(statuses, [401, 401, 401, 401, 401, 429, 429, 429])
+  const audit = await queryPostgres(`
+    SELECT count(*)::integer AS count
+    FROM audit_logs
+    WHERE action = 'staff_login_rate_limited'
+  `)
+  assert.equal(audit.rows[0].count, 1)
+})
+
+test('invalid PIN audit does not persist the submitted PIN', async () => {
+  const submittedPin = '6629'
+  const response = await login(sameOriginRequest('/api/login', {
+    method: 'POST',
+    body: { loginType: 'pin', pin: submittedPin },
+  }))
+  assert.equal(response.status, 401)
+
+  const audit = await queryPostgres(`
+    SELECT summary, metadata::text AS metadata
+    FROM audit_logs
+    WHERE action = 'staff_login_failed'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `)
+  assert.equal(audit.rowCount, 1)
+  assert.equal(audit.rows[0].summary.includes(submittedPin), false)
+  assert.equal(audit.rows[0].metadata.includes(submittedPin), false)
+})
+
+test('PIN collision cannot escalate a named Office HR user to Regional Admin', async () => {
+  await queryPostgres('DELETE FROM request_rate_limits')
+  process.env.ADMIN_REGIONAL_PIN = '8462'
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('regional_pin_access', '{"enabled":true}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+
+  const response = await login(sameOriginRequest('/api/login', {
+    method: 'POST',
+    body: { loginType: 'pin', pin: '8462' },
+  }))
+
+  assert.equal(response.status, 401)
+  assert.deepEqual(await response.json(), { ok: false, message: 'Invalid PIN.' })
+  assert.equal(response.cookies.get(getAdminSessionCookieName()), undefined)
+  assert.equal(response.cookies.get(getHrSessionCookieName()), undefined)
+  const audit = await queryPostgres(`
+    SELECT summary, metadata::text AS metadata
+    FROM audit_logs
+    WHERE action = 'staff_login_pin_collision'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `)
+  assert.equal(audit.rowCount, 1)
+  assert.equal(audit.rows[0].summary.includes('8462'), false)
+  assert.equal(audit.rows[0].metadata.includes('8462'), false)
+})
+
+test('Regional PIN control rejects Office HR and office-scoped Admin', async () => {
+  const hrResponse = await getRegionalPinControl(sameOriginRequest('/api/admin/regional-pin', {
+    headers: { cookie: hrCookie() },
+  }))
+  const officeAdminResponse = await updateRegionalPinControl(sameOriginRequest('/api/admin/regional-pin', {
+    method: 'POST',
+    headers: { cookie: adminCookie({
+      email: 'route-test-office-admin@example.test',
+      uid: 'route-test-office-admin',
+      scope: 'office',
+      officeId: office.id,
+    }) },
+    body: { enabled: false },
+  }))
+
+  assert.equal(hrResponse.status, 403)
+  assert.equal(officeAdminResponse.status, 403)
+})
+
+test('Regional PIN control rejects enabling an unconfigured PIN', async () => {
+  const previous = process.env.ADMIN_REGIONAL_PIN
+  delete process.env.ADMIN_REGIONAL_PIN
+  try {
+    const response = await updateRegionalPinControl(sameOriginRequest('/api/admin/regional-pin', {
+      method: 'POST',
+      headers: { cookie: adminCookie() },
+      body: { enabled: true },
+    }))
+    assert.equal(response.status, 400)
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      message: 'Regional PIN is not configured.',
+    })
+  } finally {
+    if (previous === undefined) delete process.env.ADMIN_REGIONAL_PIN
+    else process.env.ADMIN_REGIONAL_PIN = previous
+  }
+})
+
+test('Regional PIN control commits configuration and audit together', async () => {
+  process.env.ADMIN_REGIONAL_PIN = '8042'
+  const response = await updateRegionalPinControl(sameOriginRequest('/api/admin/regional-pin', {
+    method: 'POST',
+    headers: { cookie: adminCookie() },
+    body: { enabled: false },
+  }))
+  assert.equal(response.status, 200)
+
+  const state = await queryPostgres(
+    "SELECT value FROM system_config WHERE key = 'regional_pin_access'",
+  )
+  const audit = await queryPostgres(`
+    SELECT summary
+    FROM audit_logs
+    WHERE action = 'regional_pin_access_update'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `)
+  assert.equal(state.rows[0].value.enabled, false)
+  assert.equal(audit.rowCount, 1)
+  assert.match(audit.rows[0].summary, /Regional PIN disabled/)
+  assert.doesNotMatch(audit.rows[0].summary, /bootstrap/i)
+})
+
+test('Regional PIN control rolls back configuration when audit write fails', async () => {
+  process.env.ADMIN_REGIONAL_PIN = '8042'
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('regional_pin_access', '{"enabled":false}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+  await queryPostgres(`
+    CREATE OR REPLACE FUNCTION route_test_reject_regional_pin_audit()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.action = 'regional_pin_access_update' THEN
+        RAISE EXCEPTION 'route test audit failure';
+      END IF;
+      RETURN NEW;
+    END
+    $$;
+    CREATE TRIGGER route_test_reject_regional_pin_audit
+    BEFORE INSERT ON audit_logs
+    FOR EACH ROW EXECUTE FUNCTION route_test_reject_regional_pin_audit();
+  `)
+
+  try {
+    const response = await updateRegionalPinControl(sameOriginRequest('/api/admin/regional-pin', {
+      method: 'POST',
+      headers: { cookie: adminCookie() },
+      body: { enabled: true },
+    }))
+    assert.equal(response.status, 500)
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      message: 'Failed to update Regional PIN access.',
+    })
+    const state = await queryPostgres(
+      "SELECT value FROM system_config WHERE key = 'regional_pin_access'",
+    )
+    assert.equal(state.rows[0].value.enabled, false)
+  } finally {
+    await queryPostgres('DROP TRIGGER IF EXISTS route_test_reject_regional_pin_audit ON audit_logs')
+    await queryPostgres('DROP FUNCTION IF EXISTS route_test_reject_regional_pin_audit()')
+  }
+})
+
+test('global thresholds reject unauthenticated, Office HR, and office-scoped Admin reads', async () => {
+  const unauthenticated = await getGlobalThresholds(sameOriginRequest('/api/admin/thresholds'))
+  const hrResponse = await getGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+    headers: { cookie: hrCookie() },
+  }))
+  const officeAdminResponse = await getGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+    headers: { cookie: adminCookie({
+      email: 'route-test-office-admin@example.test',
+      uid: 'route-test-office-admin',
+      scope: 'office',
+      officeId: office.id,
+    }) },
+  }))
+
+  assert.equal(unauthenticated.status, 401)
+  assert.equal(hrResponse.status, 403)
+  assert.equal(officeAdminResponse.status, 403)
+})
+
+test('global thresholds allow Regional Admin reads and reject office-scoped writes', async () => {
+  const regionalResponse = await getGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+    headers: { cookie: adminCookie() },
+  }))
+  const officeAdminResponse = await updateGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+    method: 'POST',
+    headers: { cookie: adminCookie({
+      email: 'route-test-office-admin@example.test',
+      uid: 'route-test-office-admin',
+      scope: 'office',
+      officeId: office.id,
+    }) },
+    body: { action: 'update', values: { kioskMatchDistance: 0.78 } },
+  }))
+
+  assert.equal(regionalResponse.status, 200)
+  assert.equal(officeAdminResponse.status, 403)
+})
+
+test('global thresholds reject an entire payload containing unknown or invalid values', async () => {
+  await queryPostgres("DELETE FROM system_config WHERE key = 'thresholds'")
+  const cases = [
+    { kioskMatchDistance: 0.78, unknownThreshold: 1 },
+    { kioskMatchDistance: '0.78' },
+    { kioskMatchDistance: 1.01 },
+    { kioskMatchDistance: null },
+  ]
+
+  for (const values of cases) {
+    const response = await updateGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+      method: 'POST',
+      headers: { cookie: adminCookie() },
+      body: { action: 'update', values },
+    }))
+    assert.equal(response.status, 400, JSON.stringify(values))
+  }
+
+  const stored = await queryPostgres("SELECT value FROM system_config WHERE key = 'thresholds'")
+  assert.equal(stored.rowCount, 0)
+})
+
+test('global thresholds commit valid values and prior/new audit together', async () => {
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('thresholds', '{"kioskMatchDistance":0.76,"activeScanMs":150}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+  const response = await updateGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+    method: 'POST',
+    headers: { cookie: adminCookie() },
+    body: { action: 'update', values: { kioskMatchDistance: 0.77 } },
+  }))
+  assert.equal(response.status, 200)
+
+  const stored = await queryPostgres("SELECT value FROM system_config WHERE key = 'thresholds'")
+  const audit = await queryPostgres(`
+    SELECT metadata
+    FROM audit_logs
+    WHERE action = 'thresholds.updated'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `)
+  assert.equal(stored.rows[0].value.kioskMatchDistance, 0.77)
+  assert.equal(stored.rows[0].value.activeScanMs, 150)
+  assert.deepEqual(audit.rows[0].metadata.changed.kioskMatchDistance, { from: 0.76, to: 0.77 })
+})
+
+test('global thresholds reset audit records prior and default values', async () => {
+  const response = await updateGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+    method: 'POST',
+    headers: { cookie: adminCookie() },
+    body: { action: 'reset' },
+  }))
+  assert.equal(response.status, 200)
+
+  const stored = await queryPostgres("SELECT value FROM system_config WHERE key = 'thresholds'")
+  const audit = await queryPostgres(`
+    SELECT metadata
+    FROM audit_logs
+    WHERE action = 'thresholds.reset'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `)
+  assert.equal(stored.rowCount, 0)
+  assert.deepEqual(audit.rows[0].metadata.changed.kioskMatchDistance, {
+    from: 0.77,
+    to: THRESHOLD_DEFAULTS.kioskMatchDistance,
+  })
+  assert.deepEqual(audit.rows[0].metadata.changed.activeScanMs, {
+    from: 150,
+    to: THRESHOLD_DEFAULTS.activeScanMs,
+  })
+})
+
+test('global thresholds roll back update and reset when audit write fails', async () => {
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('thresholds', '{"kioskMatchDistance":0.76}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+  await queryPostgres(`
+    CREATE OR REPLACE FUNCTION route_test_reject_threshold_audit()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.action IN ('thresholds.updated', 'thresholds.reset') THEN
+        RAISE EXCEPTION 'route test threshold audit failure';
+      END IF;
+      RETURN NEW;
+    END
+    $$;
+    CREATE TRIGGER route_test_reject_threshold_audit
+    BEFORE INSERT ON audit_logs
+    FOR EACH ROW EXECUTE FUNCTION route_test_reject_threshold_audit();
+  `)
+
+  try {
+    const updateResponse = await updateGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+      method: 'POST',
+      headers: { cookie: adminCookie() },
+      body: { action: 'update', values: { kioskMatchDistance: 0.77 } },
+    }))
+    assert.equal(updateResponse.status, 500)
+    assert.deepEqual(await updateResponse.json(), {
+      ok: false,
+      message: 'Failed to update thresholds.',
+    })
+
+    const resetResponse = await updateGlobalThresholds(sameOriginRequest('/api/admin/thresholds', {
+      method: 'POST',
+      headers: { cookie: adminCookie() },
+      body: { action: 'reset' },
+    }))
+    assert.equal(resetResponse.status, 500)
+    assert.deepEqual(await resetResponse.json(), {
+      ok: false,
+      message: 'Failed to update thresholds.',
+    })
+
+    const stored = await queryPostgres("SELECT value FROM system_config WHERE key = 'thresholds'")
+    assert.equal(stored.rowCount, 1)
+    assert.equal(stored.rows[0].value.kioskMatchDistance, 0.76)
+  } finally {
+    await queryPostgres('DROP TRIGGER IF EXISTS route_test_reject_threshold_audit ON audit_logs')
+    await queryPostgres('DROP FUNCTION IF EXISTS route_test_reject_threshold_audit()')
+  }
+})
+
+test('global threshold prior-value reads serialize concurrent transactions', async () => {
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('thresholds', '{"kioskMatchDistance":0.76}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+  const firstClient = await getPostgresPool().connect()
+  const secondClient = await getPostgresPool().connect()
+  let firstCommitted = false
+  let secondResolved = false
+  try {
+    await firstClient.query('BEGIN')
+    await secondClient.query('BEGIN')
+    await getActiveThresholdsForUpdate(null, { client: firstClient })
+    const secondRead = getActiveThresholdsForUpdate(null, { client: secondClient })
+      .then(result => {
+        secondResolved = true
+        return result
+      })
+
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(secondResolved, false)
+    await firstClient.query('COMMIT')
+    firstCommitted = true
+    const secondValues = await secondRead
+    assert.equal(secondValues.kioskMatchDistance, 0.76)
+  } finally {
+    if (!firstCommitted) await firstClient.query('ROLLBACK').catch(() => {})
+    await secondClient.query('ROLLBACK').catch(() => {})
+    firstClient.release()
+    secondClient.release()
+  }
+})
 
 test('photo normalization rejects SVG and malformed image data', async () => {
   const disguisedSvg = Buffer.from(
