@@ -33,9 +33,10 @@
 - Modify `app/api/attendance/v2/route.js`: expose a thin dependency-injected POST factory for route tests while production uses real services.
 - Modify `lib/data-store.js` and `lib/employee-access.js`: stop accepting Employee ID as re-enrollment ownership proof.
 - Modify `lib/csrf.js`, `lib/rate-limit.js`, and `next.config.mjs`: trusted proxy/origin boundary, safe defaults, CSP/security regression coverage.
-- Create `db/migrations/0014_security_rate_limits.sql` and `lib/postgres/rate-limit-store.js`: durable shared rate-limit buckets.
+- Create `db/migrations/0014_add_rejected_employee_lifecycle.sql`: preserve rejected registration as a lifecycle distinct from inactive employment.
+- Create `db/migrations/0015_security_rate_limits.sql` and `lib/postgres/rate-limit-store.js`: durable shared rate-limit buckets.
 - Create `lib/offices/hr-office-settings.js` and modify `app/api/hr/office-settings/route.js`: allowlisted Office HR DTO and mutations.
-- Modify `lib/bootstrap-pin.js`, `lib/admin-auth.js`, threshold/PIN/session routes: safe bootstrap, cookie, and privileged-threshold contracts.
+- Create `lib/staff-session-cookie.js` and modify PIN/authentication, threshold, Regional PIN, and session routes: retain both explicitly required PIN paths while centralizing cookie security, durable throttling, atomic audit, and Regional-Admin-only configuration.
 
 ### Task 1: Fail-closed test database URL
 
@@ -382,16 +383,25 @@ git commit -m "fix: normalize stored enrollment photos"
 ### Task 5: Registration visibility and lifecycle commands
 
 **Files:**
+- Create: `db/migrations/0014_add_rejected_employee_lifecycle.sql`
 - Modify: `lib/postgres/person-store.js`
+- Modify: `lib/postgres/attendance-store.js`
+- Modify: `lib/postgres/photo-store.js`
 - Modify: `app/api/persons/route.js`
 - Modify: `lib/routes/persons-route.js`
 - Modify: `app/api/persons/[personId]/route.js`
 - Modify: `lib/person-approval.js`
+- Modify: `lib/data-store.js`
+- Modify: `lib/admin/hooks/useEmployees.js`
+- Modify: `components/admin/EmployeeEditorModal.jsx`
+- Modify: `components/admin/EmployeesPanel.jsx`
+- Modify: `components/admin/HrEmployeesPanel.jsx`
+- Test: `tests/run-tests.mjs`
 - Test: `tests/postgres/identity.routes.test.mjs`
 
 - [ ] **Step 1: Write failing real-database tests**
 
-Test successful registration returns `lifecycleStatus: 'pending'`; `GET /api/persons?mode=directory&approval=pending` includes the new `personId`; approval changes it to active; rejection changes it to rejected; an invalid transition returns 409; every transition writes actor/prior/new state to `audit_logs`; duplicate Employee ID absence does not hide a face duplicate.
+Test successful registration returns `lifecycleStatus: 'pending'`; `GET /api/persons?mode=directory&approval=pending` includes the new `personId`; approval changes it to active; only a pending application may be rejected; rejected records must return to pending review before activation; an invalid transition returns 409; every transition writes actor/prior/new state to `audit_logs`; duplicate Employee ID absence does not hide a face duplicate.
 
 - [ ] **Step 2: Verify failures are behavioral, not fixture failures**
 
@@ -412,6 +422,8 @@ Route input becomes:
 
 The server loads the current row `FOR UPDATE`, validates the transition with `resolvePersonLifecycleTransition`, derives `active` and `approval_status`, and inserts the audit row using the same transaction client.
 
+Add `rejected` to the lifecycle constraint without rewriting existing rows. Profile Save must not carry lifecycle state; admin status controls call the explicit command with a meaningful audit reason. Rejected and inactive remain visibly and filterably distinct.
+
 Move the current POST orchestration into `createPersonsPostHandler({ buildAuthoritativeEnrollmentPayload, enrollLocalPerson, normalizeDataImage, writeTelemetry })`. `app/api/persons/route.js` constructs and exports the real handler. Tests construct the same handler with only `buildAuthoritativeEnrollmentPayload` replaced by a deterministic fixture service; duplicate checks and PostgreSQL persistence remain real.
 
 - [ ] **Step 4: Keep registration write and required audit in one transaction**
@@ -424,7 +436,7 @@ Run: `npm run test:routes -- --test-name-pattern="registration|lifecycle"`
 Expected: PASS.
 
 ```powershell
-git add lib/routes/persons-route.js lib/postgres/person-store.js lib/person-approval.js app/api/persons/route.js app/api/persons/[personId]/route.js tests/postgres/identity.routes.test.mjs
+git add db/migrations/0014_add_rejected_employee_lifecycle.sql lib/routes/persons-route.js lib/postgres/person-store.js lib/person-approval.js lib/data-store.js lib/admin/hooks/useEmployees.js app/api/persons/route.js app/api/persons/[personId]/route.js components/admin/EmployeeEditorModal.jsx components/admin/EmployeesPanel.jsx components/admin/HrEmployeesPanel.jsx tests/run-tests.mjs tests/postgres/identity.routes.test.mjs
 git commit -m "fix: make employee lifecycle transactional"
 ```
 
@@ -432,18 +444,27 @@ git commit -m "fix: make employee lifecycle transactional"
 
 **Files:**
 - Modify: `app/api/persons/[personId]/reenroll/route.js`
-- Modify: `lib/data-store.js`
 - Modify: `lib/employee-access.js`
+- Modify: `lib/employee-view-auth.js`
+- Modify: `lib/attendance-match.js`
+- Modify: `lib/postgres/attendance-store.js`
 - Modify: `lib/postgres/person-store.js`
+- Modify: `hooks/useKioskLoop.js`
+- Modify: `components/KioskView.jsx`
+- Modify: `components/kiosk/AttendanceTableView.jsx`
+- Modify: `components/kiosk/KioskSuccessScreen.jsx`
+- Modify: `app/(public)/summary/page.jsx`
+- Modify: `app/api/attendance/{table,monthly,me,dtr}/route.js`
 - Test: `tests/postgres/identity.routes.test.mjs`
+- Test: `tests/run-tests.mjs`
 
-- [ ] **Step 1: Write failing ownership and preservation tests**
+- [x] **Step 1: Write failing ownership and preservation tests**
 
-Seed two people with the same legacy Employee ID. Verify a token for person A cannot re-enroll person B. Verify public/employee re-enrollment cannot change `lifecycle_status`, `approval_status`, `active`, `office_id`, `organization_unit_id`, access code, attendance, or audit history; only descriptors/model/photo fields change.
+Seed two people with the same legacy Employee ID. Verify a token for person A cannot re-enroll person B and returns the same forbidden response for a nonexistent foreign ID. Verify public/employee re-enrollment cannot change `lifecycle_status`, `approval_status`, `active`, `office_id`, `organization_unit_id`, access code, attendance, or audit history; only descriptors/model/photo fields change. Force a late transaction failure and prove person data, biometric index, old photo bytes, audit rows, and directory contents all roll back.
 
-- [ ] **Step 2: Replace OR ownership checks**
+- [x] **Step 2: Replace OR ownership checks**
 
-The employee token payload and route authorization must compare canonical IDs only:
+The employee token payload requires canonical `personId`; Employee ID remains optional display/reference data. Route authorization compares canonical IDs only:
 
 ```javascript
 if (!session?.personId || session.personId !== personId) {
@@ -451,17 +472,19 @@ if (!session?.personId || session.personId !== personId) {
 }
 ```
 
-- [ ] **Step 3: Restrict the PostgreSQL update set**
+- [x] **Step 3: Restrict the PostgreSQL update set**
 
 Create `refreshLocalPersonBiometrics(personId, { descriptors, biometricModelVersion, photo })` whose SQL updates only biometric/photo columns and `updated_at`. Do not route employee self-service through general profile/lifecycle update code.
 
-- [ ] **Step 4: Run tests and commit**
+Carry canonical `personId` through kiosk result state and browser storage. Employee attendance/table/monthly/DTR routes resolve a signed employee session by person ID, so the optional Employee ID can remain blank; staff lookup continues to require Employee ID.
+
+- [x] **Step 4: Run tests and commit**
 
 Run: `npm run test:routes -- --test-name-pattern="re-enrollment"`
 Expected: PASS.
 
 ```powershell
-git add app/api/persons/[personId]/reenroll/route.js lib/data-store.js lib/employee-access.js lib/postgres/person-store.js tests/postgres/identity.routes.test.mjs
+git add app/api/persons/[personId]/reenroll/route.js app/api/attendance app/(public)/summary/page.jsx components/KioskView.jsx components/kiosk/AttendanceTableView.jsx components/kiosk/KioskSuccessScreen.jsx hooks/useKioskLoop.js lib/attendance-match.js lib/employee-access.js lib/employee-view-auth.js lib/postgres/attendance-store.js lib/postgres/person-store.js tests/postgres/identity.routes.test.mjs tests/run-tests.mjs
 git commit -m "fix: bind reenrollment to canonical person"
 ```
 
@@ -470,19 +493,24 @@ git commit -m "fix: bind reenrollment to canonical person"
 **Files:**
 - Modify: `lib/attendance/process.js`
 - Modify: `lib/attendance/write.js`
+- Modify: `lib/attendance/logs.js`
+- Modify: `lib/attendance/match.js`
+- Modify: `lib/daily-attendance.js`
+- Modify: `lib/postgres/attendance-store.js`
+- Modify: `lib/scan-events.js`
 - Modify: `app/api/attendance/v2/route.js`
 - Test: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write accept/reject identity tests**
+- [x] **Step 1: Write accept/reject identity tests**
 
-Seed person A and person B with null/duplicate Employee IDs. Construct `createAttendanceV2PostHandler` with deterministic authoritative embedding/match services while leaving validation, authorization, office policy, and persistence real. Assert an accepted scan matched to person A writes `attendance.person_id = personA.id`, uses person A's office/unit, and never uses a claimed person B ID. Assert inactive, pending, invalid-liveness, geofence, cooldown, and wrong-access-code cases write no accepted attendance row and return stable decision codes.
+Seed person A and person B with null/duplicate Employee IDs. Construct `createAttendanceV2PostHandler` with deterministic authoritative embedding/match services while leaving challenge consumption, validation, authorization, office policy, and persistence real. Assert an accepted scan matched to person A writes person A's canonical ID through raw attendance, daily projection, lock, scan event, response, and employee session; uses person A's office/unit; and never persists a claimed person B identity. Assert missing canonical ID, inactive, pending, invalid-liveness, geofence, cooldown, and wrong-access-code cases write no accepted attendance row and return stable decision codes. Exercise the production matcher for pending lifecycle behavior.
 
-- [ ] **Step 2: Verify the current missing-person assignment fails**
+- [x] **Step 2: Verify the current missing-person assignment fails**
 
 Run: `npm run test:routes -- --test-name-pattern="kiosk"`
 Expected: FAIL because `entry.personId` is not replaced after `const person = personMatch.person`.
 
-- [ ] **Step 3: Assign authoritative identity before all downstream work**
+- [x] **Step 3: Assign authoritative identity before all downstream work**
 
 Immediately after the matched person is accepted:
 
@@ -502,34 +530,45 @@ entry.id = `${entry.personId}_${entry.timestamp}`
 
 Pass `entry.personId` to daily-log queries, locks, attendance insert, daily projection, scan events, and employee-view sessions. Use `personId` in lock keys; Employee ID is display data.
 
+PostgreSQL office/person mappers keep normalized columns authoritative over legacy JSON. Map SQL latitude, longitude, and radius into `office.gps`, which is the shape consumed by geofence checks.
+
 `processAttendanceSubmission` accepts an optional `services` object whose default is a frozen production service map. `createAttendanceV2PostHandler` passes the supplied map. Tests replace only `buildAuthoritativeAttendancePayload` and `findClaimedEmployeeMatch`; the route has no environment-variable bypass and cannot activate test behavior in production.
 
-- [ ] **Step 4: Run kiosk tests and commit**
+- [x] **Step 4: Run kiosk tests and commit**
 
 Run: `npm run test:routes -- --test-name-pattern="kiosk"`
 Expected: PASS.
 
 ```powershell
-git add lib/attendance/process.js lib/attendance/write.js app/api/attendance/v2/route.js tests/postgres/identity.routes.test.mjs
+git add lib/attendance/process.js lib/attendance/write.js lib/attendance/logs.js lib/attendance/match.js lib/daily-attendance.js lib/postgres/attendance-store.js lib/scan-events.js app/api/attendance/v2/route.js tests/postgres/identity.routes.test.mjs
 git commit -m "fix: persist matched kiosk person identity"
 ```
 
 ### Task 8: Unambiguous soft deletion and platform guards
 
 **Files:**
+- Modify: `.env.example`
 - Modify: `lib/postgres/person-store.js`
+- Modify: `lib/postgres/attendance-store.js`
+- Modify: `lib/postgres/photo-store.js`
+- Create: `lib/postgres/rate-limit-store.js`
+- Create: `db/migrations/0015_security_rate_limits.sql`
 - Modify: `app/api/persons/[personId]/route.js`
+- Modify: `lib/data-store.js`
+- Modify: `components/admin/EmployeeDeleteModal.jsx`
+- Modify: `components/admin/EmployeesPanel.jsx`
+- Modify: `components/admin/HrEmployeesPanel.jsx`
 - Modify: `lib/csrf.js`
 - Modify: `lib/rate-limit.js`
 - Modify: `next.config.mjs`
 - Test: `tests/postgres/identity.routes.test.mjs`
 - Test: `tests/run-tests.mjs`
 
-- [ ] **Step 1: Write failing deletion/security tests**
+- [x] **Step 1: Write failing deletion/security tests**
 
 Assert normal deletion changes lifecycle to inactive and preserves person, biometric, photo, attendance, and daily rows. Assert only an explicit Regional Admin hard-delete command with typed confirmation can physically delete, and referenced history blocks it. Assert spoofed forwarding headers do not bypass origin/rate identity. Assert security headers include a reviewed CSP and no raw server error is returned.
 
-- [ ] **Step 2: Split deactivate and hard delete APIs**
+- [x] **Step 2: Split deactivate and hard delete APIs**
 
 Rename current behavior into:
 
@@ -546,19 +585,21 @@ export async function hardDeleteLocalPerson(personId, actor, confirmation) {
 
 The route defaults to deactivation. Hard deletion requires `{ command: 'hardDelete', confirmation: person.name }`, Regional Admin scope, and zero protected references.
 
-- [ ] **Step 3: Add durable rate-limit buckets**
+The Admin and HR directory UIs offer deactivation only for active employees and keep invalid lifecycle actions disabled. The exceptional hard-delete command is not exposed as a routine employee-table action. Its audit insert and durable photo-deletion job use the locked person snapshot and are part of the same PostgreSQL transaction as the person deletion. Restrictive PostgreSQL references prevent concurrent attendance/daily/scan writes from becoming orphaned. Filesystem cleanup consumes the durable job after commit; a Regional Admin can retry the same hard-delete request after the person row is gone, so a failed unlink remains recoverable instead of becoming an invisible orphan.
 
-Create `0014_security_rate_limits.sql` with `request_rate_limits(key_hash text, window_start timestamptz, request_count integer, expires_at timestamptz)`, a composite primary key on `(key_hash, window_start)`, and an expiry index. `consumePostgresRateLimit` hashes keys before storage, increments through `INSERT ... ON CONFLICT ... DO UPDATE`, and returns remaining/reset data. In-memory limiting may remain only as an explicitly labeled local fallback when PostgreSQL is unavailable; security-sensitive public routes fail conservatively instead of silently becoming unlimited.
+- [x] **Step 3: Add durable rate-limit buckets**
 
-- [ ] **Step 4: Make proxy/origin handling explicit**
+Create `0015_security_rate_limits.sql` with `request_rate_limits(key_hash text, window_start timestamptz, request_count integer, expires_at timestamptz)`, a composite primary key on `(key_hash, window_start)`, and an expiry index. `consumePostgresRateLimit` hashes keys before storage, increments through `INSERT ... ON CONFLICT ... DO UPDATE`, opportunistically removes a bounded batch of globally expired identities, and returns remaining/reset data. In-memory limiting may remain only as an explicitly labeled local fallback when PostgreSQL is unavailable; security-sensitive public routes fail conservatively instead of silently becoming unlimited.
 
-Only honor forwarded host/protocol/IP when `TRUST_SMARTASP_PROXY=true`; otherwise use the socket/request URL. Keep origin allowlists explicit. Document in `.env.example` during the cleanup plan, without adding secrets.
+- [x] **Step 4: Make proxy/origin handling explicit**
 
-- [ ] **Step 5: Add reviewed CSP**
+Only honor forwarded client IP when `TRUST_SMARTASP_PROXY=true`; otherwise use a verified direct request identity. Production requests with neither a trusted proxy nor a server-provided peer address fail closed before touching rate-limit storage instead of collapsing into a shared global bucket. Origin validation is never inferred from forwarded host/protocol headers and uses only the explicit `NEXT_PUBLIC_SITE_URL` allowlist. Document the disabled-by-default proxy setting in `.env.example`, without adding secrets.
+
+- [x] **Step 5: Add reviewed CSP**
 
 Add a CSP compatible with Next.js, camera, same-origin models, images, and required workers. Start with report-only locally if current runtime needs inline script adjustments; do not claim enforcement until browser checks show no blocked essential assets.
 
-- [ ] **Step 6: Run all Phase 1 gates**
+- [x] **Step 6: Run all Phase 1 gates**
 
 Run:
 
@@ -570,10 +611,10 @@ git diff --check
 
 Expected: all pass; the test logs name only `faceid_rc_` databases.
 
-- [ ] **Step 7: Commit Phase 1 guards**
+- [x] **Step 7: Commit Phase 1 guards**
 
 ```powershell
-git add db/migrations/0014_security_rate_limits.sql lib/postgres/rate-limit-store.js lib/postgres/person-store.js app/api/persons/[personId]/route.js lib/csrf.js lib/rate-limit.js next.config.mjs tests/postgres/identity.routes.test.mjs tests/run-tests.mjs
+git add db/migrations/0015_security_rate_limits.sql lib/postgres/rate-limit-store.js lib/postgres/person-store.js app/api/persons/[personId]/route.js lib/csrf.js lib/rate-limit.js next.config.mjs tests/postgres/identity.routes.test.mjs tests/run-tests.mjs
 git commit -m "fix: preserve employee records and harden guards"
 ```
 
@@ -581,14 +622,16 @@ git commit -m "fix: preserve employee records and harden guards"
 
 **Files:**
 - Create: `lib/offices/hr-office-settings.js`
+- Create: `lib/postgres/hr-office-settings-store.js`
+- Modify: `lib/postgres/audit-store.js`
 - Modify: `app/api/hr/office-settings/route.js`
 - Test: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write failing Office HR scope tests**
+- [x] **Step 1: Write failing Office HR scope tests**
 
 Assert GET contains only office ID/name plus allowlisted work-policy fields and never `gps`, latitude, longitude, radius, map/location, Wi-Fi, or another office. Assert PUT ignores/rejects forged Admin-only fields, updates only the session office policy, and writes an audit record. Assert Regional/Office session boundaries and origin guard.
 
-- [ ] **Step 2: Implement an explicit allowlist DTO**
+- [x] **Step 2: Implement an explicit allowlist DTO**
 
 ```javascript
 const HR_POLICY_FIELDS = [
@@ -610,11 +653,11 @@ export function pickHrWorkPolicy(value) {
 }
 ```
 
-- [ ] **Step 3: Apply scope on both read and write**
+- [x] **Step 3: Apply scope on both read and write**
 
 Resolve the HR session first, load only `session.officeId`, project GET through `toHrOfficeSettings`, and merge PUT through `pickHrWorkPolicy`. Do not serialize the full office and remove fields afterward.
 
-- [ ] **Step 4: Run and commit**
+- [x] **Step 4: Run and commit**
 
 Run: `npm run test:routes -- --test-name-pattern="Office HR settings"`
 Expected: PASS.
@@ -624,48 +667,208 @@ git add lib/offices/hr-office-settings.js app/api/hr/office-settings/route.js te
 git commit -m "fix: restrict Office HR settings scope"
 ```
 
-### Task 10: Bootstrap PIN, session cookies, and threshold authority
+### Task 10: Retained PIN paths, session cookies, and threshold authority
 
 **Files:**
+- Create: `lib/staff-session-cookie.js`
+- Create: `lib/login-security.js`
+- Create: `db/migrations/0016_initialize_regional_pin_access.sql`
 - Modify: `lib/bootstrap-pin.js`
 - Modify: `lib/admin-auth.js`
+- Modify: `lib/hr-auth.js`
+- Modify: `lib/audit-log.js`
+- Modify: `lib/thresholds.js`
+- Modify: `lib/postgres/audit-store.js`
+- Modify: `lib/postgres/user-store.js`
+- Modify: `lib/postgres/rate-limit-store.js`
+- Modify: `lib/rate-limit.js`
+- Modify: `app/api/login/route.js`
 - Modify: `app/api/admin/regional-pin/route.js`
 - Modify: `app/api/admin/thresholds/route.js`
 - Modify: `app/api/admin/session/route.js`
+- Modify: `app/api/admin/logout/route.js`
 - Modify: `app/api/hr/session/route.js`
+- Modify: `app/api/hr/logout/route.js`
+- Modify: `.env.example`
 - Test: `tests/postgres/identity.routes.test.mjs`
+- Test: `tests/staff-session-cookie.test.mjs`
 
-- [ ] **Step 1: Write failing privilege tests**
+- [x] **Step 1: Write failing shared-cookie contract tests**
 
-Assert bootstrap credentials are unavailable once a named Regional Admin exists and unavailable in production unless an explicit one-time bootstrap variable is configured. Assert session cookies are `HttpOnly`, `SameSite=Lax` or stricter, `Secure` in production, scoped paths, and bounded expiry. Assert only Regional Admin can read/change global thresholds, values outside documented safe ranges return 400, and every change is audited.
+Create `tests/staff-session-cookie.test.mjs` and assert the wished-for helper contract directly:
 
-- [ ] **Step 2: Centralize cookie options**
+```javascript
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { staffSessionCookieOptions } from '../lib/staff-session-cookie.js'
 
-Export one `staffSessionCookieOptions({ maxAge })` used by Admin and HR login/session/logout paths. No route constructs weaker cookie options independently.
+test('staff session cookie options are secure and bounded', () => {
+  const previous = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  try {
+    assert.deepEqual(staffSessionCookieOptions({ maxAge: 28_800 }), {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 28_800,
+    })
+    assert.equal(staffSessionCookieOptions({ maxAge: 0 }).maxAge, 0)
+    assert.throws(() => staffSessionCookieOptions({ maxAge: -1 }), /maxAge/)
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previous
+  }
+})
+```
 
-- [ ] **Step 3: Make bootstrap one-time and fail closed**
+Run: `node --test tests/staff-session-cookie.test.mjs`
+Expected: FAIL because `lib/staff-session-cookie.js` does not exist.
 
-`resolveBootstrapPin` checks named-admin count before accepting bootstrap mode, never logs the PIN, and returns unavailable when the environment value is absent. Remove fallback/default PIN values from runtime source and documentation.
+- [x] **Step 2: Centralize cookie options**
 
-- [ ] **Step 4: Validate threshold writes**
+Create `lib/staff-session-cookie.js` with one exported helper:
 
-Normalize an allowlisted threshold payload, apply documented numeric bounds, persist it in PostgreSQL, invalidate only the affected cache, and insert actor/prior/new values into audit metadata. Office HR and office-scoped Admin receive 403.
+```javascript
+export function staffSessionCookieOptions({ maxAge }) {
+  if (!Number.isSafeInteger(maxAge) || maxAge < 0) {
+    throw new TypeError('Staff session cookie maxAge must be a non-negative integer.')
+  }
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge,
+  }
+}
+```
 
-- [ ] **Step 5: Run final Phase 1 security gates and commit**
+Use it in `app/api/login/route.js`, both session refresh routes, and both logout routes. The login/session routes pass their existing eight-hour TTL. Logout passes `0` with the same cookie names and attributes. Do not retain independent cookie option object literals.
+
+Run: `node --test tests/staff-session-cookie.test.mjs`
+Expected: PASS.
+
+- [x] **Step 3: Write failing retained-PIN and durable-login-limit route tests**
+
+Extend the isolated PostgreSQL fixture with explicit named Admin and Office HR PIN hashes. Import `POST as login`, `GET/POST as regionalPin`, the session-cookie parsers, and `hashLocalPin`. Add separate tests proving:
+
+```javascript
+test('shared Regional PIN remains usable while a named Regional Admin exists', async () => {
+  process.env.ADMIN_REGIONAL_PIN = '8042'
+  await queryPostgres(`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES ('regional_pin_access', '{"enabled":true}'::jsonb, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `)
+  const response = await login(sameOriginRequest('/api/login', {
+    method: 'POST', body: { loginType: 'pin', pin: '8042' },
+  }))
+  assert.equal(response.status, 200)
+  const cookie = response.cookies.get(getAdminSessionCookieName())
+  assert.equal(parseAdminSessionCookieValue(cookie.value).authMethod, 'shared_regional_pin')
+})
+```
+
+Also prove named Admin and Office HR PIN success, shared-PIN disable without named-account impact, absent shared-PIN configuration failure, distinct network and credential buckets, sanitized invalid-PIN auditing, and non-enumerating invalid-credential responses. Use unique test PINs/keys so durable counters cannot leak between cases.
+
+Run: `npm run test:routes -- --test-name-pattern="shared Regional PIN|named Admin PIN|Office HR PIN|login rate limit|invalid PIN audit"`
+Expected: FAIL because `authMethod`, credential throttling, and failure audit behavior do not yet exist.
+
+- [x] **Step 4: Implement retained shared-PIN verification and login security**
+
+Create `lib/login-security.js` with fixed-length timing-safe Regional PIN verification and a keyed credential fingerprint. The fingerprint key is `LOGIN_RATE_LIMIT_SECRET`, falling back only to an already-required staff session secret; production fails closed when no key is available. Export `enforceLoginRateLimits(request, pin)` to consume these durable PostgreSQL buckets before lookup:
+
+```javascript
+const LOGIN_LIMITS = [
+  { prefix: 'login-network-short', identity: requestIp, limit: 15, windowMs: 10 * 60_000 },
+  { prefix: 'login-credential-short', identity: credentialDigest, limit: 5, windowMs: 10 * 60_000 },
+  { prefix: 'login-credential-day', identity: credentialDigest, limit: 30, windowMs: 24 * 60 * 60_000 },
+]
+```
+
+The route must never place the raw PIN in a limiter key, log, response, or audit entry. It checks an explicitly configured and PostgreSQL-enabled shared Regional PIN without querying named-admin count, then checks named Admin and Office HR hashes. Successful sessions set `authMethod: 'shared_regional_pin'` or `authMethod: 'named_pin'`; parsers preserve the field and treat compatible pre-change named sessions as `named_pin`. Invalid credentials return one safe `401` contract. Internal failures return a generic `500` message rather than the raw exception.
+
+Shared Regional, named Admin, and Office HR matches are resolved together. More than one match fails closed with a non-enumerating response and safe collision audit, preventing a shared/named PIN collision from escalating an office-scoped user. Lockout audits are emitted only on the first blocked attempt for a durable bucket/window.
+
+`lib/bootstrap-pin.js` remains the enabled-state authority; no named-account count participates. Remove only hardcoded/default PIN values, not the required configured PIN path. Document optional `LOGIN_RATE_LIMIT_SECRET` in `.env.example` without a value.
+
+Run: `npm run test:routes -- --test-name-pattern="shared Regional PIN|named Admin PIN|Office HR PIN|login rate limit|invalid PIN audit"`
+Expected: PASS.
+
+- [x] **Step 5: Write failing Regional PIN control transaction tests**
+
+Add route tests proving Office HR and office-scoped Admin receive `403`, enabling fails with `400` when `ADMIN_REGIONAL_PIN` is absent, and a successful enable/disable writes both `system_config` and `audit_logs`. Inject a controlled audit failure and assert the configuration row rolls back.
+
+Run: `npm run test:routes -- --test-name-pattern="Regional PIN control"`
+Expected: FAIL because the current configuration update and audit use separate commits and enabling does not check configuration.
+
+- [x] **Step 6: Make Regional PIN control atomic**
+
+Allow `isRegionalPinEnabled({ client })` and `setRegionalPinEnabled(enabled, { client })` to use a supplied transaction client. Extend `writeAuditLog(db, entry, { client } = {})` to pass the client to `writeLocalAuditLog`. In `app/api/admin/regional-pin/route.js`, require `isRegionalAdminSession`, reject enable when `isRegionalPinConfigured()` is false, and wrap state plus audit in `withPostgresTransaction`:
+
+```javascript
+await withPostgresTransaction(async client => {
+  await setRegionalPinEnabled(body.enabled, { client })
+  await writeAuditLog(null, auditEntry, { client })
+})
+```
+
+Use “Regional PIN” rather than obsolete “bootstrap PIN” language in summaries and responses.
+
+Migration `0016_initialize_regional_pin_access.sql` inserts an explicit enabled row only when no control row exists, preserving the retained production path while allowing `isRegionalPinEnabled` to fail closed on missing/malformed state. Existing disabled state is never overwritten.
+
+Run: `npm run test:routes -- --test-name-pattern="Regional PIN control"`
+Expected: PASS.
+
+- [x] **Step 7: Write failing global-threshold authority and atomicity tests**
+
+Add tests for both `GET` and `POST`: unauthenticated is `401`; Office HR and office-scoped Admin are `403`; Regional Admin succeeds. For updates, assert unknown fields, numeric strings, `NaN`/infinite values, and any out-of-range field reject the entire payload without a partial write. Assert a valid update records prior/new values. Force audit failure and prove the `system_config` update rolls back. Cover reset with the same atomic rule.
+
+Run: `npm run test:routes -- --test-name-pattern="global thresholds"`
+Expected: FAIL because GET currently accepts HR/office Admin, invalid fields are silently skipped, and mutation/audit are separate commits.
+
+- [x] **Step 8: Restrict and atomically persist global thresholds**
+
+In `lib/thresholds.js`, remove the Firestore document fallback and require PostgreSQL for reads/writes. Export `validateThresholdUpdate(values)`, which builds an allowlist from `THRESHOLD_META` and rejects the complete request on the first unknown, non-number, non-finite, or out-of-range value. Add transaction-client options to threshold reads/writes and an explicit `invalidateThresholdCache()` called only after transaction commit.
+
+In `app/api/admin/thresholds/route.js`, resolve only an Admin session, require `isRegionalAdminSession` for GET and POST, then use `withPostgresTransaction` for the configuration mutation and `writeAuditLog(..., { client })`. Read prior values through the same client, record only changed numeric fields, commit, and invalidate the cache. Reset deletes the PostgreSQL row and writes its audit in the same transaction.
+
+Acquire a transaction-level PostgreSQL advisory lock before the prior-value read so concurrent updates/resets produce a truthful audit chain even when the configuration row is absent. Persist only supplied fields so unrelated customized thresholds are not reset to defaults.
+
+Run: `npm run test:routes -- --test-name-pattern="global thresholds"`
+Expected: PASS.
+
+- [x] **Step 9: Run focused security regression and source-contract checks**
 
 Run:
 
 ```powershell
-npm run test:routes -- --test-name-pattern="bootstrap|session cookie|threshold|Office HR"
-npm test
+node --test tests/staff-session-cookie.test.mjs
+npm run test:routes -- --test-name-pattern="shared Regional PIN|named Admin PIN|Office HR PIN|login rate limit|invalid PIN audit|Regional PIN control|global thresholds"
+rg -n "bootstrap PIN|db\.doc\(THRESHOLD_DOC\)|response\.cookies\.set\([^\n]*\{" app/api lib
 git diff --check
 ```
 
-Expected: PASS.
+Expected: tests PASS; searches return no obsolete bootstrap wording, Firestore threshold persistence, or independent staff-cookie option blocks; diff check exits 0.
+
+- [x] **Step 10: Run final Phase 1 security gates and commit**
+
+Run:
 
 ```powershell
-git add lib/bootstrap-pin.js lib/admin-auth.js app/api/admin/regional-pin app/api/admin/thresholds app/api/admin/session app/api/hr/session tests/postgres/identity.routes.test.mjs
-git commit -m "fix: harden staff privilege boundaries"
+npm run test:routes
+npm test
+npm run build:hosting
+Test-Path .next/BUILD_ID
+git diff --check
+```
+
+Expected: route suite and full suite PASS, hosting build exits 0, `.next/BUILD_ID` exists, and diff check exits 0.
+
+```powershell
+git add .env.example db/migrations/0016_initialize_regional_pin_access.sql lib/staff-session-cookie.js lib/login-security.js lib/bootstrap-pin.js lib/admin-auth.js lib/hr-auth.js lib/audit-log.js lib/thresholds.js lib/postgres/audit-store.js lib/postgres/user-store.js lib/postgres/rate-limit-store.js lib/rate-limit.js app/api/login/route.js app/api/admin/regional-pin app/api/admin/thresholds app/api/admin/session app/api/admin/logout app/api/hr/session app/api/hr/logout tests/postgres/identity.routes.test.mjs tests/staff-session-cookie.test.mjs docs/superpowers/plans/2026-08-20-postgres-route-harness-and-identity-hardening.md
+git commit -m "fix(security): harden retained PIN access"
 ```
 
 ## Phase Stop Gate

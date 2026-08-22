@@ -19,10 +19,6 @@ export async function GET(request) {
   const customStartDay = searchParams.get('customStartDay')
   const customEndDay = searchParams.get('customEndDay')
 
-  if (!employeeId) {
-    return NextResponse.json({ ok: false, message: 'Employee ID required.' }, { status: 400 })
-  }
-
   if (!Number.isFinite(targetMonth) || !Number.isFinite(targetYear) || targetMonth < 1 || targetMonth > 12) {
     return NextResponse.json({ ok: false, message: 'month and year must be valid numbers.' }, { status: 400 })
   }
@@ -34,8 +30,9 @@ export async function GET(request) {
       return NextResponse.json({ ok: false, message: access.message }, { status: access.status })
     }
 
+    const resolvedEmployeeId = String(access.person?.employeeId || employeeId || '').trim()
     const dtr = await buildEmployeeDtrDocument(db, {
-      employeeIdentifier: employeeId,
+      employeeIdentifier: resolvedEmployeeId || access.person.id,
       personData: access.person,
       month: targetMonth,
       year: targetYear,

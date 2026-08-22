@@ -78,6 +78,8 @@ const csrfModule = await importLocalModule('../lib/csrf.js')
 const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 const reportWindowModule = await importLocalModule('../lib/report-window.js')
 const employeeAccessCodeExportModule = await importLocalModule('../lib/employee-access-code-export.js')
+const nextConfig = (await import('../next.config.mjs')).default
+const attendanceMatchModule = await importLocalModule('../lib/attendance-match.js')
 
 const {
   calculateDistanceMeters,
@@ -104,6 +106,7 @@ const {
   getEffectivePersonApprovalStatus,
   isPersonBiometricActive,
   PERSON_APPROVAL_PENDING,
+  resolvePersonLifecycleTransition,
 } = personApprovalModule
 const {
   normalizeEnrollmentDescriptorBatch,
@@ -176,6 +179,7 @@ const {
   buildEmployeeAccessCodeWorkbookBytes,
   groupEmployeesByOffice,
 } = employeeAccessCodeExportModule
+const { loadAttendanceMatch, saveAttendanceMatch } = attendanceMatchModule
 
 function createMinimalFaceMesh({
   leftEye = { x: 100, y: 100 },
@@ -663,6 +667,8 @@ await run('person directory search mode distinguishes names from employee IDs', 
   assert.equal(inferPersonDirectorySearchMode('Jane Doe'), 'name')
   assert.equal(normalizePersonDirectorySearchValue('  Jane Doe  ', 'name'), 'jane doe')
   assert.equal(normalizePersonDirectorySearchValue(' EMP-001 ', 'employeeId'), 'EMP-001')
+  assert.equal(clampPersonDirectoryLimit(null), 25)
+  assert.equal(clampPersonDirectoryLimit(''), 25)
   assert.equal(clampPersonDirectoryLimit(200), 50)
 })
 
@@ -693,6 +699,37 @@ await run('person approval defaults legacy records to approved and blocks pendin
   assert.equal(getEffectivePersonApprovalStatus({ approvalStatus: PERSON_APPROVAL_PENDING }), 'pending')
   assert.equal(isPersonBiometricActive({ active: true }), true)
   assert.equal(isPersonBiometricActive({ active: true, approvalStatus: PERSON_APPROVAL_PENDING }), false)
+})
+
+await run('person lifecycle transitions derive compatibility fields and reject no-op changes', () => {
+  assert.deepEqual(resolvePersonLifecycleTransition('pending', 'active'), {
+    previousLifecycleStatus: 'pending',
+    lifecycleStatus: 'active',
+    active: true,
+    approvalStatus: 'approved',
+  })
+  assert.deepEqual(resolvePersonLifecycleTransition('pending', 'rejected'), {
+    previousLifecycleStatus: 'pending',
+    lifecycleStatus: 'rejected',
+    active: false,
+    approvalStatus: 'rejected',
+  })
+  assert.throws(
+    () => resolvePersonLifecycleTransition('active', 'active'),
+    error => error?.status === 409 && /already active/i.test(error.message),
+  )
+  assert.throws(
+    () => resolvePersonLifecycleTransition('pending', 'unknown'),
+    error => error?.status === 400 && /not valid/i.test(error.message),
+  )
+  assert.throws(
+    () => resolvePersonLifecycleTransition('active', 'rejected'),
+    error => error?.status === 409 && /cannot change/i.test(error.message),
+  )
+  assert.throws(
+    () => resolvePersonLifecycleTransition('rejected', 'active'),
+    error => error?.status === 409 && /cannot change/i.test(error.message),
+  )
 })
 
 await run('person biometrics summary wraps descriptor embeddings for local indexing', async () => {
@@ -1796,6 +1833,48 @@ await run('origin guard rejects unconfigured production remote host', () => {
   }
 })
 
+await run('origin guard ignores spoofed forwarding headers', () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+  const previousTrustProxy = process.env.TRUST_SMARTASP_PROXY
+
+  process.env.NODE_ENV = 'production'
+  process.env.NEXT_PUBLIC_SITE_URL = 'https://attendance.example.test'
+  delete process.env.TRUST_SMARTASP_PROXY
+
+  try {
+    const spoofed = new Request('https://attendance.example.test/api/attendance/v2', {
+      headers: {
+        origin: 'https://evil.example.test',
+        'x-forwarded-host': 'evil.example.test',
+        'x-forwarded-proto': 'https',
+      },
+    })
+    assert.equal(validateOrigin(spoofed), false)
+    assert.equal(validateOrigin(new Request('https://attendance.example.test/api/attendance/v2', {
+      headers: { origin: 'https://attendance.example.test' },
+    })), true)
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl
+    if (previousTrustProxy === undefined) delete process.env.TRUST_SMARTASP_PROXY
+    else process.env.TRUST_SMARTASP_PROXY = previousTrustProxy
+  }
+})
+
+await run('security headers publish a reviewed CSP in report-only mode', async () => {
+  const rules = await nextConfig.headers()
+  const globalHeaders = rules.find(rule => rule.source === '/(.*)')?.headers || []
+  const csp = globalHeaders.find(header => header.key === 'Content-Security-Policy-Report-Only')?.value || ''
+  const permissions = globalHeaders.find(header => header.key === 'Permissions-Policy')?.value || ''
+  assert.match(csp, /default-src 'self'/)
+  assert.match(csp, /worker-src 'self' blob:/)
+  assert.match(csp, /object-src 'none'/)
+  assert.match(permissions, /camera=\(self\)/)
+})
+
 await run('attendance normalization preserves iris liveness evidence for server validation', () => {
   const entry = normalizeEntry({
     descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
@@ -2473,6 +2552,39 @@ await run('pending profiles can trigger review but cannot hard-block enrollment'
   assert.equal(evaluation?.duplicate, false)
   assert.equal(evaluation?.reviewRequired, true)
   assert.equal(evaluation?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
+})
+
+await run('attendance match storage keeps canonical person identity when Employee ID is absent', () => {
+  class MemoryStorage {
+    constructor() { this.values = new Map() }
+    getItem(key) { return this.values.has(key) ? this.values.get(key) : null }
+    removeItem(key) { this.values.delete(key) }
+    setItem(key, value) { this.values.set(key, String(value)) }
+  }
+
+  const previousLocalStorage = globalThis.localStorage
+  const previousSessionStorage = globalThis.sessionStorage
+  globalThis.localStorage = new MemoryStorage()
+  globalThis.sessionStorage = new MemoryStorage()
+  try {
+    saveAttendanceMatch({
+      personId: 'person-with-optional-id',
+      employeeId: '',
+      name: 'Optional ID Employee',
+      employeeViewSession: 'signed-session',
+      employeeViewSessionExpiresAt: Date.now() + 60_000,
+    })
+    const stored = loadAttendanceMatch()
+    assert.equal(stored.personId, 'person-with-optional-id')
+    assert.equal(stored.employeeId, '')
+    assert.equal(stored.employeeViewSession, 'signed-session')
+    assert.equal(globalThis.sessionStorage.getItem('currentEmployeeId'), null)
+  } finally {
+    if (previousLocalStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = previousLocalStorage
+    if (previousSessionStorage === undefined) delete globalThis.sessionStorage
+    else globalThis.sessionStorage = previousSessionStorage
+  }
 })
 
 await run('employee access-code export groups offices and sorts complete names alphabetically', () => {

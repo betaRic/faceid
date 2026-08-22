@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import {
   getAdminSessionCookieName,
+  isRegionalAdminSession,
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
@@ -11,10 +12,10 @@ import {
   parseHrSessionCookieValue,
   resolveHrSession,
 } from '@/lib/hr-auth'
-import { getActiveThresholds, setActiveThresholds, resetThresholdsToDefaults, DEFAULTS, THRESHOLD_META } from '@/lib/thresholds'
+import { getActiveThresholds, getActiveThresholdsForUpdate, setActiveThresholds, resetThresholdsToDefaults, invalidateThresholdCache, validateThresholdUpdate, DEFAULTS, THRESHOLD_META } from '@/lib/thresholds'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
-import { postgresEnabled } from '@/lib/postgres/client'
+import { withPostgresTransaction } from '@/lib/postgres/client'
 
 async function resolveSession(request) {
   const adminCookie = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
@@ -39,6 +40,9 @@ export async function GET(request) {
   if (!ctx) {
     return NextResponse.json({ ok: false, message: 'Login required.' }, { status: 401 })
   }
+  if (ctx.role !== 'admin' || !isRegionalAdminSession(ctx.resolved)) {
+    return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
+  }
 
   try {
     const current = await getActiveThresholds(ctx.db)
@@ -61,8 +65,9 @@ export async function GET(request) {
       defaults: DEFAULTS,
     })
   } catch (error) {
+    console.error('[thresholds] Read failed', { code: error?.code || 'unknown' })
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load thresholds.' },
+      { ok: false, message: 'Failed to load thresholds.' },
       { status: 500 },
     )
   }
@@ -77,9 +82,8 @@ export async function POST(request) {
   if (!ctx) {
     return NextResponse.json({ ok: false, message: 'Login required.' }, { status: 401 })
   }
-
-  if (ctx.role !== 'admin') {
-    return NextResponse.json({ ok: false, message: 'Admin access required.' }, { status: 403 })
+  if (ctx.role !== 'admin' || !isRegionalAdminSession(ctx.resolved)) {
+    return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => null)
@@ -91,68 +95,70 @@ export async function POST(request) {
 
   try {
     if (action === 'reset') {
-      await resetThresholdsToDefaults(ctx.db)
-      await writeAuditLog(ctx.db, {
-        actorRole: ctx.role,
-        actorScope: ctx.resolved.scope,
-        actorOfficeId: ctx.resolved.officeId,
-        action: 'thresholds.reset',
-        targetType: 'system_config',
-        targetId: 'thresholds',
-        officeId: ctx.resolved.officeId,
-        summary: 'Thresholds reset to defaults',
+      await withPostgresTransaction(async client => {
+        const previous = await getActiveThresholdsForUpdate(ctx.db, { client })
+        await resetThresholdsToDefaults(ctx.db, { client })
+        await writeAuditLog(ctx.db, {
+          actorRole: ctx.role,
+          actorScope: ctx.resolved.scope,
+          actorOfficeId: ctx.resolved.officeId,
+          action: 'thresholds.reset',
+          targetType: 'system_config',
+          targetId: 'thresholds',
+          officeId: ctx.resolved.officeId,
+          summary: 'Thresholds reset to defaults',
+          metadata: {
+            changed: Object.fromEntries(
+              Object.values(THRESHOLD_META).flatMap(section =>
+                Object.keys(section.fields || {}).map(key => [key, {
+                  from: previous[key],
+                  to: DEFAULTS[key],
+                }]),
+              ),
+            ),
+          },
+        }, { client })
       })
+      invalidateThresholdCache()
       return NextResponse.json({ ok: true, message: 'Thresholds reset to defaults.' })
     }
 
     if (action === 'update') {
-      if (!values || typeof values !== 'object') {
-        return NextResponse.json({ ok: false, message: 'values object required.' }, { status: 400 })
+      const validation = validateThresholdUpdate(values)
+      if (!validation.ok) {
+        return NextResponse.json({ ok: false, message: validation.message }, { status: 400 })
       }
 
-      const validated = {}
-      for (const [key, rawValue] of Object.entries(values)) {
-        let found = null
-        for (const section of Object.values(THRESHOLD_META)) {
-          if (section.fields?.[key]) { found = section.fields[key]; break }
-        }
-        if (!found) continue
-        const num = Number(rawValue)
-        if (!Number.isFinite(num)) continue
-        if (num < found.min || num > found.max) continue
-        validated[key] = num
-      }
-
-      if (Object.keys(validated).length === 0) {
-        return NextResponse.json({ ok: false, message: 'No valid values to update.' }, { status: 400 })
-      }
-
-      const previous = await getActiveThresholds(ctx.db)
-      const updated = await setActiveThresholds(ctx.db, validated)
-
-      await writeAuditLog(ctx.db, {
-        actorRole: ctx.role,
-        actorScope: ctx.resolved.scope,
-        actorOfficeId: ctx.resolved.officeId,
-        action: 'thresholds.updated',
-        targetType: 'system_config',
-        targetId: 'thresholds',
-        officeId: ctx.resolved.officeId,
-        summary: `Threshold settings updated: ${Object.keys(validated).join(', ')}`,
-        metadata: {
-          changed: Object.fromEntries(
-            Object.entries(validated).map(([k, v]) => [k, { from: previous[k], to: v }])
-          ),
-        },
+      const validated = validation.values
+      await withPostgresTransaction(async client => {
+        const previous = await getActiveThresholdsForUpdate(ctx.db, { client })
+        await setActiveThresholds(ctx.db, validated, { client })
+        await writeAuditLog(ctx.db, {
+          actorRole: ctx.role,
+          actorScope: ctx.resolved.scope,
+          actorOfficeId: ctx.resolved.officeId,
+          action: 'thresholds.updated',
+          targetType: 'system_config',
+          targetId: 'thresholds',
+          officeId: ctx.resolved.officeId,
+          summary: `Threshold settings updated: ${Object.keys(validated).join(', ')}`,
+          metadata: {
+            changed: Object.fromEntries(
+              Object.entries(validated).map(([key, value]) => [key, { from: previous[key], to: value }]),
+            ),
+          },
+        }, { client })
       })
+      invalidateThresholdCache()
 
       return NextResponse.json({ ok: true, message: 'Thresholds updated.', values: validated })
     }
 
     return NextResponse.json({ ok: false, message: 'Unknown action.' }, { status: 400 })
   } catch (error) {
+    console.error('[thresholds] Update failed', { code: error?.code || 'unknown' })
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to update thresholds.' },
+      { ok: false, message: 'Failed to update thresholds.' },
       { status: 500 },
     )
   }

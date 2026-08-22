@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { deletePersonRecord } from '@/lib/data-store'
+import { deactivatePersonRecord } from '@/lib/data-store'
 import { useShallow } from 'zustand/react/shallow'
 import { useAdminStore } from '@/lib/admin/store'
 
@@ -13,29 +12,20 @@ export default function EmployeeDeleteModal({ person, onCancel }) {
     setPending: state.setPending,
     isPending: state.isPending,
   })))
-  const [confirmName, setConfirmName] = useState('')
-
-  useEffect(() => {
-    setConfirmName('')
-  }, [person])
-
   if (!person) return null
 
-  const normalizedName = String(person.name || '').trim().toLowerCase()
-  const canDelete = confirmName.trim().toLowerCase() === normalizedName
-  const pendingKey = `employee-hard-delete-${person.id}`
+  const pendingKey = `employee-deactivate-${person.id}`
   const isDeleting = isPending(pendingKey)
 
   async function handleDelete() {
-    if (!canDelete) return
     setPending(pendingKey, true)
     try {
-      await deletePersonRecord([], person.id, { hard: true, confirmName })
+      await deactivatePersonRecord([], person.id)
       refreshEmployees()
-      addToast(`${person.name} deleted`, 'success')
+      addToast(`${person.name} deactivated`, 'success')
       onCancel()
     } catch (err) {
-      addToast(err?.message || 'Delete failed', 'error')
+      addToast(err?.message || 'Deactivation failed', 'error')
     }
     setPending(pendingKey, false)
   }
@@ -48,28 +38,15 @@ export default function EmployeeDeleteModal({ person, onCancel }) {
         initial={{ opacity: 0, scale: 0.95 }}
       >
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-red-700">Delete Employee</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-red-700">Deactivate Employee</div>
           <h2 className="mt-2 text-xl font-bold text-red-950">{person.name}</h2>
           <div className="mt-1 text-sm text-red-800">{person.employeeId || 'No employee ID'}</div>
           <div className="mt-1 text-sm text-red-700">{person.officeName || 'Unassigned office'}</div>
         </div>
 
         <div className="mt-5 rounded-2xl border border-black/5 bg-stone-50 p-4 text-sm text-muted">
-          This permanently removes the employee record, biometric index, attendance history, attendance locks,
-          enrollment locks, and stored enrollment photo. Audit logs stay intact.
-        </div>
-
-        <div className="mt-5">
-          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-            Confirm Exact Name
-          </label>
-          <input
-            className="mt-2 w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-red-400"
-            onChange={(event) => setConfirmName(event.target.value)}
-            placeholder={`Type: ${person.name}`}
-            type="text"
-            value={confirmName}
-          />
+          This blocks future attendance and keeps the employee record, biometrics, enrollment photo, attendance,
+          DTR, and audit history. You can reactivate the employee later.
         </div>
 
         <div className="mt-6 flex justify-end gap-3">
@@ -83,11 +60,11 @@ export default function EmployeeDeleteModal({ person, onCancel }) {
           </button>
           <button
             className="inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canDelete || isDeleting}
+            disabled={isDeleting}
             onClick={handleDelete}
             type="button"
           >
-            {isDeleting ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Deleting...</> : 'Delete'}
+            {isDeleting ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Deactivating...</> : 'Deactivate'}
           </button>
         </div>
       </motion.div>

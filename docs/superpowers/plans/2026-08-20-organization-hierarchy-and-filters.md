@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Create `db/migrations/0015_organization_units.sql`: additive hierarchy tables, mappings, constraints, indexes, person reference, and assignment history.
+- Create `db/migrations/0016_organization_units.sql`: additive hierarchy tables, mappings, constraints, indexes, person reference, and assignment history.
 - Create `lib/organization-hierarchy.js`: pure type/ancestry/filter normalization.
 - Create `lib/postgres/organization-store.js`: hierarchy queries, validation, descendant resolution, legacy import report.
 - Create `app/api/organization-units/route.js`: scoped list/create API.
@@ -69,7 +69,7 @@ git commit -m "test: define organization hierarchy rules"
 ### Task 2: Additive organization schema
 
 **Files:**
-- Create: `db/migrations/0015_organization_units.sql`
+- Create: `db/migrations/0016_organization_units.sql`
 - Test: `tests/postgres/organization.routes.test.mjs`
 
 - [ ] **Step 1: Write failing migration tests**
@@ -140,7 +140,7 @@ Do not drop or rename legacy `division_id`, `division_name`, or `offices.divisio
 - [ ] **Step 3: Apply to the isolated database**
 
 Run: `npm run postgres:test:reset`
-Expected: `0014_security_rate_limits.sql` and `0015_organization_units.sql` are recorded in `schema_migrations`.
+Expected: `0014_add_rejected_employee_lifecycle.sql`, `0015_security_rate_limits.sql`, and `0016_organization_units.sql` are recorded in `schema_migrations`.
 
 - [ ] **Step 4: Run migration tests and commit**
 
@@ -148,7 +148,7 @@ Run: `npm run test:routes -- --test-name-pattern="organization migration"`
 Expected: PASS.
 
 ```powershell
-git add db/migrations/0015_organization_units.sql tests/postgres/organization.routes.test.mjs
+git add db/migrations/0016_organization_units.sql tests/postgres/organization.routes.test.mjs
 git commit -m "feat: add organization unit schema"
 ```
 

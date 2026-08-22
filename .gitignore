@@ -9,6 +9,8 @@ reports/biometric-shadow/
 
 .env
 .env.local
+.env.test.local
+.faceattend-test-runtime/
 analysis.md
 .env.example
 AGENTS.md

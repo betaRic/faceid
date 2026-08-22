@@ -9,7 +9,13 @@ import EmployeeAccessCodeExportActions from './EmployeeAccessCodeExportActions'
 
 function LifecycleBadge({ status }) {
   const value = status || 'inactive'
-  const palette = value === 'active' ? 'bg-emerald-100 text-emerald-800' : value === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+  const palette = value === 'active'
+    ? 'bg-emerald-100 text-emerald-800'
+    : value === 'pending'
+      ? 'bg-amber-100 text-amber-800'
+      : value === 'rejected'
+        ? 'bg-red-100 text-red-800'
+        : 'bg-slate-100 text-slate-700'
   return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] ${palette}`}>{value === 'pending' ? 'Pending review' : value}</span>
 }
 
@@ -65,6 +71,10 @@ function EmployeesPanelInner() {
     () => employees.filter((person) => selectedEmployeeIdSet.has(person.id)),
     [employees, selectedEmployeeIdSet],
   )
+  const canActivateSelected = selectedEmployees.length > 0
+    && selectedEmployees.every(person => ['pending', 'inactive'].includes(person.lifecycleStatus))
+  const canDeactivateSelected = selectedEmployees.length > 0
+    && selectedEmployees.every(person => person.lifecycleStatus === 'active')
   const allPageSelected = employees.length > 0 && selectedEmployeeIds.length === employees.length
   const pendingOnPage = useMemo(
     () => employees.filter((person) => person.lifecycleStatus === 'pending'),
@@ -95,6 +105,8 @@ function EmployeesPanelInner() {
 
   const runBulkUpdate = useCallback(async (mode) => {
     if (selectedEmployees.length === 0) return
+    if (mode === 'activate' && !canActivateSelected) return
+    if (mode === 'deactivate' && !canDeactivateSelected) return
 
     setBulkAction(mode)
 
@@ -104,12 +116,14 @@ function EmployeesPanelInner() {
         successMessage: `Activated ${selectedEmployees.length} employee(s)`,
         failureMessage: 'Bulk activation incomplete',
         pendingKey: 'employees-bulk-activate',
+        reason: 'Activated employee using a bulk directory action.',
       },
       deactivate: {
         updates: { lifecycleStatus: 'inactive' },
         successMessage: `Deactivated ${selectedEmployees.length} employee(s)`,
         failureMessage: 'Bulk deactivation incomplete',
         pendingKey: 'employees-bulk-deactivate',
+        reason: 'Deactivated employee using a bulk directory action.',
       },
     }
 
@@ -122,7 +136,7 @@ function EmployeesPanelInner() {
     await handleBulkEmployeeUpdate(selectedEmployees, config.updates, config)
     setSelectedEmployeeIds([])
     setBulkAction('')
-  }, [handleBulkEmployeeUpdate, selectedEmployees])
+  }, [canActivateSelected, canDeactivateSelected, handleBulkEmployeeUpdate, selectedEmployees])
 
   return (
     <motion.section
@@ -147,6 +161,7 @@ function EmployeesPanelInner() {
               <option value="active">Active</option>
               <option value="pending">Pending review</option>
               <option value="inactive">Inactive</option>
+              <option value="rejected">Rejected</option>
             </select>
           </Field>
           {officeDivisions.length > 0 ? (
@@ -205,7 +220,7 @@ function EmployeesPanelInner() {
           </div>
           <div className="flex flex-wrap gap-2">
             <ActionButton
-              disabled={Boolean(bulkAction)}
+              disabled={Boolean(bulkAction) || !canActivateSelected}
               busy={bulkAction === 'activate'}
               className="border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
               onClick={() => runBulkUpdate('activate')}
@@ -213,7 +228,7 @@ function EmployeesPanelInner() {
               Activate selected
             </ActionButton>
             <ActionButton
-              disabled={Boolean(bulkAction)}
+              disabled={Boolean(bulkAction) || !canDeactivateSelected}
               busy={bulkAction === 'deactivate'}
               className="border-amber-200 bg-white text-amber-700 hover:bg-amber-50"
               onClick={() => runBulkUpdate('deactivate')}
@@ -275,12 +290,14 @@ function EmployeesPanelInner() {
                   >
                     {person.lifecycleStatus === 'pending' ? 'Review record' : 'Manage record'}
                   </ActionButton>
-                  <ActionButton
-                    className="border-red-200 bg-white text-red-700 hover:bg-red-50"
-                    onClick={() => setDeletingEmployee(person)}
-                  >
-                    Delete employee
-                  </ActionButton>
+                  {person.lifecycleStatus === 'active' ? (
+                    <ActionButton
+                      className="border-red-200 bg-white text-red-700 hover:bg-red-50"
+                      onClick={() => setDeletingEmployee(person)}
+                    >
+                      Deactivate employee
+                    </ActionButton>
+                  ) : null}
                 </div>
               </div>
             ))
@@ -359,12 +376,14 @@ function EmployeesPanelInner() {
                       >
                         {person.lifecycleStatus === 'pending' ? 'Review' : 'Manage'}
                       </ActionButton>
-                      <ActionButton
-                        className="border-red-200 bg-white text-red-700 hover:bg-red-50"
-                        onClick={() => setDeletingEmployee(person)}
-                      >
-                        Delete
-                      </ActionButton>
+                      {person.lifecycleStatus === 'active' ? (
+                        <ActionButton
+                          className="border-red-200 bg-white text-red-700 hover:bg-red-50"
+                          onClick={() => setDeletingEmployee(person)}
+                        >
+                          Deactivate
+                        </ActionButton>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

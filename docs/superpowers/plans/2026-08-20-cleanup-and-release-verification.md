@@ -36,7 +36,7 @@ Use synthetic paths to assert classifications for `.next`, logs, PID files, Grap
 ```javascript
 assert.equal(classifyArtifact('.next/BUILD_ID'), 'generated-build')
 assert.equal(classifyArtifact('cookies.txt'), 'sensitive-review')
-assert.equal(classifyArtifact('db/migrations/0015_organization_units.sql'), 'source')
+assert.equal(classifyArtifact('db/migrations/0016_organization_units.sql'), 'source')
 assert.equal(classifyArtifact('public/models/human/models.json'), 'runtime-asset')
 ```
 

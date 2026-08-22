@@ -19,6 +19,7 @@ function SummaryContent() {
   const [dailyData, setDailyData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const hasEmployeeIdentity = Boolean(employeeId || employeeViewAccess?.personId)
 
   useEffect(() => {
     const storedAccess = loadEmployeeViewAccess()
@@ -34,7 +35,7 @@ function SummaryContent() {
   }, [urlEmployeeId])
 
   useEffect(() => {
-    if (!employeeId) {
+    if (!hasEmployeeIdentity) {
       setLoading(false)
       return
     }
@@ -84,7 +85,7 @@ function SummaryContent() {
     }
 
     fetchData()
-  }, [employeeId, employeeViewAccess])
+  }, [employeeId, employeeViewAccess, hasEmployeeIdentity])
 
   const formatTime = (timestamp) => {
     if (!timestamp) return '--:--'
@@ -120,7 +121,7 @@ function SummaryContent() {
         <div className="flex items-center justify-center py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
         </div>
-      ) : !employeeId ? (
+      ) : !hasEmployeeIdentity ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-700">
           Complete a scan attendance session first to view your attendance.
         </div>

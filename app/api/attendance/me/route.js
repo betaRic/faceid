@@ -11,10 +11,6 @@ export async function GET(request) {
   const employeeId = String(searchParams.get('employeeId') || '').trim()
   const date = String(searchParams.get('date') || formatAttendanceDateKey(Date.now())).trim()
 
-  if (!employeeId) {
-    return NextResponse.json({ ok: false, message: 'Employee ID is required.' }, { status: 400 })
-  }
-
   try {
     const db = null
     const access = await resolveAttendanceViewer(request, db, employeeId)
@@ -23,7 +19,9 @@ export async function GET(request) {
     }
 
     const personId = String(access.person?.id || '').trim()
-    const cachedRecord = await getEmployeeDailyAttendanceRecord(db, personId, date, employeeId)
+    const resolvedEmployeeId = String(access.person?.employeeId || employeeId || '').trim()
+    const identityLabel = resolvedEmployeeId || personId
+    const cachedRecord = await getEmployeeDailyAttendanceRecord(db, personId, date, resolvedEmployeeId)
 
     if (cachedRecord && Number(cachedRecord.logCount || 0) > 0) {
       const attendanceMode = cachedRecord.decisionCodes.some(code => String(code).toLowerCase() === 'accepted_wfh')
@@ -32,23 +30,23 @@ export async function GET(request) {
 
       const entries = [
         cachedRecord.amInTimestamp
-          ? { id: `${employeeId}_${date}_amin`, action: 'checkin', timestamp: cachedRecord.amInTimestamp, time: cachedRecord.amIn, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
+          ? { id: `${identityLabel}_${date}_amin`, action: 'checkin', timestamp: cachedRecord.amInTimestamp, time: cachedRecord.amIn, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
           : null,
         cachedRecord.amOutTimestamp
-          ? { id: `${employeeId}_${date}_amout`, action: 'checkout', timestamp: cachedRecord.amOutTimestamp, time: cachedRecord.amOut, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
+          ? { id: `${identityLabel}_${date}_amout`, action: 'checkout', timestamp: cachedRecord.amOutTimestamp, time: cachedRecord.amOut, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
           : null,
         cachedRecord.pmInTimestamp
-          ? { id: `${employeeId}_${date}_pmin`, action: 'checkin', timestamp: cachedRecord.pmInTimestamp, time: cachedRecord.pmIn, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
+          ? { id: `${identityLabel}_${date}_pmin`, action: 'checkin', timestamp: cachedRecord.pmInTimestamp, time: cachedRecord.pmIn, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
           : null,
         cachedRecord.pmOutTimestamp
-          ? { id: `${employeeId}_${date}_pmout`, action: 'checkout', timestamp: cachedRecord.pmOutTimestamp, time: cachedRecord.pmOut, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
+          ? { id: `${identityLabel}_${date}_pmout`, action: 'checkout', timestamp: cachedRecord.pmOutTimestamp, time: cachedRecord.pmOut, dateKey: cachedRecord.dateKey, dateLabel: cachedRecord.dateLabel, officeName: cachedRecord.officeName, attendanceMode }
           : null,
       ].filter(Boolean)
 
       return NextResponse.json({
         ok: true,
         date,
-        employeeId,
+        employeeId: resolvedEmployeeId,
         entries,
         summary: {
           amIn: cachedRecord.amInTimestamp ? cachedRecord.amIn : null,
@@ -68,7 +66,7 @@ export async function GET(request) {
         dateLabel: entry?.dateLabel || entry?.date || date,
         officeName: access.person?.officeName || entry.officeName || 'Unknown Office',
       }))
-    return buildAttendanceMeResponse({ date, employeeId, entries })
+    return buildAttendanceMeResponse({ date, employeeId: resolvedEmployeeId, entries })
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : 'Failed to load attendance records.' },

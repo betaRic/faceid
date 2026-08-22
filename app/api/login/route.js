@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
 import {
   createAdminSessionCookieValue,
   getAdminSessionCookieName,
@@ -14,41 +13,16 @@ import {
   getHrSessionMaxAge,
 } from '@/lib/hr-auth'
 import { writeAuditLog } from '@/lib/audit-log'
-import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { createOriginGuard } from '@/lib/csrf'
-import { findLocalAdminByPin, findLocalHrByPin } from '@/lib/postgres/user-store'
+import { findLocalStaffByPin } from '@/lib/postgres/user-store'
 import { isRegionalPinEnabled } from '@/lib/bootstrap-pin'
-
-function safeEqual(left, right) {
-  const leftBuffer = Buffer.isBuffer(left) ? left : Buffer.from(left)
-  const rightBuffer = Buffer.isBuffer(right) ? right : Buffer.from(right)
-  if (leftBuffer.length !== rightBuffer.length) return false
-  if (typeof crypto.timingSafeEqual === 'function') {
-    return crypto.timingSafeEqual(leftBuffer, rightBuffer)
-  }
-  return leftBuffer.equals(rightBuffer)
-}
+import { staffSessionCookieOptions } from '@/lib/staff-session-cookie'
+import { enforceLoginRateLimits, verifySharedRegionalPin } from '@/lib/login-security'
 
 export async function POST(request) {
   const checkOrigin = createOriginGuard()
   const originError = await checkOrigin(request)
   if (originError) return originError
-
-  const db = null
-  const ip = getRequestIp(request)
-
-  const ipLimit = await enforceRateLimit(db, {
-    key: `login-ip:${ip}`,
-    limit: 15,
-    windowMs: 10 * 60 * 1000,
-  })
-
-  if (!ipLimit.ok) {
-    return NextResponse.json(
-      { ok: false, message: 'Too many login attempts from this network. Try again later.' },
-      { status: 429 },
-    )
-  }
 
   const body = await request.json().catch(() => null)
   const loginType = String(body?.loginType || 'pin').trim()
@@ -67,10 +41,58 @@ export async function POST(request) {
         return NextResponse.json({ ok: false, message: 'PIN is required.' }, { status: 400 })
       }
 
+      const loginLimit = await enforceLoginRateLimits(request, pin)
+      if (!loginLimit.ok) {
+        if (loginLimit.shouldAuditLockout) {
+          await writeAuditLog(null, {
+            actorRole: 'unknown',
+            actorScope: 'unknown',
+            actorOfficeId: '',
+            action: 'staff_login_rate_limited',
+            targetType: 'session',
+            targetId: 'pin',
+            officeId: '',
+            summary: 'Staff PIN login rate limited',
+            metadata: { backend: loginLimit.backend || 'unknown' },
+          })
+        }
+        return NextResponse.json(
+          { ok: false, message: 'Too many login attempts. Try again later.' },
+          { status: 429 },
+        )
+      }
+
       const configuredPin = getRegionalPin()
       const regionalPinAvailable = configuredPin && await isRegionalPinEnabled()
-      if (regionalPinAvailable && safeEqual(pin, configuredPin)) {
-        await writeAuditLog(db, {
+      const sharedRegionalMatch = Boolean(
+        regionalPinAvailable && verifySharedRegionalPin(pin, configuredPin),
+      )
+      const staffMatches = await findLocalStaffByPin(pin)
+      const matchCount = Number(sharedRegionalMatch)
+        + staffMatches.admins.length
+        + staffMatches.hrUsers.length
+
+      if (matchCount > 1) {
+        await writeAuditLog(null, {
+          actorRole: 'unknown',
+          actorScope: 'unknown',
+          actorOfficeId: '',
+          action: 'staff_login_pin_collision',
+          targetType: 'session',
+          targetId: 'pin',
+          officeId: '',
+          summary: 'Ambiguous staff PIN login blocked',
+          metadata: {
+            sharedRegionalMatch,
+            adminMatches: staffMatches.admins.length,
+            hrMatches: staffMatches.hrUsers.length,
+          },
+        })
+        return NextResponse.json({ ok: false, message: 'Invalid PIN.' }, { status: 401 })
+      }
+
+      if (sharedRegionalMatch) {
+        await writeAuditLog(null, {
           actorRole: 'admin',
           actorScope: 'regional',
           actorOfficeId: '',
@@ -79,6 +101,7 @@ export async function POST(request) {
           targetId: 'regional-pin-admin',
           officeId: '',
           summary: 'Regional PIN login',
+          metadata: { authMethod: 'shared_regional_pin' },
         })
 
         const response = NextResponse.json({ ok: true, role: 'admin', scope: 'regional' })
@@ -89,19 +112,16 @@ export async function POST(request) {
             officeId: '',
             email: 'regional-pin-admin@local',
             uid: 'regional-pin-admin',
+            authMethod: 'shared_regional_pin',
           }),
-          httpOnly: true,
-          sameSite: 'lax',
-          secure: process.env.NODE_ENV === 'production',
-          path: '/',
-          maxAge: getAdminSessionMaxAge(),
+          ...staffSessionCookieOptions({ maxAge: getAdminSessionMaxAge() }),
         })
         return response
       }
 
-      const adminProfile = await findLocalAdminByPin(pin)
+      const adminProfile = staffMatches.admins[0]
       if (adminProfile?.active) {
-          await writeAuditLog(db, {
+          await writeAuditLog(null, {
             actorRole: 'admin',
             actorScope: adminProfile.scope,
             actorOfficeId: adminProfile.officeId,
@@ -110,6 +130,7 @@ export async function POST(request) {
             targetId: adminProfile.id,
             officeId: adminProfile.officeId,
             summary: `Admin PIN login for ${adminProfile.email}`,
+            metadata: { authMethod: 'named_pin' },
           })
 
           const response = NextResponse.json({ ok: true, role: 'admin', scope: adminProfile.scope })
@@ -120,19 +141,16 @@ export async function POST(request) {
               officeId: adminProfile.officeId,
               email: adminProfile.email,
               uid: adminProfile.id,
+              authMethod: 'named_pin',
             }),
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-            maxAge: getAdminSessionMaxAge(),
+            ...staffSessionCookieOptions({ maxAge: getAdminSessionMaxAge() }),
           })
         return response
       }
 
-      const hrProfile = await findLocalHrByPin(pin)
+      const hrProfile = staffMatches.hrUsers[0]
       if (hrProfile?.active) {
-          await writeAuditLog(db, {
+          await writeAuditLog(null, {
             actorRole: 'hr',
             actorScope: hrProfile.scope,
             actorOfficeId: hrProfile.officeId,
@@ -141,6 +159,7 @@ export async function POST(request) {
             targetId: hrProfile.id,
             officeId: hrProfile.officeId,
             summary: `HR PIN login for ${hrProfile.email}`,
+            metadata: { authMethod: 'named_pin' },
           })
 
           const response = NextResponse.json({ ok: true, role: 'hr', scope: hrProfile.scope })
@@ -151,23 +170,32 @@ export async function POST(request) {
               officeId: hrProfile.officeId,
               email: hrProfile.email,
               hrUserId: hrProfile.id,
+              authMethod: 'named_pin',
             }),
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-            maxAge: getHrSessionMaxAge(),
+            ...staffSessionCookieOptions({ maxAge: getHrSessionMaxAge() }),
           })
         return response
       }
 
+      await writeAuditLog(null, {
+        actorRole: 'unknown',
+        actorScope: 'unknown',
+        actorOfficeId: '',
+        action: 'staff_login_failed',
+        targetType: 'session',
+        targetId: 'pin',
+        officeId: '',
+        summary: 'Invalid staff PIN login',
+        metadata: { authMethod: 'pin' },
+      })
       return NextResponse.json({ ok: false, message: 'Invalid PIN.' }, { status: 401 })
     }
 
     return NextResponse.json({ ok: false, message: 'Invalid login type.' }, { status: 400 })
   } catch (error) {
+    console.error('[login] Staff authentication failed', { code: error?.code || 'unknown' })
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Login failed.' },
+      { ok: false, message: 'Login failed.' },
       { status: 500 },
     )
   }

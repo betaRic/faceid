@@ -26,7 +26,7 @@ export default function KioskSuccessScreen({
       onBack?.()
     }, AUTO_RETURN_MS)
     return () => window.clearTimeout(timer)
-  }, [onBack, currentMatch?.employeeId, currentMatch?.timestamp])
+  }, [onBack, currentMatch?.employeeId, currentMatch?.personId, currentMatch?.timestamp])
 
   return (
     <div className="absolute inset-0 z-[6] grid place-items-center bg-white px-5 py-6">

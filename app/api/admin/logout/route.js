@@ -6,6 +6,7 @@ import { getHrSessionCookieName, parseHrSessionCookieValue } from '@/lib/hr-auth
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { postgresEnabled } from '@/lib/postgres/client'
+import { staffSessionCookieOptions } from '@/lib/staff-session-cookie'
 
 export async function POST(request) {
   const checkOrigin = createOriginGuard()
@@ -39,20 +40,12 @@ export async function POST(request) {
   response.cookies.set({
     name: getAdminSessionCookieName(),
     value: '',
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 0,
+    ...staffSessionCookieOptions({ maxAge: 0 }),
   })
   response.cookies.set({
     name: getHrSessionCookieName(),
     value: '',
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 0,
+    ...staffSessionCookieOptions({ maxAge: 0 }),
   })
 
   return response

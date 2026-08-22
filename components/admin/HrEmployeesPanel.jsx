@@ -37,13 +37,17 @@ function LifecycleBadge({ status }) {
       ? "bg-emerald-100 text-emerald-800"
       : lifecycle === "pending"
         ? "bg-amber-100 text-amber-800"
-        : "bg-stone-200 text-stone-700";
+        : lifecycle === "rejected"
+          ? "bg-red-100 text-red-800"
+          : "bg-stone-200 text-stone-700";
   const label =
     lifecycle === "active"
       ? "Active"
       : lifecycle === "pending"
         ? "Pending review"
-        : "Inactive";
+        : lifecycle === "rejected"
+          ? "Rejected"
+          : "Inactive";
   return (
     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${tone}`}>
       {label}
@@ -120,6 +124,7 @@ function HrEmployeesPanelInner() {
               <option value="active">Active</option>
               <option value="pending">Pending review</option>
               <option value="inactive">Inactive</option>
+              <option value="rejected">Rejected</option>
             </select>
           </div>
         </div>
@@ -207,13 +212,15 @@ function HrEmployeesPanelInner() {
                   >
                     Edit
                   </button>
-                  <button
-                    className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
-                    onClick={() => setDeletingEmployee(person)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
+                  {person.lifecycleStatus === 'active' ? (
+                    <button
+                      className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                      onClick={() => setDeletingEmployee(person)}
+                      type="button"
+                    >
+                      Deactivate
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))
@@ -268,13 +275,15 @@ function HrEmployeesPanelInner() {
                     >
                       Edit
                     </button>
-                    <button
-                      className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50"
-                      onClick={() => setDeletingEmployee(person)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
+                    {person.lifecycleStatus === 'active' ? (
+                      <button
+                        className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                        onClick={() => setDeletingEmployee(person)}
+                        type="button"
+                      >
+                        Deactivate
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createHrSessionCookieValue, getHrSessionCookieName, getHrSessionMaxAge, parseHrSessionCookieValue, resolveHrSession, sessionNeedsRefresh, sessionTimeRemaining } from '@/lib/hr-auth'
 import { getHrProfileById } from '@/lib/hr-directory'
 import { postgresEnabled } from '@/lib/postgres/client'
+import { staffSessionCookieOptions } from '@/lib/staff-session-cookie'
 
 export async function GET(request) {
   const cookieValue = request.cookies.get(getHrSessionCookieName())?.value
@@ -45,11 +46,7 @@ export async function GET(request) {
       response.cookies.set({
         name: getHrSessionCookieName(),
         value: createHrSessionCookieValue(resolvedSession),
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        path: '/',
-        maxAge: getHrSessionMaxAge(),
+        ...staffSessionCookieOptions({ maxAge: getHrSessionMaxAge() }),
       })
     }
 
