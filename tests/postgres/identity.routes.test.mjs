@@ -21,6 +21,10 @@ import {
   createEmployeeViewSessionCookieValue,
   parseEmployeeViewSessionCookieValue,
 } from '../../lib/employee-view-auth.js'
+import {
+  createHrSessionCookieValue,
+  getHrSessionCookieName,
+} from '../../lib/hr-auth.js'
 import { GET as getPersons } from '../../app/api/persons/route.js'
 import {
   DELETE as deletePerson,
@@ -35,10 +39,20 @@ import { GET as getAttendanceDtr } from '../../app/api/attendance/dtr/route.js'
 import { createAttendanceV2PostHandler } from '../../app/api/attendance/v2/route.js'
 import { consumePostgresRateLimit, hashRateLimitKey } from '../../lib/postgres/rate-limit-store.js'
 import { enforceRateLimit, getRequestIp } from '../../lib/rate-limit.js'
+import {
+  GET as getHrOfficeSettings,
+  PUT as updateHrOfficeSettings,
+} from '../../app/api/hr/office-settings/route.js'
 
 const office = {
   id: 'office-route-test',
   name: 'Route Test Field Office',
+  officeType: 'Field Office',
+  divisions: [],
+}
+const otherOffice = {
+  id: 'office-route-test-other',
+  name: 'Other Route Test Office',
   officeType: 'Field Office',
   divisions: [],
 }
@@ -47,12 +61,26 @@ let registrationSequence = 0
 before(async () => {
   process.env.ADMIN_SESSION_SECRET = 'route-test-admin-session-secret'
   process.env.EMPLOYEE_VIEW_SESSION_SECRET = 'route-test-employee-session-secret'
+  process.env.HR_SESSION_SECRET = 'route-test-hr-session-secret'
   await queryPostgres(`
     INSERT INTO offices (
       id, name, name_lower, office_type, latitude, longitude, radius_meters, divisions
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
   `, [office.id, office.name, office.name.toLowerCase(), office.officeType, 6.1164, 125.1716, 500, '[]'])
+  await queryPostgres(`
+    INSERT INTO offices (
+      id, name, name_lower, office_type, latitude, longitude, radius_meters, work_policy, divisions, data
+    )
+    VALUES ($1, $2, $3, $4, 7.1, 126.2, 750, $5::jsonb, '[]'::jsonb, $6::jsonb)
+  `, [
+    otherOffice.id,
+    otherOffice.name,
+    otherOffice.name.toLowerCase(),
+    otherOffice.officeType,
+    JSON.stringify({ schedule: 'Other policy', workingDays: [1, 2, 3, 4, 5] }),
+    JSON.stringify({ ...otherOffice, location: 'Secret other location', wifiSsid: ['SECRET-OTHER-WIFI'] }),
+  ])
   await queryPostgres(`
     INSERT INTO admin_users (
       id, email, email_lower, name, role, scope, office_id, active, data
@@ -74,6 +102,13 @@ before(async () => {
     office.id,
     JSON.stringify({ permissions: ['employees'] }),
   ])
+  await queryPostgres(`
+    INSERT INTO hr_users (
+      id, email, email_lower, name, display_name, scope, office_id, active, data
+    ) VALUES
+      ('route-test-office-hr', 'route-test-office-hr@example.test', 'route-test-office-hr@example.test', 'Route Test Office HR', 'Route Test Office HR', 'office', $1, true, $2::jsonb),
+      ('route-test-regional-hr', 'route-test-regional-hr@example.test', 'route-test-regional-hr@example.test', 'Route Test Regional HR', 'Route Test Regional HR', 'regional', '', true, $2::jsonb)
+  `, [office.id, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] })])
 })
 
 after(async () => {
@@ -161,6 +196,17 @@ function adminCookie({
     officeId,
   })
   return `${getAdminSessionCookieName()}=${value}`
+}
+
+function hrCookie({
+  email = 'route-test-office-hr@example.test',
+  uid = 'route-test-office-hr',
+  hrUserId = 'route-test-office-hr',
+  scope = 'office',
+  officeId = office.id,
+} = {}) {
+  const value = createHrSessionCookieValue({ email, uid, hrUserId, scope, officeId })
+  return `${getHrSessionCookieName()}=${value}`
 }
 
 async function transitionLifecycle(personId, lifecycleStatus, reason = `Route test transition to ${lifecycleStatus}`) {
@@ -493,6 +539,210 @@ test('employee deletion deactivates and preserves biometric, photo, and attendan
     )).rows[0].count)
     assert.equal(afterCount, beforeCounts[table], `${table} should be preserved`)
   }
+})
+
+test('Office HR settings expose and mutate only the assigned office work policy', async () => {
+  const officeHrCookie = hrCookie()
+  const getResponse = await getHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
+    headers: { cookie: officeHrCookie },
+  }))
+  const getPayload = await getResponse.json()
+  assert.equal(getResponse.status, 200, JSON.stringify(getPayload))
+  assert.deepEqual(Object.keys(getPayload.office).sort(), ['id', 'name', 'workPolicy'])
+  assert.deepEqual(Object.keys(getPayload.office.workPolicy).sort(), [
+    'afternoonIn',
+    'afternoonOut',
+    'checkInCooldownMinutes',
+    'checkOutCooldownMinutes',
+    'gracePeriodMinutes',
+    'morningIn',
+    'morningOut',
+    'schedule',
+    'wfhDays',
+    'workingDays',
+  ])
+  assert.doesNotMatch(JSON.stringify(getPayload.office), /gps|latitude|longitude|radius|location|wifi|division|province/i)
+
+  const regionalCookie = hrCookie({
+    email: 'route-test-regional-hr@example.test',
+    uid: 'route-test-regional-hr',
+    hrUserId: 'route-test-regional-hr',
+    scope: 'regional',
+    officeId: '',
+  })
+  const regionalGet = await getHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
+    headers: { cookie: regionalCookie },
+  }))
+  assert.equal(regionalGet.status, 403, JSON.stringify(await regionalGet.clone().json()))
+
+  const forgedOrigin = await updateHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
+    method: 'PUT',
+    headers: { cookie: officeHrCookie, origin: 'https://evil.example.test' },
+    body: { workPolicy: getPayload.office.workPolicy },
+  }))
+  assert.equal(forgedOrigin.status, 403, JSON.stringify(await forgedOrigin.clone().json()))
+
+  const before = (await queryPostgres(`
+    SELECT id, name, latitude, longitude, radius_meters, work_policy, data
+    FROM offices
+    WHERE id = ANY($1::text[])
+    ORDER BY id
+  `, [[office.id, otherOffice.id]])).rows
+  const beforeCurrent = before.find(row => row.id === office.id)
+  const beforeOther = before.find(row => row.id === otherOffice.id)
+  const desiredPolicy = {
+    schedule: 'Mon-Fri flexible office schedule',
+    workingDays: [1, 2, 3, 4, 5],
+    wfhDays: [5],
+    morningIn: '07:30',
+    morningOut: '12:00',
+    afternoonIn: '13:00',
+    afternoonOut: '16:30',
+    gracePeriodMinutes: 10,
+    checkInCooldownMinutes: 20,
+    checkOutCooldownMinutes: 7,
+  }
+  const concurrentAdmin = {
+    name: 'Concurrent Admin Office Name',
+    latitude: 6.1165,
+    longitude: 125.1717,
+    radiusMeters: 888,
+    data: { location: 'Concurrent Admin Location', wifiSsid: ['CONCURRENT-ADMIN-WIFI'] },
+  }
+  const adminClient = await getPostgresPool().connect()
+  let putPromise
+  let adminCommitted = false
+  try {
+    await adminClient.query('BEGIN')
+    await adminClient.query(`
+      UPDATE offices
+      SET name = $2,
+          name_lower = lower($2),
+          latitude = $3,
+          longitude = $4,
+          radius_meters = $5,
+          data = data || $6::jsonb
+      WHERE id = $1
+    `, [
+      office.id,
+      concurrentAdmin.name,
+      concurrentAdmin.latitude,
+      concurrentAdmin.longitude,
+      concurrentAdmin.radiusMeters,
+      JSON.stringify(concurrentAdmin.data),
+    ])
+    putPromise = updateHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
+      method: 'PUT',
+      headers: { cookie: officeHrCookie },
+      body: {
+        id: otherOffice.id,
+        name: 'Forged office name',
+        location: 'Forged location',
+        wifiSsid: ['FORGED-WIFI'],
+        gps: { latitude: 0, longitude: 0, radiusMeters: 999999 },
+        workPolicy: { ...desiredPolicy, radiusMeters: 999999, map: 'forged-map' },
+      },
+    }))
+    let lockObserved = false
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const activity = await queryPostgres(`
+        SELECT 1
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND query ILIKE '%offices%'
+        LIMIT 1
+      `)
+      if (activity.rowCount > 0) {
+        lockObserved = true
+        break
+      }
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    assert.equal(lockObserved, true, 'Office HR update should wait for the concurrent Admin office update')
+    await adminClient.query('COMMIT')
+    adminCommitted = true
+  } finally {
+    if (!adminCommitted) await adminClient.query('ROLLBACK').catch(() => {})
+    adminClient.release()
+  }
+  const putResponse = await putPromise
+  const putPayload = await putResponse.json()
+  assert.equal(putResponse.status, 200, JSON.stringify(putPayload))
+  assert.deepEqual(Object.keys(putPayload.office).sort(), ['id', 'name', 'workPolicy'])
+  assert.equal(putPayload.office.name, concurrentAdmin.name)
+  assert.deepEqual(putPayload.office.workPolicy, desiredPolicy)
+  assert.doesNotMatch(JSON.stringify(putPayload.office), /gps|latitude|longitude|radius|location|wifi|map/i)
+
+  const after = (await queryPostgres(`
+    SELECT id, name, latitude, longitude, radius_meters, work_policy, data
+    FROM offices
+    WHERE id = ANY($1::text[])
+    ORDER BY id
+  `, [[office.id, otherOffice.id]])).rows
+  const afterCurrent = after.find(row => row.id === office.id)
+  const afterOther = after.find(row => row.id === otherOffice.id)
+  assert.equal(afterCurrent.name, concurrentAdmin.name)
+  assert.equal(afterCurrent.latitude, concurrentAdmin.latitude)
+  assert.equal(afterCurrent.longitude, concurrentAdmin.longitude)
+  assert.equal(afterCurrent.radius_meters, concurrentAdmin.radiusMeters)
+  assert.equal(afterCurrent.data.location, concurrentAdmin.data.location)
+  assert.deepEqual(afterCurrent.data.wifiSsid, concurrentAdmin.data.wifiSsid)
+  assert.deepEqual(afterCurrent.work_policy, desiredPolicy)
+  assert.deepEqual(afterOther, beforeOther)
+
+  const audits = await queryPostgres(`
+    SELECT actor_role, actor_scope, actor_office_id, actor_id, actor_name, actor_email, target_id, office_id, summary, metadata
+    FROM audit_logs
+    WHERE action = 'office_hr_settings_update' AND target_id = $1
+  `, [office.id])
+  assert.deepEqual(audits.rows[0], {
+    actor_role: 'hr',
+    actor_scope: 'office',
+    actor_office_id: office.id,
+    actor_id: 'route-test-office-hr',
+    actor_name: 'Route Test Office HR',
+    actor_email: 'route-test-office-hr@example.test',
+    target_id: office.id,
+    office_id: office.id,
+    summary: `Office HR updated allowed settings for ${concurrentAdmin.name}`,
+    metadata: { workPolicyChanged: true },
+  })
+
+  const noOpResponse = await updateHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
+    method: 'PUT',
+    headers: { cookie: officeHrCookie },
+    body: { workPolicy: { ...desiredPolicy } },
+  }))
+  assert.equal(noOpResponse.status, 200, JSON.stringify(await noOpResponse.clone().json()))
+  const noOpAudit = await queryPostgres(`
+    SELECT metadata
+    FROM audit_logs
+    WHERE action = 'office_hr_settings_update' AND target_id = $1
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  `, [office.id])
+  assert.deepEqual(noOpAudit.rows[0].metadata, { workPolicyChanged: false })
+
+  await queryPostgres(`
+    UPDATE offices
+    SET name = $2,
+        name_lower = lower($2),
+        latitude = $3,
+        longitude = $4,
+        radius_meters = $5,
+        work_policy = $6::jsonb,
+        data = $7::jsonb
+    WHERE id = $1
+  `, [
+    office.id,
+    beforeCurrent.name,
+    beforeCurrent.latitude,
+    beforeCurrent.longitude,
+    beforeCurrent.radius_meters,
+    JSON.stringify(beforeCurrent.work_policy),
+    JSON.stringify(beforeCurrent.data),
+  ])
 })
 
 test('hard deletion requires Regional Admin confirmation and rejects protected history', async () => {

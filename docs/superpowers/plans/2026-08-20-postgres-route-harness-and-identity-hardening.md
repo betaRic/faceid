@@ -622,14 +622,16 @@ git commit -m "fix: preserve employee records and harden guards"
 
 **Files:**
 - Create: `lib/offices/hr-office-settings.js`
+- Create: `lib/postgres/hr-office-settings-store.js`
+- Modify: `lib/postgres/audit-store.js`
 - Modify: `app/api/hr/office-settings/route.js`
 - Test: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write failing Office HR scope tests**
+- [x] **Step 1: Write failing Office HR scope tests**
 
 Assert GET contains only office ID/name plus allowlisted work-policy fields and never `gps`, latitude, longitude, radius, map/location, Wi-Fi, or another office. Assert PUT ignores/rejects forged Admin-only fields, updates only the session office policy, and writes an audit record. Assert Regional/Office session boundaries and origin guard.
 
-- [ ] **Step 2: Implement an explicit allowlist DTO**
+- [x] **Step 2: Implement an explicit allowlist DTO**
 
 ```javascript
 const HR_POLICY_FIELDS = [
@@ -651,11 +653,11 @@ export function pickHrWorkPolicy(value) {
 }
 ```
 
-- [ ] **Step 3: Apply scope on both read and write**
+- [x] **Step 3: Apply scope on both read and write**
 
 Resolve the HR session first, load only `session.officeId`, project GET through `toHrOfficeSettings`, and merge PUT through `pickHrWorkPolicy`. Do not serialize the full office and remove fields afterward.
 
-- [ ] **Step 4: Run and commit**
+- [x] **Step 4: Run and commit**
 
 Run: `npm run test:routes -- --test-name-pattern="Office HR settings"`
 Expected: PASS.

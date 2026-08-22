@@ -1,13 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { writeAuditLog } from '@/lib/audit-log'
+import { auditActorFromSession } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { clearOfficeRecordCache, getOfficeRecord } from '@/lib/office-directory'
+import { pickHrWorkPolicy, toHrOfficeSettings } from '@/lib/offices/hr-office-settings'
 import { normalizeOfficeRecord } from '@/lib/offices'
 import { postgresEnabled } from '@/lib/postgres/client'
-import { upsertLocalOffice } from '@/lib/postgres/report-store'
+import { updateLocalHrOfficeWorkPolicy } from '@/lib/postgres/hr-office-settings-store'
 
 function resolveOfficeHrSession(request) {
   return parseHrSessionCookieValue(request.cookies.get(getHrSessionCookieName())?.value)
@@ -79,7 +80,7 @@ export async function GET(request) {
   try {
     const access = await getOfficeForOfficeHr(request)
     if (access.error) return access.error
-    return NextResponse.json({ ok: true, office: access.office })
+    return NextResponse.json({ ok: true, office: toHrOfficeSettings(access.office) })
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Unable to load office settings.' }, { status: 500 })
   }
@@ -98,7 +99,7 @@ export async function PUT(request) {
     }
 
     const body = await request.json().catch(() => null)
-    const parsed = validateOfficeHrSettings(body)
+    const parsed = validateOfficeHrSettings({ workPolicy: pickHrWorkPolicy(body?.workPolicy) })
     if (parsed.error) return NextResponse.json({ ok: false, message: parsed.error }, { status: 400 })
 
     const updatedOffice = normalizeOfficeRecord({
@@ -109,23 +110,23 @@ export async function PUT(request) {
       },
     })
 
-    await upsertLocalOffice(updatedOffice)
-    await clearOfficeRecordCache()
-    await writeAuditLog(null, {
-      actorRole: 'hr',
-      actorScope: access.resolvedSession.scope,
-      actorOfficeId: access.resolvedSession.officeId,
-      action: 'office_hr_settings_update',
-      targetType: 'office',
-      targetId: updatedOffice.id,
-      officeId: updatedOffice.id,
-      summary: `Office HR updated allowed settings for ${updatedOffice.name}`,
-      metadata: {
-        workPolicyChanged: JSON.stringify(access.office.workPolicy) !== JSON.stringify(updatedOffice.workPolicy),
+    const storedOffice = await updateLocalHrOfficeWorkPolicy({
+      officeId: access.resolvedSession.officeId,
+      workPolicy: updatedOffice.workPolicy,
+      auditEntry: {
+        actorRole: 'hr',
+        actorScope: access.resolvedSession.scope,
+        actorOfficeId: access.resolvedSession.officeId,
+        ...auditActorFromSession(access.resolvedSession),
+        action: 'office_hr_settings_update',
       },
     })
+    if (!storedOffice) {
+      return NextResponse.json({ ok: false, message: 'Assigned office was not found.' }, { status: 404 })
+    }
+    await clearOfficeRecordCache()
 
-    return NextResponse.json({ ok: true, office: updatedOffice })
+    return NextResponse.json({ ok: true, office: toHrOfficeSettings(storedOffice) })
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Unable to save office settings.' }, { status: 500 })
   }
