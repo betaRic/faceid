@@ -1,4 +1,4 @@
-import { Field } from '@/components/shared/ui'
+import { Button, Checkbox, EmptyState, Field, Input, LoadingState, Status } from '@/components/ui'
 import { DTR_MONTH_NAMES, DTR_RANGE_OPTIONS } from '@/lib/dtr'
 
 export default function DtrSelectionView({
@@ -40,21 +40,20 @@ export default function DtrSelectionView({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-black/5 px-6 py-4">
         <div>
-          <h3 className="font-display text-lg font-bold text-ink">
-            Generate DTR Excel
+          <h3 className="text-lg font-semibold text-foreground">
+            Generate DTR
           </h3>
-          <p className="text-xs text-muted">
-            CSC Form 48 workbook - Select employees
+          <p className="mt-1 text-xs text-secondary">
+            Select the period, authorized personnel, and Excel output details.
           </p>
         </div>
-        <button
-          className="rounded-lg px-3 py-1.5 text-sm text-muted hover:bg-stone-100 disabled:opacity-50"
+        <Button
           disabled={dtrLoading || employeesLoading}
           onClick={onClose}
-          type="button"
+          variant="quiet"
         >
           Close
-        </button>
+        </Button>
       </div>
 
       <div className="grid gap-3 border-b border-black/5 px-4 py-4 sm:grid-cols-3 sm:px-6">
@@ -154,46 +153,35 @@ export default function DtrSelectionView({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-3 border-b border-black/5 px-4 py-3 sm:flex-row sm:items-center sm:px-6">
-        <input
-          className="flex-1 rounded-lg border border-black/10 bg-stone-50 px-3 py-2 text-sm outline-none transition focus:border-navy"
-          disabled={dtrLoading}
-          onChange={event => onSearchChange(event.target.value)}
-          placeholder="Search employees..."
-          value={search}
-        />
-        <button
-          className="whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold text-navy hover:bg-navy/5 disabled:opacity-50"
+      <div className="flex flex-col gap-3 border-b border-line px-4 py-3 sm:flex-row sm:items-end sm:px-6">
+        <Field className="min-w-0 flex-1" label="Search employees">
+          <Input disabled={dtrLoading} onChange={event => onSearchChange(event.target.value)} placeholder="Name, Employee ID, or office" value={search} />
+        </Field>
+        <Button
           disabled={dtrLoading || employeesLoading}
           onClick={onSelectAll}
-          type="button"
+          variant="secondary"
         >
           {allVisibleSelected ? 'Deselect all' : 'Select all'}
-        </button>
-        <span className="whitespace-nowrap text-xs text-muted">
-          {selectedIds.size} selected
-        </span>
+        </Button>
+        <Status>{selectedIds.size} selected</Status>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
         {employeesLoading ? (
-          <div className="px-6 py-8 text-center text-sm text-muted">Loading all employees authorized for DTR generation…</div>
+          <LoadingState className="px-6 py-8" label="Loading personnel authorized for DTR generation…" />
         ) : filteredEmployees.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-muted">
-            {search ? 'No employees match your search.' : 'No employees available.'}
-          </div>
+          <EmptyState className="m-4" description={search ? 'Try a different name, Employee ID, or office.' : 'No personnel are available in this scope.'} title={search ? 'No matching personnel' : 'No personnel available'} />
         ) : (
           filteredEmployees.map(employee => (
             <label
               key={employee.id}
               className="flex cursor-pointer items-center gap-3 border-b border-black/5 px-4 py-3 transition hover:bg-stone-50 sm:px-6"
             >
-              <input
+              <Checkbox
                 checked={selectedIds.has(employee.id)}
-                className="h-4 w-4 rounded border-black/20 text-navy accent-navy"
                 disabled={dtrLoading}
                 onChange={() => onToggleEmployee(employee.id)}
-                type="checkbox"
               />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-ink">{employee.name}</div>
@@ -220,27 +208,25 @@ export default function DtrSelectionView({
                 />
               </div>
             </div>
-            <button
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+            <Button
               onClick={onCancel}
-              type="button"
+              variant="quiet"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         ) : (
           <>
             <span className="text-xs text-muted">
               {error || `${selectedIds.size} of ${uniqueEmployees.length} employees`}
             </span>
-            <button
-              className="w-full rounded-xl bg-navy px-6 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50 sm:w-auto sm:py-2.5"
+            <Button
+              className="w-full sm:w-auto"
               disabled={selectedIds.size === 0 || employeesLoading}
               onClick={onGenerate}
-              type="button"
             >
               Download Excel ({selectedIds.size})
-            </button>
+            </Button>
           </>
         )}
       </div>

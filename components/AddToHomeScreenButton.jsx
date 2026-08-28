@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Button, Dialog } from './ui'
 
 function isIosDevice() {
   if (typeof navigator === 'undefined') return false
@@ -44,22 +45,21 @@ export default function AddToHomeScreenButton({ className = '' }) {
 
   return (
     <>
-      <button className={`btn btn-ghost px-6 py-3 ${className}`.trim()} onClick={handleInstall} type="button">
+      <Button className={className} onClick={handleInstall} variant="secondary">
         Add to Home Screen
-      </button>
-      {showIosHelp ? (
-        <div className="fixed inset-0 z-[100] flex items-end bg-black/45 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <h2 className="text-lg font-bold text-navy">Add VeriFace to your iPhone</h2>
-            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate">
-              <li>Tap the <strong>Share</strong> button in Safari.</li>
-              <li>Choose <strong>Add to Home Screen</strong>.</li>
-              <li>Tap <strong>Add</strong>.</li>
-            </ol>
-            <button className="btn btn-primary mt-5 w-full" onClick={() => setShowIosHelp(false)} type="button">Done</button>
-          </div>
-        </div>
-      ) : null}
+      </Button>
+      <Dialog
+        footer={<Button onClick={() => setShowIosHelp(false)}>Done</Button>}
+        onClose={() => setShowIosHelp(false)}
+        open={showIosHelp}
+        title="Add VeriFace to your iPhone"
+      >
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-secondary">
+          <li>Tap the <strong>Share</strong> button in Safari.</li>
+          <li>Choose <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong>.</li>
+        </ol>
+      </Dialog>
     </>
   )
 }

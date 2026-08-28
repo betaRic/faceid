@@ -1,10 +1,9 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useAdminStore } from '@/lib/admin/store'
-import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
+import { Button, Icon, LoadingState as SharedLoadingState, PageHeader, Status } from '@/components/ui'
 
 const EmployeeReenrollPanel = dynamic(
   () => import('@/components/admin/EmployeeReenrollPanel'),
@@ -14,9 +13,7 @@ const EmployeeReenrollPanel = dynamic(
 function LoadingState() {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center">
-      <div className="text-center">
-        <DilgLoadingIndicator compact label="Loading re-enrollment…" />
-      </div>
+      <SharedLoadingState>Loading profile refresh…</SharedLoadingState>
     </div>
   )
 }
@@ -39,18 +36,17 @@ export default function EmployeeReenrollPage({ person }) {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-stone-50">
-      <header className="shrink-0 border-b border-black/5 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link href="/admin" className="flex items-center gap-2 text-sm font-medium text-navy hover:text-navy-dark">
-              ← Back
-            </Link>
-            <div className="hidden h-4 w-px bg-black/10 sm:block" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold text-ink">Live Re-enrollment</div>
-            <div className="truncate text-xs text-muted">{person.name} · {person.employeeId} · {person.officeName}</div>
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-canvas">
+      <header className="shrink-0 border-b border-line bg-surface">
+        <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6">
+          <PageHeader
+            title={person.name}
+            description={[person.employeeId ? `Employee ID ${person.employeeId}` : 'No Employee ID assigned', person.officeName || 'Office not assigned'].join(' · ')}
+            actions={<Button aria-label="Back to admin" onClick={handleBack} variant="secondary"><Icon name="arrow-left" />Back to admin</Button>}
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Status tone="review">Authorized profile refresh</Status>
+            <p className="text-sm text-secondary">Existing attendance and identity records remain intact.</p>
           </div>
         </div>
       </header>

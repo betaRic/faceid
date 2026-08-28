@@ -4,22 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBiometricRuntime } from '@/components/BiometricRuntimeProvider'
 import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
 import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
-import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
+import { Button, ErrorState, Icon, LoadingState, Status, Surface } from '@/components/ui'
 import { CAPTURE_PHASES, useEnrollmentCapture } from '@/hooks/useEnrollmentCapture'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 
 const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
 
 function InfoCard({ title, text, tone = 'default' }) {
-  const cls = tone === 'warn'
-    ? 'border-amber-200 bg-amber-50 text-amber-900'
-    : 'border-black/5 bg-stone-50 text-muted'
-
   return (
-    <section className={`rounded-[1.25rem] border p-4 ${cls}`}>
-      <h3 className="text-sm font-semibold uppercase tracking-[0.14em]">{title}</h3>
-      <p className="mt-2 text-sm leading-7">{text}</p>
-    </section>
+    <Surface className={`p-4 ${tone === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-900' : ''}`}>
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <p className="mt-2 text-sm leading-6">{text}</p>
+    </Surface>
   )
 }
 
@@ -164,67 +160,47 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
   if (workspaceState === 'loading') {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center rounded-[1.4rem] border border-black/5 bg-stone-50 p-6">
-        <div className="text-center">
-          <DilgLoadingIndicator compact label="Loading biometric workspace…" />
-          <p className="mt-1 text-xs text-muted">Starting models and camera for live re-enrollment.</p>
-        </div>
-      </div>
+      <Surface className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6">
+        <LoadingState>Loading biometric workspace…</LoadingState>
+        <p className="text-xs text-secondary">Starting models and camera for authorized profile refresh.</p>
+      </Surface>
     )
   }
 
   if (workspaceState === 'error') {
     return (
-      <div className="grid min-h-0 flex-1 content-center gap-4 rounded-[1.4rem] border border-red-200 bg-red-50 p-6 text-center">
-        <div>
-          <h3 className="text-lg font-bold text-red-900">Biometric workspace failed</h3>
-          <p className="mt-2 text-sm text-red-700">{runtimeError || 'Could not start camera or models.'}</p>
-        </div>
-        <div className="flex justify-center gap-3">
-          <button
-            className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50"
-            onClick={onBack}
-            type="button"
-          >
-            Back
-          </button>
-          <button
-            className="rounded-full bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark"
-            onClick={retry}
-            type="button"
-          >
-            Retry
-          </button>
-        </div>
+      <div className="grid min-h-0 flex-1 content-center gap-4">
+        <ErrorState description={runtimeError || 'Could not start camera or models.'} onRetry={retry} title="Biometric workspace failed" />
+        <Button className="justify-self-center" onClick={onBack} variant="secondary">Back</Button>
       </div>
     )
   }
 
   if (workspaceState === 'waiting') {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-50 p-6">
+      <Surface className="flex min-h-0 flex-1 items-center justify-center p-6">
         <div className="text-center">
           {bootStage === 'permission' ? (
             <>
               <h3 className="text-lg font-bold text-ink">Camera permission required</h3>
               <p className="mt-2 max-w-md text-sm leading-6 text-muted">Tap once to let the browser request the camera. Safari does not reliably show this prompt when it starts automatically.</p>
-              <button
-                className="mt-5 rounded-full bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-wait disabled:opacity-70"
+              <Button
+                className="mt-5"
                 disabled={permissionRequestPending}
                 onClick={requestPermissions}
                 type="button"
               >
                 {permissionRequestPending ? 'Requesting camera…' : 'Enable camera'}
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <DilgLoadingIndicator compact label="Starting camera…" />
+              <LoadingState className="justify-center">Starting camera…</LoadingState>
               <p className="mt-1 text-xs text-muted">{modelStatus}</p>
             </>
           )}
         </div>
-      </div>
+      </Surface>
     )
   }
 
@@ -234,7 +210,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:overflow-hidden">
-        <div className="flex min-h-[14rem] items-center justify-center overflow-hidden rounded-[1.4rem] border border-black/5 bg-stone-950 sm:min-h-[18rem]">
+        <div className="flex min-h-[14rem] items-center justify-center overflow-hidden rounded-surface border border-line bg-stone-950 sm:min-h-[18rem]">
           {captureResult?.previewUrl ? (
             <img
               alt={`Captured face for ${person.name}`}
@@ -247,18 +223,16 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
         </div>
 
         <div className="grid content-start gap-3">
-          <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+          <Surface className="p-4">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin live re-enrollment</div>
-              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                burstSummary?.genuinelyDiverse ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-              }`}>
+              <div className="text-sm font-medium text-secondary">Authorized profile refresh</div>
+              <Status tone={burstSummary?.genuinelyDiverse ? 'success' : 'warning'}>
                 {burstSummary?.genuinelyDiverse ? 'Quality good' : 'Retake advised'}
-              </span>
+              </Status>
             </div>
             <h3 className="mt-2 text-xl font-bold text-ink">{person.name}</h3>
             <p className="mt-1 text-sm text-muted">{person.employeeId} · {person.officeName}</p>
-          </div>
+          </Surface>
 
           {burstSummary && (
             <InfoCard
@@ -277,36 +251,33 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
           )}
 
           {saveError && (
-            <div className="rounded-[1.25rem] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
               {saveError}
             </div>
           )}
 
           <div className="grid gap-3 pt-1">
-            <button
-              className="rounded-2xl bg-navy px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50"
+            <Button
               disabled={workspaceState === 'saving'}
               onClick={handleSave}
               type="button"
             >
-              {workspaceState === 'saving' ? 'Saving face data...' : 'Save live re-enrollment'}
-            </button>
-            <button
-              className="rounded-2xl border border-black/10 bg-white px-5 py-3.5 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:opacity-50"
+              {workspaceState === 'saving' ? 'Saving face data…' : 'Save profile refresh'}
+            </Button>
+            <Button
               disabled={workspaceState === 'saving'}
               onClick={handleRetake}
-              type="button"
+              variant="secondary"
             >
               Retake capture
-            </button>
-            <button
-              className="rounded-2xl border border-black/10 bg-white px-5 py-3.5 text-sm font-semibold text-muted transition hover:bg-stone-50 disabled:opacity-50"
+            </Button>
+            <Button
               disabled={workspaceState === 'saving'}
               onClick={onBack}
-              type="button"
+              variant="quiet"
             >
               Back
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -315,8 +286,8 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:overflow-hidden">
-      <div className="relative min-h-[18rem] w-full shrink-0 overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow sm:min-h-[28rem] xl:shrink xl:flex-1">
-        <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
+      <div className="relative min-h-[18rem] w-full shrink-0 overflow-hidden rounded-surface border border-line bg-black sm:min-h-[28rem] xl:shrink xl:flex-1">
+        <div className="absolute inset-0 z-[1] bg-neutral-950" />
 
         <div className="absolute inset-x-0 top-3 z-[5] flex justify-center px-3 sm:top-4 sm:px-4">
           <CaptureGuideHud
@@ -338,15 +309,15 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
             }}
           >
             <div
-              className={`absolute inset-0 shadow-[0_30px_80px_rgba(0,0,0,0.38)] transition-all duration-300 ${
+              className={`absolute inset-0 transition-colors duration-300 ${
                 capturePhase >= 0 && poseOk
-                  ? 'ring-2 ring-emerald-400/80 shadow-[0_0_50px_rgba(16,185,129,0.32)]'
+                  ? 'ring-2 ring-emerald-400/80'
                   : capturePhase >= 0
-                    ? 'ring-2 ring-blue-400/60 shadow-[0_0_40px_rgba(59,130,246,0.20)]'
+                    ? 'ring-2 ring-blue-400/60'
                     : faceFound
                       ? faceSizeGuidance?.isCaptureReady
-                        ? 'ring-2 ring-emerald-400/70 shadow-[0_0_30px_rgba(16,185,129,0.24)]'
-                        : 'ring-2 ring-amber-400/70 shadow-[0_0_30px_rgba(251,191,36,0.24)]'
+                        ? 'ring-2 ring-emerald-400/70'
+                        : 'ring-2 ring-amber-400/70'
                       : 'ring-1 ring-white/18'
               }`}
               style={OVAL_FRAME_STYLE}
@@ -361,14 +332,14 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
                 style={{ transform: 'scaleX(-1)' }}
               />
               <canvas ref={canvasRef} style={{ display: 'none' }} />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
+              <div aria-hidden="true" className="absolute inset-0 border border-white/15" style={OVAL_FRAME_STYLE} />
             </div>
           </div>
         </div>
 
         {!camOn && (
           <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-black/60 text-center text-white">
-            <div className="text-5xl opacity-60">◈</div>
+            <Icon name="scan" size={42} />
             <div className="text-sm">{camError || 'Camera offline'}</div>
           </div>
         )}
@@ -382,16 +353,14 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
       </div>
 
       <div className="grid content-start gap-3">
-        <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+        <Surface className="p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin live re-enrollment</div>
-            <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-navy">
-              {captureStateLabel}
-            </span>
+            <div className="text-sm font-medium text-secondary">Authorized profile refresh</div>
+            <Status tone="neutral">{captureStateLabel}</Status>
           </div>
           <h3 className="mt-2 text-xl font-bold text-ink">{person.name}</h3>
           <p className="mt-1 text-sm text-muted">{person.employeeId} · {person.officeName}</p>
-        </div>
+        </Surface>
 
         <InfoCard
           title="Capture target"
@@ -399,13 +368,12 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
         />
 
         <div className="grid gap-3 pt-1">
-          <button
-            className="rounded-2xl border border-black/10 bg-white px-5 py-3.5 text-sm font-semibold text-ink transition hover:bg-stone-50"
+          <Button
             onClick={onBack}
-            type="button"
+            variant="secondary"
           >
             Back
-          </button>
+          </Button>
         </div>
       </div>
     </div>

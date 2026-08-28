@@ -2,19 +2,25 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { motion } from 'framer-motion'
 import AppShell from '@/components/AppShell'
+import { Button, EmptyState, ErrorState, LoadingState, PageHeader, Surface, TableFrame } from '@/components/ui'
 import { formatAttendanceDateKey } from '@/lib/attendance-time'
 import { buildEmployeeViewHeaders, clearAttendanceMatch, loadEmployeeViewAccess } from '@/lib/attendance-match'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function formatTime(timestamp) {
+  if (!timestamp) return '—'
+  return new Date(timestamp).toLocaleTimeString('en-PH', {
+    timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true,
+  })
+}
 
 function SummaryContent() {
   const searchParams = useSearchParams()
   const urlEmployeeId = searchParams.get('employeeId') || ''
   const [employeeId, setEmployeeId] = useState(urlEmployeeId)
   const [employeeViewAccess, setEmployeeViewAccess] = useState(null)
-  
   const [monthlyData, setMonthlyData] = useState(null)
   const [dailyData, setDailyData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -24,14 +30,7 @@ function SummaryContent() {
   useEffect(() => {
     const storedAccess = loadEmployeeViewAccess()
     setEmployeeViewAccess(storedAccess)
-
-    if (urlEmployeeId) {
-      setEmployeeId(urlEmployeeId)
-    } else {
-      if (storedAccess?.employeeId) {
-        setEmployeeId(storedAccess.employeeId)
-      }
-    }
+    setEmployeeId(urlEmployeeId || storedAccess?.employeeId || '')
   }, [urlEmployeeId])
 
   useEffect(() => {
@@ -40,36 +39,23 @@ function SummaryContent() {
       return
     }
 
-    setLoading(true)
-
+    let cancelled = false
     async function fetchData() {
+      setLoading(true)
+      setError(null)
       try {
         const authHeaders = buildEmployeeViewHeaders(employeeViewAccess)
         const date = formatAttendanceDateKey(Date.now())
-        const [monthlyRes, dailyRes] = await Promise.all([
-          fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`, {
-            headers: authHeaders,
-            cache: 'no-store',
-          }),
-          fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`, {
-            headers: authHeaders,
-            cache: 'no-store',
-          }),
+        const [monthlyResponse, dailyResponse] = await Promise.all([
+          fetch(`/api/attendance/monthly?employeeId=${encodeURIComponent(employeeId)}`, { headers: authHeaders, cache: 'no-store' }),
+          fetch(`/api/attendance/me?employeeId=${encodeURIComponent(employeeId)}&date=${date}`, { headers: authHeaders, cache: 'no-store' }),
         ])
-        const [monthlyJson, dailyJson] = await Promise.all([
-          monthlyRes.json(),
-          dailyRes.json(),
-        ])
-        
-        if (monthlyJson.ok) {
-          setMonthlyData(monthlyJson)
-        }
-        if (dailyJson.ok) {
-          setDailyData(dailyJson.entries || [])
-        }
-        
+        const [monthlyJson, dailyJson] = await Promise.all([monthlyResponse.json(), dailyResponse.json()])
+        if (cancelled) return
+        if (monthlyJson.ok) setMonthlyData(monthlyJson)
+        if (dailyJson.ok) setDailyData(dailyJson.entries || [])
         if (!monthlyJson.ok && !dailyJson.ok) {
-          const accessDenied = monthlyRes.status === 401 || monthlyRes.status === 403 || dailyRes.status === 401 || dailyRes.status === 403
+          const accessDenied = [monthlyResponse.status, dailyResponse.status].some((status) => status === 401 || status === 403)
           if (accessDenied) {
             clearAttendanceMatch()
             setError('Attendance view expired. Scan again on the scan page.')
@@ -77,158 +63,70 @@ function SummaryContent() {
             setError(monthlyJson.message || dailyJson.message || 'Failed to load attendance')
           }
         }
-      } catch (err) {
-        setError('Failed to load attendance')
+      } catch {
+        if (!cancelled) setError('Failed to load attendance')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
-
     fetchData()
+    return () => { cancelled = true }
   }, [employeeId, employeeViewAccess, hasEmployeeIdentity])
 
-  const formatTime = (timestamp) => {
-    if (!timestamp) return '--:--'
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString('en-PH', { 
-      timeZone: 'Asia/Manila',
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    })
-  }
-
-  const dayOfMonth = new Date().getDate()
-  const weekDay = new Date().toLocaleDateString('en-PH', { weekday: 'short' })
-  const currentMonthName = MONTH_NAMES[new Date().getMonth()]
-
-  const checkInsToday = dailyData.filter(a => a.action === 'checkin').length
-  const checkOutsToday = dailyData.filter(a => a.action === 'checkout').length
+  const sortedDaily = [...dailyData].sort((left, right) => Number(left.timestamp || 0) - Number(right.timestamp || 0))
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-xl text-ink">My Attendance</h1>
-        <button
-          onClick={() => window.history.back()}
-          className="rounded-xl border border-black/10 px-4 py-2 text-sm text-muted transition hover:bg-black/5"
-        >
-          Back
-        </button>
-      </div>
+    <div className="mx-auto w-full max-w-4xl">
+      <PageHeader actions={<Button onClick={() => window.history.back()} variant="quiet">Back</Button>} description="Today’s activity and the current monthly totals." title="My attendance" />
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-        </div>
-      ) : !hasEmployeeIdentity ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-700">
-          Complete a scan attendance session first to view your attendance.
-        </div>
-      ) : error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-red-700">
-          {error}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-navy/10 bg-navy/5 p-4 text-center">
-              <div className="font-display text-3xl text-navy">{dayOfMonth}</div>
-              <div className="text-xs font-medium uppercase tracking-wider text-navy/70">{weekDay}</div>
-            </div>
-            <div className="rounded-2xl border border-emerald/10 bg-emerald/5 p-4 text-center">
-              <div className="font-display text-3xl text-emerald-600">{checkInsToday || '--'}</div>
-              <div className="text-xs font-medium uppercase tracking-wider text-emerald-600/70">Check In</div>
-            </div>
-            <div className="rounded-2xl border border-amber/10 bg-amber/5 p-4 text-center">
-              <div className="font-display text-3xl text-amber-600">{checkOutsToday || '--'}</div>
-              <div className="text-xs font-medium uppercase tracking-wider text-amber-600/70">Check Out</div>
-            </div>
+      <div className="mt-5">
+        {loading ? <LoadingState className="justify-center py-16" label="Loading attendance summary…" /> : !hasEmployeeIdentity ? (
+          <EmptyState description="Complete a scan attendance session first to view your attendance." title="Attendance access required" />
+        ) : error ? (
+          <ErrorState description={error} title="Attendance unavailable" />
+        ) : (
+          <div className="grid gap-5">
+            {monthlyData ? (
+              <Surface className="p-5">
+                <h2 className="text-base font-semibold text-primary">{MONTH_NAMES[monthlyData.month - 1]} {monthlyData.year} summary</h2>
+                <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div><dt className="text-xs text-secondary">Days</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{monthlyData.totalDays}</dd></div>
+                  <div><dt className="text-xs text-secondary">Check-ins</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{monthlyData.checkIns}</dd></div>
+                  <div><dt className="text-xs text-secondary">Check-outs</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{monthlyData.checkOuts}</dd></div>
+                  <div><dt className="text-xs text-secondary">WFH</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{monthlyData.wfhCount}</dd></div>
+                </dl>
+              </Surface>
+            ) : null}
+
+            {sortedDaily.length === 0 ? <EmptyState description="No attendance activity is recorded for today." title="No record today" /> : (
+              <TableFrame>
+                <table aria-label="Today’s attendance" className="w-full text-sm">
+                  <thead className="bg-canvas text-xs text-secondary"><tr><th className="px-4 py-3 text-left">Action</th><th className="px-4 py-3 text-left">Mode</th><th className="px-4 py-3 text-right">Time</th></tr></thead>
+                  <tbody className="divide-y divide-line">
+                    {sortedDaily.map((record, index) => (
+                      <tr key={record.id || index}>
+                        <td className="px-4 py-3 font-medium text-foreground">{record.action === 'checkin' ? 'Check in' : 'Check out'}</td>
+                        <td className="px-4 py-3 text-secondary">{record.attendanceMode || 'On-site'}</td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums">{formatTime(record.timestamp)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
+            )}
           </div>
-
-          {monthlyData && (
-            <div className="rounded-2xl border border-black/10 bg-white p-5">
-              <div className="mb-4 text-center text-sm font-semibold uppercase tracking-wider text-muted">
-                {monthlyData.month && MONTH_NAMES[monthlyData.month - 1]} {monthlyData.year} Summary
-              </div>
-              <div className="grid grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="font-display text-2xl text-ink">{monthlyData.totalDays}</div>
-                  <div className="text-xs text-muted">Days</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-display text-2xl text-emerald-600">{monthlyData.checkIns}</div>
-                  <div className="text-xs text-muted">Check In</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-display text-2xl text-amber-600">{monthlyData.checkOuts}</div>
-                  <div className="text-xs text-muted">Check Out</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-display text-2xl text-navy">{monthlyData.wfhCount}</div>
-                  <div className="text-xs text-muted">WFH</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {dailyData.length > 0 && (
-            <div className="rounded-2xl border border-black/10 bg-white p-5">
-              <div className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted">
-                Today&apos;s Record
-              </div>
-              <div className="space-y-2">
-                {dailyData
-                  .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
-                  .map((record, idx) => (
-                    <div
-                      key={record.id || idx}
-                      className="flex items-center justify-between rounded-xl border border-black/5 bg-stone-50 p-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${
-                          record.action === 'checkin' 
-                            ? 'bg-emerald-100 text-emerald-700' 
-                            : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {record.action === 'checkin' ? 'IN' : 'OUT'}
-                        </div>
-                        <div className="text-sm">
-                          <div className="font-medium text-ink capitalize">{record.action === 'checkin' ? 'Check In' : 'Check Out'}</div>
-                          <div className="text-xs text-muted">{record.attendanceMode || 'On-site'}</div>
-                        </div>
-                      </div>
-                      <div className="font-display text-lg text-ink">
-                        {formatTime(record.timestamp)}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
 
 export default function SummaryPage() {
   return (
-    <AppShell fitViewport contentClassName="px-4 py-4 sm:px-6">
-      <div className="page-frame h-full min-h-0">
-        <Suspense fallback={
-          <div className="flex items-center justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-          </div>
-        }>
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <SummaryContent />
-          </motion.div>
-        </Suspense>
-      </div>
+    <AppShell fitViewport contentClassName="overflow-y-auto px-4 py-5 sm:px-6">
+      <Suspense fallback={<LoadingState className="m-auto" label="Loading attendance summary…" />}>
+        <SummaryContent />
+      </Suspense>
     </AppShell>
   )
 }

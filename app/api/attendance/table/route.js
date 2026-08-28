@@ -1,7 +1,9 @@
 import { listEmployeeDailyAttendanceRecords, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
-import { getAttendanceHour, getAttendanceMinutesOfDay, ATTENDANCE_TIME_ZONE } from '@/lib/attendance-time'
+import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
+import { getOfficeRecord } from '@/lib/office-directory'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
+import { loadWorkforcePolicies, resolveEmployeeDayPolicy } from '@/lib/workforce-policy'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +64,11 @@ export async function GET(request) {
     const endDate = new Date(`${targetYear}-${monthLabel}-${lastDay}T23:59:59.999+08:00`)
 
     const logs = await listLocalAttendanceLogs({ personId, startMs: startDate.getTime(), endMs: endDate.getTime(), direction: 'asc', limit: 3000 })
+    const office = await getOfficeRecord(db, access.person?.officeId || logs[0]?.officeId || '')
+    if (!office?.workPolicy) {
+      throw new Error('Office work policy is not configured for attendance history.')
+    }
+    const policies = await loadWorkforcePolicies()
     const logsByDate = {}
     logs.forEach(log => {
         const dateKey = log.dateKey
@@ -71,7 +78,33 @@ export async function GET(request) {
 
       const days = Object.keys(logsByDate).sort().map(dateKey => {
         const dayLogs = logsByDate[dateKey].sort((a, b) => a.timestamp - b.timestamp)
-        return deriveDailyRecord(dayLogs, dateKey)
+        const dayOfWeek = new Date(`${dateKey}T12:00:00Z`).getUTCDay()
+        const policyOverride = resolveEmployeeDayPolicy({
+          person: access.person,
+          office,
+          policies,
+          dayOfWeek,
+        })
+        const record = deriveDailyAttendanceRecord({
+          logs: dayLogs,
+          person: access.person,
+          office,
+          targetDateKey: dateKey,
+          targetDateLabel: dayLogs[0]?.dateLabel || dateKey,
+          policyOverride,
+        })
+        return {
+          dateKey: record.dateKey,
+          date: formatDateDisplay(record.dateKey),
+          amIn: record.amIn,
+          amOut: record.amOut,
+          pmIn: record.pmIn,
+          pmOut: record.pmOut,
+          undertime: record.undertimeMinutes,
+          undertimeDisplay: formatUndertime(record.undertimeMinutes),
+          totalHours: record.workingMinutes,
+          logCount: record.logCount,
+        }
       })
 
     return Response.json({
@@ -88,74 +121,6 @@ export async function GET(request) {
     console.error('Attendance table error:', error)
     return Response.json({ ok: false, message: error.message }, { status: 500 })
   }
-}
-
-function deriveDailyRecord(logs, dateKey) {
-  const segments = computeSegments(logs)
-  const undertime = computeUndertime(segments)
-  
-  return {
-    dateKey,
-    date: formatDateDisplay(dateKey),
-    amIn: formatTime(segments.amIn),
-    amOut: formatTime(segments.amOut),
-    pmIn: formatTime(segments.pmIn),
-    pmOut: formatTime(segments.pmOut),
-    undertime,
-    undertimeDisplay: formatUndertime(undertime),
-    logCount: logs.length,
-  }
-}
-
-function computeSegments(logs) {
-  if (!logs || logs.length === 0) {
-    return { amIn: null, amOut: null, pmIn: null, pmOut: null }
-  }
-
-  const sorted = logs.sort((a, b) => a.timestamp - b.timestamp)
-  let amIn = null, amOut = null, pmIn = null, pmOut = null
-
-  sorted.forEach(log => {
-    const hour = getAttendanceHour(log.timestamp)
-    if (hour < 12) {
-      if (!amIn) amIn = log
-      amOut = log
-    } else {
-      if (!pmIn) pmIn = log
-      pmOut = log
-    }
-  })
-
-  if (amIn === amOut) amOut = null
-  if (pmIn === pmOut) pmOut = null
-
-  return { amIn, amOut, pmIn, pmOut }
-}
-
-function computeUndertime(segments) {
-  const DEFAULT_OUT = 17 * 60
-  
-  let undertime = 0
-  if (segments.amOut) {
-    const amOutMin = getAttendanceMinutesOfDay(segments.amOut.timestamp)
-    undertime += Math.max(0, 12 * 60 - amOutMin)
-  }
-  if (segments.pmOut) {
-    const pmOutMin = getAttendanceMinutesOfDay(segments.pmOut.timestamp)
-    undertime += Math.max(0, DEFAULT_OUT - pmOutMin)
-  }
-  
-  return undertime
-}
-
-function formatTime(log) {
-  if (!log) return '--'
-  return new Date(log.timestamp).toLocaleTimeString('en-PH', {
-    timeZone: ATTENDANCE_TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  })
 }
 
 function formatDateDisplay(dateKey) {

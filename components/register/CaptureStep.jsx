@@ -1,8 +1,8 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
 import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
+import { Button, Icon } from '@/components/ui'
 import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 import { CAPTURE_PHASES } from '@/hooks/useEnrollmentCapture'
 import { toCompactGuideLabel } from '@/lib/biometrics/compact-guide-copy'
@@ -49,32 +49,29 @@ export default function CaptureStep({
 
   return (
     <div className="page-frame h-full min-h-0">
-      <motion.section
-        animate={{ opacity: 1, y: 0 }}
-        initial={{ opacity: 0, y: 18 }}
-        transition={{ duration: 0.35 }}
-        className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[1.4rem] border border-black/5 bg-black shadow-glow"
+      <section
+        className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-surface border border-line bg-black"
       >
-        <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.18),transparent_40%),linear-gradient(180deg,rgba(3,10,9,0.92),rgba(8,13,12,0.96))]" />
+        <div className="absolute inset-0 z-[1] bg-black/30" />
 
         <div className="absolute inset-x-0 top-3 z-[6] px-3 sm:top-4 sm:px-4">
           <div className="mx-auto flex w-full max-w-[24rem] flex-col gap-2 sm:max-w-[26rem]">
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <button
-                className="min-w-0 rounded-full border border-white/12 bg-black/42 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-black/56"
+              <Button
+                className="min-w-0 border-white/20 bg-black/55 text-white hover:bg-black/75"
                 onClick={onBack}
-                type="button"
+                variant="secondary"
               >
-                <span className="truncate">← Details</span>
-              </button>
+                <Icon name="arrow-left" /><span className="truncate">Details</span>
+              </Button>
               {onExit ? (
-                <button
-                  className="rounded-full border border-white/10 bg-white/6 px-4 py-2.5 text-sm font-semibold text-white/88 backdrop-blur-xl transition hover:bg-white/12"
+                <Button
+                  className="border-white/20 bg-black/55 text-white hover:bg-black/75"
                   onClick={onExit}
-                  type="button"
+                  variant="secondary"
                 >
                   Exit
-                </button>
+                </Button>
               ) : null}
             </div>
 
@@ -119,13 +116,13 @@ export default function CaptureStep({
 
         {!camera.camOn ? (
           <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-black/60 text-center text-white">
-            <div className="text-5xl opacity-60">◈</div>
+            <Icon className="opacity-70" name="alert" size={36} />
             <div className="text-sm">{camera.camError || 'Camera offline'}</div>
           </div>
         ) : null}
 
         {errorMessage ? (
-          <div className="absolute inset-x-3 bottom-24 z-[5] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2">
+          <div className="absolute inset-x-3 bottom-24 z-[5] rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2" role="alert">
             {errorMessage}
           </div>
         ) : null}
@@ -136,7 +133,7 @@ export default function CaptureStep({
             guidance={faceSizeGuidance}
           />
         </div>
-      </motion.section>
+      </section>
     </div>
   )
 }

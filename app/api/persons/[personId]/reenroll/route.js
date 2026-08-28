@@ -8,7 +8,7 @@ import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enr
 import { ENROLLMENT_MIN_SAMPLES, ENROLLMENT_SUPPORT_SAMPLE_MIN_DIVERSITY } from '@/lib/biometrics/enrollment-burst'
 import { getBiometricReenrollmentAssessment } from '@/lib/biometrics/descriptor-utils'
 import { normalizeDataImage } from '@/lib/images/safe-data-image'
-import { deduplicateDescriptors } from '@/lib/persons/enrollment'
+import { deduplicateDescriptors } from '@/lib/persons/enrollment-descriptors'
 import { checkLocalDuplicateFace, getLocalPersonById, refreshLocalPersonBiometrics } from '@/lib/postgres/person-store'
 
 function toHttpStatus(value) {

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { useAdminStore } from '@/lib/admin/store'
+import { Button, Icon } from '@/components/ui'
 import {
   buildEmployeeAccessCodeWorkbookBlob,
   employeeAccessCodeExportFilename,
@@ -114,22 +115,21 @@ export default function EmployeeAccessCodeExportActions({ endpoint = '/api/perso
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="w-full text-xs text-muted sm:w-auto">All employees in your access scope</span>
-      <button
-        className="rounded-full border border-navy/20 bg-white px-3 py-1.5 text-xs font-semibold text-navy transition hover:bg-navy/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+      <Button
         disabled={disabled}
         onClick={generateExcel}
-        type="button"
+        variant="secondary"
       >
+        <Icon name="download" />
         {busyAction === 'excel' ? 'Generating…' : 'Generate Excel'}
-      </button>
-      <button
-        className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+      </Button>
+      <Button
         disabled={disabled}
         onClick={printPdf}
-        type="button"
+        variant="secondary"
       >
         {busyAction === 'print' ? 'Preparing…' : 'Print / Save PDF'}
-      </button>
+      </Button>
     </div>
   )
 }

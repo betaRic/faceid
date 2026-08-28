@@ -3,9 +3,9 @@
 export default function BrandMark({ compact = false, className = '', inverted = false }) {
   return (
     <div className={`flex items-center gap-3 ${className}`.trim()}>
-      <div className={`relative shrink-0 overflow-hidden rounded-full shadow-md ring-2 ring-white/80 ${compact ? 'h-7 w-7' : 'h-10 w-10'}`}>
+      <div className={`shrink-0 overflow-hidden rounded-full ${compact ? 'h-8 w-8' : 'h-10 w-10'}`}>
         <img
-          alt="DILG Region XII"
+          alt=""
           className="h-full w-full object-contain"
           height={192}
           src="/veriface-icon-192.png"
@@ -13,10 +13,10 @@ export default function BrandMark({ compact = false, className = '', inverted = 
         />
       </div>
       <div className="min-w-0">
-        <div className={`text-2xs font-semibold uppercase tracking-widest ${inverted ? 'text-sky/80' : 'text-amber'}`}>
+        <div className={`text-xs font-medium leading-tight ${inverted ? 'text-white/75' : 'text-secondary'}`}>
           DILG Region XII
         </div>
-        <div className={`font-bold leading-tight ${compact ? 'text-lg' : 'text-xl'} ${inverted ? 'text-white' : 'text-navy'}`}>
+        <div className={`font-semibold leading-tight ${compact ? 'text-base' : 'text-xl'} ${inverted ? 'text-white' : 'text-primary'}`}>
           VeriFace
         </div>
       </div>

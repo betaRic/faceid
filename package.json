@@ -9,9 +9,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:hosting": "node scripts/clean-next-dev.mjs && next build",
+    "build:hosting": "node scripts/clean-next-dev.mjs && next build && node scripts/materialize-next-externals.mjs",
     "start": "next start",
-    "test": "node --test tests/postgres/test-database.test.mjs && node tests/run-tests.mjs && node tests/run-contract-tests.mjs",
+    "test": "node --test tests/postgres/test-database.test.mjs tests/security/removed-biometric-reset.test.mjs tests/security/postgres-only-runtime.test.mjs && node tests/run-tests.mjs && node tests/run-contract-tests.mjs && npm run test:ui",
+    "test:ui": "vitest run",
+    "test:ui:watch": "vitest",
     "test:contracts": "node tests/run-contract-tests.mjs",
     "test:routes": "node tests/postgres/run-route-tests.mjs",
     "openvino:smoke": "node scripts/openvino-smoke.mjs",
@@ -35,17 +37,24 @@
     "fflate": "^0.8.2",
     "framer-motion": "^11.11.17",
     "leaflet": "^1.9.4",
+    "lucide-react": "^1.33.0",
     "next": "^16.3.0",
     "openvino-node": "^2026.1.0",
     "pg": "^8.22.0",
     "postcss": "^8.5.26",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-leaflet": "^4.2.1",
-    "semver": "^7.7.4",
     "server-only": "^0.0.1",
     "sharp": "^0.35.3",
     "tailwindcss": "^3.4.17",
     "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
+    "axe-core": "^4.13.0",
+    "jsdom": "^30.0.1",
+    "vitest": "^4.1.11"
   }
 }

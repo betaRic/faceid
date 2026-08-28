@@ -16,6 +16,7 @@ export default async function AdminPage() {
     if (resolvedSession) {
       return <AdminDashboard
         initialOfficeId={resolvedSession.officeId} 
+        initialRole="admin"
         initialRoleScope={resolvedSession.scope}
         permissions={resolvedSession.permissions || ['dashboard', 'office', 'employees', 'summary', 'settings', 'roles']}
       />
@@ -29,6 +30,7 @@ export default async function AdminPage() {
     if (resolvedSession) {
       return <AdminDashboard
         initialOfficeId={resolvedSession.officeId}
+        initialRole="hr"
         initialRoleScope={resolvedSession.scope}
         permissions={resolvedSession.permissions || ['employees', 'summary']}
       />

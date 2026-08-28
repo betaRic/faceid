@@ -2,71 +2,36 @@
 
 import { useOffices } from '@/lib/admin/hooks/useOffices'
 import OfficeEditorModal from '@/components/admin/OfficeEditorModal'
-import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
+import {
+  Button, EmptyState, Icon, LoadingState, PageHeader,
+  ResponsiveRecordList, Status, TableFrame,
+} from '@/components/ui'
 
-const DAY_LABELS = {
-  0: 'Sun',
-  1: 'Mon',
-  2: 'Tue',
-  3: 'Wed',
-  4: 'Thu',
-  5: 'Fri',
-  6: 'Sat',
-}
+const DAY_LABELS = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' }
 
 function formatDays(values = []) {
-  return values.length > 0
-    ? values.map(value => DAY_LABELS[value] || String(value)).join(', ')
-    : 'None'
+  return values.length ? values.map(value => DAY_LABELS[value] || String(value)).join(', ') : 'None'
 }
 
-function formatScheduleSummary(office) {
-  return office?.workPolicy?.schedule || 'No schedule set'
-}
-
-function formatGeofenceSummary(office) {
-  const city = office?.provinceOrCity || office?.location || 'No location'
-  const radius = Number.isFinite(office?.gps?.radiusMeters) ? `${office.gps.radiusMeters} m` : 'No radius'
-  return { city, radius }
-}
-
-function StatusPill({ status }) {
-  const active = (status || 'active') === 'active'
-  return (
-    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
-      active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-    }`}>
-      {active ? 'Active' : 'Inactive'}
-    </span>
-  )
+function officeView(office) {
+  return {
+    code: office.code || office.shortName || office.id,
+    place: office.provinceOrCity || office.location || 'No city set',
+    radius: Number.isFinite(office?.gps?.radiusMeters) ? `${office.gps.radiusMeters} m` : 'Not set',
+    schedule: office?.workPolicy?.schedule || 'No schedule set',
+    wfhDays: formatDays(office?.workPolicy?.wfhDays || []),
+    status: (office.status || 'active') === 'active' ? 'Active' : 'Inactive',
+  }
 }
 
 export default function OfficePanel() {
   const {
-    officesLoaded,
-    visibleOffices,
-    selectedOfficeId,
-    setSelectedOfficeId,
-    activeOffice,
-    draftOffice,
-    officeDraftWarning,
-    officeDraftDirty,
-    locationLoading,
-    locationNotice,
-    highlightLocationPin,
-    savePending,
-    deletePending,
-    updateDraft,
-    toggleDay,
-    addDivision,
-    updateDivision,
-    removeDivision,
-    handleSaveOffice,
-    handleStartCreateOffice,
-    handleStartEditOffice,
-    handleCancelOfficeEditor,
-    handleDeleteOffice,
-    handleUseMyLocation,
+    officesLoaded, visibleOffices, selectedOfficeId, setSelectedOfficeId,
+    activeOffice, draftOffice, officeDraftWarning, officeDraftDirty,
+    locationLoading, locationNotice, highlightLocationPin, savePending, deletePending,
+    updateDraft, toggleDay, addDivision, updateDivision, removeDivision,
+    handleSaveOffice, handleStartCreateOffice, handleStartEditOffice,
+    handleCancelOfficeEditor, handleDeleteOffice, handleUseMyLocation,
   } = useOffices()
 
   const handleEditOffice = officeId => {
@@ -74,191 +39,100 @@ export default function OfficePanel() {
     handleStartEditOffice(officeId)
   }
 
-  const handleCreateOffice = () => {
-    handleStartCreateOffice()
-  }
-
   const handleDelete = office => {
     const confirmed = window.confirm(`Delete ${office.name}? This only works when the office has no linked employees, admins, or attendance history.`)
-    if (!confirmed) return
-    handleDeleteOffice(office.id)
+    if (confirmed) handleDeleteOffice(office.id)
   }
 
   if (!officesLoaded) {
-    return (
-      <section className="flex items-center justify-center py-20">
-        <DilgLoadingIndicator compact label="Loading offices…" />
-      </section>
-    )
+    return <section className="flex items-center justify-center py-20"><LoadingState label="Loading offices…" /></section>
   }
 
   if (draftOffice) {
-    return <OfficeEditorModal
-      activeOffice={activeOffice}
-      addDivision={addDivision}
-      handleCancel={handleCancelOfficeEditor}
-      handleSaveOffice={handleSaveOffice}
-      handleUseMyLocation={handleUseMyLocation}
-      highlightLocationPin={highlightLocationPin}
-      locationLoading={locationLoading}
-      locationNotice={locationNotice}
-      officeDraftDirty={officeDraftDirty}
-      officeDraftWarning={officeDraftWarning}
-      removeDivision={removeDivision}
-      saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}
-      savePending={savePending}
-      toggleDay={toggleDay}
-      updateDivision={updateDivision}
-      updateDraft={updateDraft}
-    />
+    return (
+      <OfficeEditorModal
+        activeOffice={activeOffice} addDivision={addDivision}
+        handleCancel={handleCancelOfficeEditor} handleSaveOffice={handleSaveOffice}
+        handleUseMyLocation={handleUseMyLocation} highlightLocationPin={highlightLocationPin}
+        locationLoading={locationLoading} locationNotice={locationNotice}
+        officeDraftDirty={officeDraftDirty} officeDraftWarning={officeDraftWarning}
+        removeDivision={removeDivision}
+        saveLabel={activeOffice?.id && visibleOffices.some(office => office.id === activeOffice.id) ? 'Save changes' : 'Create office'}
+        savePending={savePending} toggleDay={toggleDay}
+        updateDivision={updateDivision} updateDraft={updateDraft}
+      />
+    )
   }
 
-  return (
+  const records = visibleOffices.map(office => {
+    const view = officeView(office)
+    return {
+      id: office.id, office,
+      fields: [
+        { label: 'Office', value: <div><strong className="font-semibold">{office.name}</strong><div className="mt-1 text-xs text-secondary">{view.code} · {office.shortName || 'No short name'}</div></div> },
+        { label: 'Type', value: office.officeType || '—' },
+        { label: 'Location', value: <div>{view.place}<div className="mt-1 text-xs text-secondary">Geofence radius {view.radius}</div></div> },
+        { label: 'Schedule', value: <div>{view.schedule}<div className="mt-1 text-xs text-secondary">WFH: {view.wfhDays}</div></div> },
+        { label: 'Employees', value: office.employees || 0 },
+        { label: 'Status', value: <Status tone={view.status === 'Active' ? 'active' : 'neutral'}>{view.status}</Status> },
+      ],
+    }
+  })
+
+  const actionsFor = record => (
     <>
-      <section className="flex min-h-0 flex-col bg-white p-3 sm:p-4 md:h-full md:overflow-hidden">
-        <div className="flex justify-end border-b border-black/5 pb-2">
-          <button
-            className="inline-flex min-h-[38px] items-center justify-center rounded-full bg-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-dark"
-            onClick={handleCreateOffice}
-            type="button"
-          >
-            Add office
-          </button>
-        </div>
-
-        <div className="md:min-h-0 md:flex-1 md:overflow-auto">
-          <div className="divide-y divide-black/5 bg-white lg:hidden">
-            {visibleOffices.map(office => {
-              const geofence = formatGeofenceSummary(office)
-              const selected = office.id === selectedOfficeId
-
-              return (
-                <div key={office.id} className={`grid gap-3 px-4 py-4 ${selected ? 'bg-navy/5' : ''}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
-                        {office.code || office.shortName || office.id}
-                      </div>
-                      <div className="mt-1 text-base font-semibold text-ink">{office.name}</div>
-                      <div className="mt-1 text-sm text-muted">
-                        {office.shortName || '--'} · {office.provinceOrCity || office.location || 'No city'}
-                      </div>
-                    </div>
-                    <StatusPill status={office.status} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-xl bg-stone-50 px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-widest text-muted">Type</div>
-                      <div className="mt-1 text-ink">{office.officeType || '--'}</div>
-                    </div>
-                    <div className="rounded-xl bg-stone-50 px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-widest text-muted">Employees</div>
-                      <div className="mt-1 text-ink">{office.employees || 0}</div>
-                    </div>
-                    <div className="col-span-2 rounded-xl bg-stone-50 px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-widest text-muted">Geofence</div>
-                      <div className="mt-1 text-ink">{geofence.city}</div>
-                      <div className="mt-1 text-xs text-muted">Radius {geofence.radius}</div>
-                    </div>
-                    <div className="col-span-2 rounded-xl bg-stone-50 px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-widest text-muted">Schedule</div>
-                      <div className="mt-1 text-ink">{formatScheduleSummary(office)}</div>
-                      <div className="mt-1 text-xs text-muted">WFH {formatDays(office.workPolicy?.wfhDays || [])}</div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
-                      onClick={() => handleEditOffice(office.id)}
-                      type="button"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
-                      disabled={deletePending}
-                      onClick={() => handleDelete(office)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          <table className="hidden w-full text-left text-sm lg:table">
-            <thead className="bg-stone-50 text-xs uppercase tracking-[0.16em] text-muted">
-              <tr>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Office</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Geofence</th>
-                <th className="px-4 py-3">Schedule</th>
-                <th className="px-4 py-3">Employees</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5">
-              {visibleOffices.map(office => {
-                const geofence = formatGeofenceSummary(office)
-                const selected = office.id === selectedOfficeId
-
-                return (
-                  <tr key={office.id} className={`transition hover:bg-sky-light/40 ${selected ? 'bg-navy/5' : ''}`}>
-                    <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-navy-dark">
-                      {office.code || office.shortName || office.id}
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <div className="max-w-[280px] font-semibold leading-6 text-ink">{office.name}</div>
-                      <div className="mt-1 text-xs text-muted">
-                        {office.shortName || '--'} · {office.provinceOrCity || office.location || 'No city'}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 align-top text-muted">{office.officeType || '--'}</td>
-                    <td className="px-4 py-3 align-top text-muted">
-                      <div>{geofence.city}</div>
-                      <div className="mt-1 text-xs text-muted/80">Radius {geofence.radius}</div>
-                    </td>
-                    <td className="px-4 py-3 align-top text-muted">
-                      <div className="max-w-[240px] leading-6">{formatScheduleSummary(office)}</div>
-                      <div className="mt-1 text-xs text-muted/80">WFH {formatDays(office.workPolicy?.wfhDays || [])}</div>
-                    </td>
-                    <td className="px-4 py-3 text-muted">{office.employees || 0}</td>
-                    <td className="px-4 py-3">
-                      <StatusPill status={office.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
-                          onClick={() => handleEditOffice(office.id)}
-                          type="button"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
-                          disabled={deletePending}
-                          onClick={() => handleDelete(office)}
-                          type="button"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
+      <Button onClick={() => handleEditOffice(record.office.id)} variant="secondary"><Icon name="edit" />Edit</Button>
+      <Button disabled={deletePending} onClick={() => handleDelete(record.office)} variant="quiet">Delete</Button>
     </>
+  )
+
+  return (
+    <section className="grid min-h-0 gap-4 md:h-full md:grid-rows-[auto_minmax(0,1fr)]">
+      <PageHeader
+        actions={<Button onClick={handleStartCreateOffice}><Icon name="add" />Add office</Button>}
+        description="Manage Regional, Provincial, and HUC office structure, schedules, and authorized geofences."
+        title="Offices"
+      />
+
+      {records.length === 0 ? (
+        <EmptyState
+          action={<Button onClick={handleStartCreateOffice}>Add office</Button>}
+          description="Create the first office before assigning employees."
+          title="No offices configured"
+        />
+      ) : (
+        <div className="min-h-0 overflow-y-auto pb-2">
+          <ResponsiveRecordList className="lg:hidden" records={records} renderActions={actionsFor} />
+          <TableFrame className="hidden lg:block">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-line bg-canvas text-xs font-medium text-secondary">
+                <tr>
+                  <th className="px-4 py-3">Office</th><th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Location</th><th className="px-4 py-3">Schedule</th>
+                  <th className="px-4 py-3">Employees</th><th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {visibleOffices.map(office => {
+                  const view = officeView(office)
+                  return (
+                    <tr className={office.id === selectedOfficeId ? 'bg-primary/5' : 'hover:bg-canvas'} key={office.id}>
+                      <td className="px-4 py-3"><div className="font-semibold text-foreground">{office.name}</div><div className="mt-1 text-xs text-secondary">{view.code} · {office.shortName || 'No short name'}</div></td>
+                      <td className="px-4 py-3 text-secondary">{office.officeType || '—'}</td>
+                      <td className="px-4 py-3 text-secondary"><div>{view.place}</div><div className="mt-1 text-xs">Radius {view.radius}</div></td>
+                      <td className="px-4 py-3 text-secondary"><div>{view.schedule}</div><div className="mt-1 text-xs">WFH: {view.wfhDays}</div></td>
+                      <td className="px-4 py-3 tabular-nums text-secondary">{office.employees || 0}</td>
+                      <td className="px-4 py-3"><Status tone={view.status === 'Active' ? 'active' : 'neutral'}>{view.status}</Status></td>
+                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2">{actionsFor({ office })}</div></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </TableFrame>
+        </div>
+      )}
+    </section>
   )
 }

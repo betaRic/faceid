@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ENROLLMENT_MIN_SAMPLES } from '../lib/biometrics/enrollment-burst'
 import { checkEnrollmentDuplicate } from '../lib/data-store'
@@ -14,6 +13,7 @@ import ReviewStep from './register/ReviewStep'
 import RegisterStepRail from './register/RegisterStepRail'
 import { buildEmployeeDisplayName } from '@/lib/person-name'
 import { PRIVACY_NOTICE_VERSION } from '@/lib/privacy-consent'
+import { Dialog, LoadingState, Status, Surface, Toast } from '@/components/ui'
 
 const STEPS = [
   { id: 'details', number: '1', title: 'Employee details', description: 'Name, ID, and assigned office.' },
@@ -358,34 +358,23 @@ export default function RegisterView({
     <AppShell
       fitViewport
       actions={(
-        <div className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm">
-          Enrollment
-        </div>
+        <Status tone="neutral">Enrollment</Status>
       )}
       contentClassName="min-h-0 flex flex-col px-3 py-3 sm:px-5 lg:px-8"
-      showFooter={step !== 'capture'}
     >
       {toast ? (
-        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-[1.1rem] bg-navy-dark px-5 py-3 text-center text-sm font-medium text-white shadow-xl sm:w-auto sm:rounded-full">
-          {toast}
+        <div className="fixed bottom-5 left-1/2 z-[110] w-[calc(100%-2rem)] max-w-md -translate-x-1/2">
+          <Toast onDismiss={() => setToast(null)}>{toast}</Toast>
         </div>
       ) : null}
 
-      {savingEnrollment || checkingDuplicate ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/35 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-[1.8rem] border border-black/5 bg-white px-6 py-6 text-center shadow-2xl">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-navy/10">
-              <span className="h-5 w-5 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-            </div>
-            <h2 className="mt-4 text-xl font-bold text-ink">
-              {checkingDuplicate ? 'Checking duplicate face' : 'Saving enrollment'}
-            </h2>
-            <p className="mt-2 text-sm text-muted">
-              {checkingDuplicate ? 'Comparing this capture against enrolled staff…' : 'Submitting to server…'}
-            </p>
-          </div>
-        </div>
-      ) : null}
+      <Dialog
+        dismissible={false}
+        open={savingEnrollment || checkingDuplicate}
+        title={checkingDuplicate ? 'Checking duplicate face' : 'Saving enrollment'}
+      >
+        <LoadingState label={checkingDuplicate ? 'Comparing this capture with enrolled employees…' : 'Submitting enrollment…'} />
+      </Dialog>
 
       {step === 'capture' ? (
         <CaptureStep
@@ -405,35 +394,21 @@ export default function RegisterView({
         />
       ) : (
         <div className="page-frame flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-          <motion.div
-            animate={{ opacity: 1, y: 0 }}
-            initial={{ opacity: 0, y: 18 }}
-            transition={{ duration: 0.35 }}
-            className="shrink-0 rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow"
-          >
+          <Surface className="shrink-0 p-3 sm:p-4">
             <RegisterStepRail activeStep={step} stepIndex={stepIndex} steps={STEPS} />
-          </motion.div>
+          </Surface>
 
-          <motion.div
-            animate={{ opacity: 1, y: 0 }}
-            initial={{ opacity: 0, y: 18 }}
-            transition={{ duration: 0.4, delay: 0.05 }}
-            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[1.5rem] border border-black/5 bg-white/80 p-3 shadow-glow sm:p-4"
-          >
-            <div className="flex shrink-0 flex-col gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <Surface className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 sm:p-5">
+            <div className="flex shrink-0 flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Enrollment</span>
-                <h2 className="mt-0.5 font-display text-xl text-ink sm:text-2xl">{currentStep.title}</h2>
+                <span className="text-sm text-secondary">Enrollment</span>
+                <h2 className="mt-0.5 text-xl font-semibold text-primary sm:text-2xl">{currentStep.title}</h2>
               </div>
               {burstSummary ? (
-                <div className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
-                  burstSummary.genuinelyDiverse
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-800'
-                }`}>
+                <Status tone={burstSummary.genuinelyDiverse ? 'success' : 'pending'}>
                   {burstSummary.keptCount} samples
                   {burstSummary.supportPairsReady ? ' · Support pairs ready' : ' · Retake recommended'}
-                </div>
+                </Status>
               ) : null}
             </div>
 
@@ -489,7 +464,7 @@ export default function RegisterView({
                 onEnrollNewPerson={handleNewPerson}
               />
             ) : null}
-          </motion.div>
+          </Surface>
         </div>
       )}
     </AppShell>

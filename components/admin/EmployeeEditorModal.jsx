@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
 import { useAdminStore } from '@/lib/admin/store'
 import { transitionPersonLifecycle, updatePersonRecord } from '@/lib/data-store'
-import { Field } from '@/components/shared/ui'
+import { Button, Field, Icon, IconButton, Surface } from '@/components/ui'
 import { buildEmployeeDisplayName } from '@/lib/person-name'
 import { normalizeEmployeeWfhDays } from '@/lib/employee-wfh'
 import {
@@ -44,7 +43,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   const [weeklySchedule, setWeeklySchedule] = useState({})
   const [flexitimeEnabled, setFlexitimeEnabled] = useState(false)
   const [flexitimeRequiredMinutes, setFlexitimeRequiredMinutes] = useState(480)
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [panelMode, setPanelMode] = useState('details')
   const [photoUrl, setPhotoUrl] = useState('')
   const [accessCode, setAccessCode] = useState('')
@@ -64,7 +62,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     setWeeklySchedule(person.weeklySchedule || {})
     setFlexitimeEnabled(person.flexitime?.enabled === true)
     setFlexitimeRequiredMinutes(Number(person.flexitime?.requiredMinutes) || 480)
-    setResetConfirmOpen(false)
     setPanelMode('details')
     setPhotoUrl(person.photoUrl || '')
     setAccessCode(person.accessCode || '')
@@ -143,28 +140,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
     setPending(`employee-review-${person.id}`, false)
   }
 
-  async function handleBiometricReset() {
-    setPending(`biometric-reset-${person.id}`, true)
-    setResetConfirmOpen(false)
-    try {
-      const res = await fetch(`/api/persons/${person.id}/biometric-reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      const data = await res.json()
-      if (data.ok) {
-        refreshEmployees()
-        addToast(`Face data reset — ${person.name} must re-enroll in admin or registration`, 'success')
-        onSave(person, { sampleCount: 0, lifecycleStatus: PERSON_LIFECYCLE_PENDING })
-      } else {
-        addToast(data.message || 'Reset failed', 'error')
-      }
-    } catch {
-      addToast('Reset failed — try again', 'error')
-    }
-    setPending(`biometric-reset-${person.id}`, false)
-  }
-
   async function handleSave() {
     if (!officeId) return
     const trimmedLastName = lastName.trim()
@@ -234,7 +209,6 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
   }
 
   function handleOpenReenroll() {
-    setResetConfirmOpen(false)
     const personData = {
       id: person.id,
       name: person.name || '',
@@ -381,11 +355,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
 
   return (
     <section className="h-full min-h-0 bg-white p-3 sm:p-6">
-      <motion.div
-        animate={{ opacity: 1, scale: 1 }}
-        className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-black/5 bg-white shadow-sm"
-        initial={{ opacity: 0, scale: 0.95 }}
-      >
+      <Surface className="flex h-full min-h-0 w-full flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
         <div className="flex items-start gap-4">
           {photoUrl ? (
@@ -407,14 +377,14 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
               <p className="mt-1 text-xs text-amber-600">{submittedLabel}</p>
             )}
           </div>
-          <button
+          <IconButton
             aria-label="Close employee record"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-xl leading-none text-muted transition hover:bg-stone-100 hover:text-ink"
+            className="shrink-0"
             onClick={onCancel}
-            type="button"
+            variant="secondary"
           >
-            ×
-          </button>
+            <Icon name="close" />
+          </IconButton>
         </div>
 
         {photoUrl ? (
@@ -439,14 +409,14 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
             ref={photoInputRef}
             type="file"
           />
-          <button
-            className="w-full rounded-xl border border-navy/20 bg-white px-4 py-2.5 text-sm font-semibold text-navy-dark transition hover:bg-navy/5 disabled:cursor-not-allowed disabled:opacity-50"
+          <Button
+            className="w-full"
             disabled={isUploadingPhoto}
             onClick={() => photoInputRef.current?.click()}
-            type="button"
+            variant="secondary"
           >
             {isUploadingPhoto ? 'Saving profile photo...' : (photoUrl ? 'Replace profile photo' : 'Upload profile photo')}
-          </button>
+          </Button>
           <p className="mt-1.5 text-center text-xs text-muted">JPEG, PNG, or WebP up to 5 MB. This does not change biometric enrollment.</p>
         </div>
 
@@ -483,30 +453,29 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
               </div>
             ) : null}
             <div className="mt-4 flex gap-3">
-              <button
-                className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              <Button
+                className="flex-1 border-emerald-600 bg-emerald-600 hover:bg-emerald-700"
                 disabled={isPending(`employee-approve-${person.id}`)}
                 onClick={handleQuickApprove}
-                type="button"
               >
                 {isPending(`employee-approve-${person.id}`) ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Activating...</> : 'Activate'}
-              </button>
-              <button
-                className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              </Button>
+              <Button
+                className="flex-1"
                 disabled={isPending(`employee-reject-${person.id}`)}
                 onClick={handleQuickReject}
-                type="button"
+                variant="destructive"
               >
                 {isPending(`employee-reject-${person.id}`) ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> Rejecting...</> : 'Reject enrollment'}
-              </button>
+              </Button>
             </div>
-            <button
-              className="mt-4 w-full rounded-xl border border-black/10 bg-white px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50"
+            <Button
+              className="mt-4 w-full"
               onClick={handleOpenReenroll}
-              type="button"
+              variant="secondary"
             >
               Capture live face in admin
-            </button>
+            </Button>
           </div>
         )}
 
@@ -519,24 +488,19 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                   {currentLifecycle === PERSON_LIFECYCLE_ACTIVE ? 'Employee can clock in' : 'Employee is inactive'}
                 </p>
               </div>
-              <button
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition disabled:opacity-50 ${
-                  currentLifecycle !== PERSON_LIFECYCLE_ACTIVE
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    : 'border border-red-200 bg-white text-red-700 hover:bg-red-50'
-                }`}
+              <Button
                 disabled={
                   isPending(`employee-activate-${person.id}`) ||
                   isPending(`employee-deactivate-${person.id}`)
                 }
                 onClick={currentLifecycle !== PERSON_LIFECYCLE_ACTIVE ? handleQuickActivate : handleQuickDeactivate}
-                type="button"
+                variant={currentLifecycle === PERSON_LIFECYCLE_ACTIVE ? 'destructive' : 'primary'}
               >
                 {currentLifecycle !== PERSON_LIFECYCLE_ACTIVE
                   ? (isPending(`employee-activate-${person.id}`) ? <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px]" /> Activating...</> : 'Activate')
                   : (isPending(`employee-deactivate-${person.id}`) ? <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px]" /> Deactivating...</> : 'Deactivate')
                 }
-              </button>
+              </Button>
             </div>
 
             <div className="grid gap-4">
@@ -614,15 +578,16 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 </Field>
               ) : null}
 
-              <Field label="Individual WFH days">
+              <fieldset className="grid gap-2">
+                <legend className="text-sm font-medium text-foreground">Individual WFH days</legend>
                 <p className="mb-2 text-xs text-muted">A repeating weekly schedule for this employee. Office-wide WFH days still apply to everyone.</p>
                 <div className="flex flex-wrap gap-1.5">
                   {[['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6], ['Sun', 0]].map(([label, day]) => {
                     const activeDay = individualWfhDays.includes(day)
-                    return <button className={`rounded-full border px-3 py-1 text-sm font-semibold transition ${activeDay ? 'border-amber/40 bg-amber/15 text-amber-dark' : 'border-black/10 bg-white text-muted hover:bg-stone-100'}`} key={day} onClick={() => toggleIndividualWfhDay(day)} type="button">{label}</button>
+                    return <button aria-pressed={activeDay} className={`min-h-11 rounded-control border px-3 py-2 text-sm font-semibold transition ${activeDay ? 'border-amber/40 bg-amber/15 text-amber-dark' : 'border-line bg-surface text-secondary hover:bg-canvas'}`} key={day} onClick={() => toggleIndividualWfhDay(day)} type="button">{label}</button>
                   })}
                 </div>
-              </Field>
+              </fieldset>
 
               <div className="rounded-xl border border-navy/15 bg-navy/[0.025] p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -640,7 +605,7 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                     {[['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6], ['Sun', 0]].map(([label, day]) => {
                       const overridden = Boolean(weeklySchedule[day])
                       const entry = weeklySchedule[day] || { working: (selectedOffice?.workPolicy?.workingDays || [1, 2, 3, 4, 5]).includes(day), morningIn: selectedOffice?.workPolicy?.morningIn || '08:00', morningOut: selectedOffice?.workPolicy?.morningOut || '12:00', afternoonIn: selectedOffice?.workPolicy?.afternoonIn || '13:00', afternoonOut: selectedOffice?.workPolicy?.afternoonOut || '17:00' }
-                      return <div className="grid grid-cols-[34px_58px_44px_1fr_1fr] items-center gap-2 text-xs" key={day}>
+                      return <div className="grid gap-2 rounded-control border border-line bg-surface p-3 text-xs md:grid-cols-[34px_58px_44px_1fr_1fr] md:items-center md:border-0 md:bg-transparent md:p-0" key={day}>
                         <span className="font-semibold text-muted">{label}</span>
                         <label className="flex items-center gap-1"><input checked={overridden} onChange={(event) => setScheduleDayOverride(day, event.target.checked)} type="checkbox" />Set</label>
                         <label className="flex items-center gap-1"><input checked={entry.working !== false} disabled={!overridden} onChange={(event) => updateScheduleDay(day, 'working', event.target.checked)} type="checkbox" />Work</label>
@@ -663,14 +628,14 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                     <p className="text-sm font-semibold text-navy-dark">VeriFace access code</p>
                     <p className="mt-0.5 text-xs text-muted">{accessCode || 'Not assigned'}. This unique 4-digit code is used at the kiosk.</p>
                   </div>
-                  <button
-                    className="shrink-0 rounded-lg border border-navy/20 bg-white px-3 py-2 text-xs font-semibold text-navy-dark transition hover:bg-navy/5 disabled:cursor-not-allowed disabled:opacity-50"
+                  <Button
+                    className="shrink-0"
                     disabled={isRegeneratingAccessCode}
                     onClick={handleRegenerateAccessCode}
-                    type="button"
+                    variant="secondary"
                   >
                     {isRegeneratingAccessCode ? 'Generating...' : 'Generate new code'}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -689,60 +654,23 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 ) : null}
               </div>
 
-              <button
-                className="rounded-xl bg-navy px-4 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark"
+              <Button
+                className="w-full"
                 onClick={handleOpenReenroll}
-                type="button"
               >
                 {person.sampleCount > 0 ? 'Re-enroll live capture' : 'Enroll live capture'}
-              </button>
+              </Button>
 
-              {resetConfirmOpen ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
-                  <p className="text-sm font-medium text-red-900">Reset face data for {person.name}?</p>
-                  <p className="mt-1 text-xs text-red-700">
-                    All stored face samples will be cleared. Use live re-enrollment here afterward, or
-                    send them to /registration and move them through review before the kiosk will recognise them again.
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      className="flex-1 rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-                      disabled={isPending(`biometric-reset-${person.id}`)}
-                      onClick={handleBiometricReset}
-                      type="button"
-                    >
-                      {isPending(`biometric-reset-${person.id}`) ? 'Resetting...' : 'Confirm reset'}
-                    </button>
-                    <button
-                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:bg-stone-50"
-                      onClick={() => setResetConfirmOpen(false)}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-muted transition hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                  onClick={() => setResetConfirmOpen(true)}
-                  type="button"
-                >
-                  Reset face data
-                </button>
-              )}
               <div className="flex justify-end gap-3 pt-2">
-                <button className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-stone-50" onClick={onCancel} type="button">
+                <Button onClick={onCancel} variant="secondary">
                   Close
-                </button>
-                <button
-                  className="inline-flex items-center gap-2 rounded-full bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50"
+                </Button>
+                <Button
                   disabled={isSaving || !officeId}
                   onClick={handleSave}
-                  type="button"
                 >
-                  {isSaving ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving...</> : 'Save Changes'}
-                </button>
+                  {isSaving ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving...</> : 'Save changes'}
+                </Button>
               </div>
             </div>
           </div>
@@ -755,18 +683,18 @@ export default function EmployeeEditorModal({ person, onSave, onCancel }) {
                 ? 'This enrollment was rejected and cannot use the attendance kiosk.'
                 : 'This employee is inactive and cannot use the attendance kiosk.'}
             </p>
-            <button
-              className="mt-3 min-h-[44px] rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+            <Button
+              className="mt-3"
               disabled={isPending(`employee-review-${person.id}`)}
               onClick={handleMoveToReview}
-              type="button"
+              variant="secondary"
             >
               {isPending(`employee-review-${person.id}`) ? 'Moving…' : 'Move to pending review'}
-            </button>
+            </Button>
           </div>
         )}
         </div>
-      </motion.div>
+      </Surface>
     </section>
   )
 }

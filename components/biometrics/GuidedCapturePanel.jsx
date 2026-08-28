@@ -1,27 +1,28 @@
 import FaceSizeGuidance from '@/components/biometrics/FaceSizeGuidance'
+import { Icon, Status } from '@/components/ui'
 
 function PhaseGlyph({ phaseType, poseOk }) {
   const accentClass = poseOk ? 'text-emerald-300' : 'text-white/78'
 
   if (phaseType === 'chin_down') {
     return (
-      <div className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-white/12 bg-white/6 text-lg ${accentClass}`}>
-        ↓
+      <div className={`flex h-11 w-11 items-center justify-center rounded-control border border-white/20 bg-black/60 ${accentClass}`}>
+        <Icon name="arrow-down" />
       </div>
     )
   }
 
   if (phaseType === 'center') {
     return (
-      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/12 bg-white/6">
-        <div className={`h-4 w-4 rounded-full border ${poseOk ? 'border-emerald-300 bg-emerald-300/80' : 'border-white/60 bg-white/20'}`} />
+      <div className="flex h-11 w-11 items-center justify-center rounded-control border border-white/20 bg-black/60">
+        <Icon className={poseOk ? 'text-emerald-300' : 'text-white/80'} name="scan" />
       </div>
     )
   }
 
   return (
-    <div className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-white/12 bg-white/6 text-lg ${accentClass}`}>
-      ↔
+    <div className={`flex h-11 w-11 items-center justify-center rounded-control border border-white/20 bg-black/60 ${accentClass}`}>
+      <Icon name="arrow-left-right" />
     </div>
   )
 }
@@ -42,18 +43,16 @@ export default function GuidedCapturePanel({
 
   return (
     <div className={className}>
-      <div className="rounded-[1.2rem] border border-white/12 bg-black/52 px-4 py-3 shadow-[0_18px_42px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+      <div className="rounded-surface border border-white/20 bg-black/80 px-4 py-3">
         <div className="flex items-start gap-3">
           <PhaseGlyph phaseType={phase?.poseType} poseOk={poseOk} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/48">
+              <div className="text-xs font-medium text-white/70">
                 Guided capture
               </div>
               {phase ? (
-                <span className="shrink-0 rounded-full border border-white/10 bg-white/6 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/66">
-                  {phaseIndex + 1}/{phaseCount}
-                </span>
+                <Status tone={poseOk ? 'active' : 'neutral'}>{phaseIndex + 1}/{phaseCount}</Status>
               ) : null}
             </div>
             <div className="mt-1 text-sm font-semibold text-white sm:text-base">{title}</div>

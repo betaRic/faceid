@@ -1,4 +1,4 @@
-import { InfoCard } from '@/components/shared/ui'
+import { Button, Status, Surface } from '@/components/ui'
 
 export default function ReviewStep({
   burstSummary,
@@ -13,57 +13,28 @@ export default function ReviewStep({
   savingEnrollment,
 }) {
   return (
-    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="flex min-h-[16rem] items-center justify-center overflow-hidden rounded-[1.5rem] border border-black/5 bg-stone-950">
-        {previewUrl ? (
-          <img alt="Captured" className="max-h-[min(52vh,30rem)] w-full object-contain" src={previewUrl} />
-        ) : (
-          <div className="text-sm text-stone-300">No preview yet.</div>
-        )}
-      </div>
+    <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <Surface className="flex min-h-64 items-center justify-center overflow-hidden bg-black">
+        {previewUrl ? <img alt="Captured face" className="max-h-[min(52vh,30rem)] w-full object-contain" src={previewUrl} /> : <span className="text-sm text-white/70">No preview yet.</span>}
+      </Surface>
 
       <div className="grid content-start gap-3">
-        <button
-          className="btn btn-primary w-full"
-          disabled={savingEnrollment || !detailsReady || !pendingSampleCount}
-          onClick={onSubmit}
-          type="button"
-        >
+        <Button disabled={savingEnrollment || !detailsReady || !pendingSampleCount} onClick={onSubmit}>
           {savingEnrollment ? 'Submitting…' : 'Submit enrollment'}
-        </button>
-        <button className="btn btn-ghost w-full" onClick={onRetake} type="button">
-          Retake capture
-        </button>
-        <button className="btn btn-ghost w-full" onClick={onEditDetails} type="button">
-          Edit employee details
-        </button>
+        </Button>
+        <Button onClick={onRetake} variant="secondary">Retake capture</Button>
+        <Button onClick={onEditDetails} variant="quiet">Edit details</Button>
 
-        {burstSummary && !burstSummary.genuinelyDiverse ? (
-          <InfoCard
-            title="Support set incomplete"
-            text="The capture did not keep 2 validated support frames for every guided pose. Retake before submitting."
-            tone="warn"
-          />
+        {burstSummary ? (
+          <Surface className="p-4">
+            <Status tone={burstSummary.genuinelyDiverse ? 'success' : 'pending'}>
+              {burstSummary.genuinelyDiverse ? 'Capture ready' : 'Retake recommended'}
+            </Status>
+            <p className="mt-3 text-sm leading-6 text-secondary">{burstSummary.keptCount} support samples kept across {burstSummary.phasesCompleted} guided poses.</p>
+          </Surface>
         ) : null}
-
-        {burstSummary && burstSummary.genuinelyDiverse ? (
-          <InfoCard
-            title={`${burstSummary.keptCount} support samples captured`}
-            text={`${burstSummary.detectedCount} frames processed across ${burstSummary.phasesCompleted} guided poses. Support pairs help prevent employee-to-employee mismatch.`}
-          />
-        ) : null}
-
-        {captureFeedback?.tone === 'warn' ? (
-          <InfoCard title={captureFeedback.title} text={captureFeedback.text} tone="warn" />
-        ) : null}
-
-        {duplicateReviewHint?.status === 'required' ? (
-          <InfoCard
-            title="Similarity review required"
-            text={duplicateReviewHint.message || 'A similar existing profile was found. This enrollment can continue, but an admin should verify it before approval.'}
-            tone="warn"
-          />
-        ) : null}
+        {captureFeedback?.tone === 'warn' ? <div className="rounded-control border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{captureFeedback.title}: {captureFeedback.text}</div> : null}
+        {duplicateReviewHint?.status === 'required' ? <div className="rounded-control border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="alert">{duplicateReviewHint.message || 'A similar existing profile requires administrator review before approval.'}</div> : null}
       </div>
     </div>
   )

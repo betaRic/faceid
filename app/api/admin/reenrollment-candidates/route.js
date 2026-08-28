@@ -2,14 +2,14 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import {
-  adminSessionAllowsOffice,
   getAdminSessionCookieName,
   parseAdminSessionCookieValue,
   resolveAdminSession,
 } from '@/lib/admin-auth'
-import { postgresEnabled, queryPostgres } from '@/lib/postgres/client'
+import { queryPostgres } from '@/lib/postgres/client'
 
 function toNumber(value, fallback) {
+  if (value == null || String(value).trim() === '') return fallback
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : fallback
 }
@@ -23,7 +23,6 @@ export async function GET(request) {
   }
 
   try {
-    const usePostgres = postgresEnabled()
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
     if (!resolvedSession) {
@@ -34,39 +33,91 @@ export async function GET(request) {
     const limit = Math.max(1, Math.min(100, toNumber(url.searchParams.get('limit'), 25)))
     const days = Math.max(1, Math.min(60, toNumber(url.searchParams.get('days'), 14)))
     const sinceTs = Date.now() - (days * 24 * 60 * 60 * 1000)
+    const officeId = resolvedSession.scope === 'office'
+      ? String(resolvedSession.officeId || '')
+      : ''
 
-    if (usePostgres) {
-      const [personsResult, eventsResult] = await Promise.all([
+    const [pendingResult, followUpResult] = await Promise.all([
         queryPostgres(
           `
-            SELECT *
+            SELECT
+              id,
+              employee_id,
+              name,
+              office_id,
+              office_name,
+              sample_count,
+              data
             FROM persons
-            WHERE active = true
-              AND (sample_count = 0 OR approval_status = 'pending')
+            WHERE lifecycle_status = 'pending'
+              AND ($1 = '' OR office_id = $1)
             ORDER BY updated_at DESC
-            LIMIT $1
+            LIMIT $2
           `,
-          [limit * 2],
+          [officeId, limit],
         ),
         queryPostgres(
           `
-            SELECT person_id, employee_id, count(*)::integer AS count
-            FROM scan_events
-            WHERE timestamp_ms >= $1 AND decision_code = 'blocked_no_reliable_match'
-            GROUP BY person_id, employee_id
+            SELECT
+              p.id,
+              p.employee_id,
+              p.name,
+              p.office_id,
+              p.office_name,
+              p.sample_count,
+              p.data,
+              COALESCE(mismatch.claimed_mismatch_count, 0)::integer AS claimed_mismatch_count
+            FROM persons p
+            LEFT JOIN LATERAL (
+              SELECT count(*)::integer AS claimed_mismatch_count
+              FROM scan_events event
+              WHERE event.timestamp_ms >= $1
+                AND event.decision_code = 'blocked_claimed_employee_mismatch'
+                AND (
+                  COALESCE(
+                    NULLIF(event.person_id, ''),
+                    NULLIF(event.match_debug->>'resolvedPersonId', '')
+                  ) = p.id
+                  OR (
+                    COALESCE(
+                      NULLIF(event.person_id, ''),
+                      NULLIF(event.match_debug->>'resolvedPersonId', '')
+                    ) IS NULL
+                    AND p.employee_id <> ''
+                    AND NULLIF(event.match_debug->>'resolvedEmployeeId', '') = p.employee_id
+                    AND COALESCE(
+                      NULLIF(event.match_debug->>'officeId', ''),
+                      NULLIF(event.office_id, '')
+                    ) = p.office_id
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM persons duplicate_person
+                      WHERE duplicate_person.id <> p.id
+                        AND duplicate_person.employee_id = p.employee_id
+                        AND duplicate_person.office_id = p.office_id
+                        AND duplicate_person.lifecycle_status = 'active'
+                        AND duplicate_person.active = true
+                        AND duplicate_person.approval_status = 'approved'
+                    )
+                  )
+                )
+            ) mismatch ON true
+            WHERE p.lifecycle_status = 'active'
+              AND p.active = true
+              AND p.approval_status = 'approved'
+              AND ($2 = '' OR p.office_id = $2)
+              AND (p.sample_count = 0 OR COALESCE(mismatch.claimed_mismatch_count, 0) >= 2)
+            ORDER BY
+              COALESCE(mismatch.claimed_mismatch_count, 0) DESC,
+              p.sample_count ASC,
+              p.name ASC
+            LIMIT $3
           `,
-          [sinceTs],
+          [sinceTs, officeId, limit],
         ),
       ])
 
-      const noMatchCounts = new Map()
-      eventsResult.rows.forEach(row => {
-        const key = String(row.person_id || row.employee_id || '').trim()
-        if (key) noMatchCounts.set(key, Number(row.count || 0))
-      })
-
-      const candidates = personsResult.rows
-        .map(row => ({
+      const mapPerson = row => ({
           personId: row.id,
           employeeId: row.employee_id || '',
           name: row.name || '',
@@ -74,80 +125,33 @@ export async function GET(request) {
           officeName: row.office_name || '',
           descriptorCount: Number(row.sample_count || 0),
           qualityScore: Number.isFinite(row.data?.biometricQualityScore) ? Number(row.data.biometricQualityScore) : null,
-          reenrollmentReason: row.sample_count > 0 ? 'Pending approval' : 'No active biometric samples',
-          needsReenrollment: Number(row.sample_count || 0) === 0,
-          noMatchCount: noMatchCounts.get(String(row.id)) || noMatchCounts.get(String(row.employee_id || '')) || 0,
-        }))
-        .filter(candidate => adminSessionAllowsOffice(resolvedSession, candidate.officeId))
-        .slice(0, limit)
-
-      return NextResponse.json({
-        ok: true,
-        generatedAt: new Date().toISOString(),
-        days,
-        candidates: candidates.sort((left, right) => (
-          (right.noMatchCount - left.noMatchCount)
-          || ((left.qualityScore ?? Number.POSITIVE_INFINITY) - (right.qualityScore ?? Number.POSITIVE_INFINITY))
-          || left.name.localeCompare(right.name)
-        )),
-      })
-    }
-
-    const biometricsSnapshot = await db
-      .collection('person_biometrics')
-      .where('needsReenrollment', '==', true)
-      .limit(limit * 2)
-      .get()
-
-    const candidates = biometricsSnapshot.docs
-      .map(record => ({ id: record.id, ...record.data() }))
-      .filter(candidate => adminSessionAllowsOffice(resolvedSession, candidate.officeId))
-      .slice(0, limit)
-
-    const noMatchSnapshot = await db
-      .collection('scan_events')
-      .where('timestamp', '>=', sinceTs)
-      .limit(800)
-      .get()
-
-    const noMatchCounts = new Map()
-    noMatchSnapshot.docs.forEach(record => {
-      const data = record.data() || {}
-      if (data.decisionCode !== 'blocked_no_reliable_match') return
-      const personId = String(data.personId || '').trim()
-      const employeeId = String(data.employeeId || '').trim()
-      const key = personId || employeeId
-      if (!key) return
-      noMatchCounts.set(key, (noMatchCounts.get(key) || 0) + 1)
-    })
+        })
+      const pendingApproval = pendingResult.rows.map(row => ({
+        ...mapPerson(row),
+        queueReason: 'pending_approval',
+      }))
+      const biometricFollowUp = followUpResult.rows.map(row => ({
+        ...mapPerson(row),
+        claimedMismatchCount: Number(row.claimed_mismatch_count || 0),
+        followUpReason: Number(row.sample_count || 0) === 0
+          ? 'missing_biometrics'
+          : 'repeated_claimed_mismatch',
+      }))
 
     return NextResponse.json({
       ok: true,
       generatedAt: new Date().toISOString(),
       days,
-      candidates: candidates.map(candidate => {
-        const key = String(candidate.personId || candidate.id || '').trim() || String(candidate.employeeId || '').trim()
-        return {
-          personId: candidate.personId || candidate.id,
-          employeeId: candidate.employeeId || '',
-          name: candidate.name || '',
-          officeId: candidate.officeId || '',
-          officeName: candidate.officeName || '',
-          descriptorCount: Number(candidate.descriptorCount || 0),
-          qualityScore: Number.isFinite(candidate.qualityScore) ? Number(candidate.qualityScore) : null,
-          reenrollmentReason: candidate.reenrollmentReason || '',
-          needsReenrollment: Boolean(candidate.needsReenrollment),
-          noMatchCount: noMatchCounts.get(key) || 0,
-        }
-      }).sort((left, right) => (
-        (right.noMatchCount - left.noMatchCount)
-        || ((left.qualityScore ?? Number.POSITIVE_INFINITY) - (right.qualityScore ?? Number.POSITIVE_INFINITY))
-        || left.name.localeCompare(right.name)
-      )),
+      pendingApproval,
+      biometricFollowUp,
     })
   } catch (error) {
+    console.error('[biometric-follow-up] query failed', {
+      code: error?.code,
+      name: error?.name,
+    })
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load reenrollment candidates.' },
+      { ok: false, message: 'Failed to load biometric follow-up.' },
       { status: 500 },
     )
   }

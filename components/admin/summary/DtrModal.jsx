@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { downloadResponseBlob } from '@/lib/browser-download'
 import { getDaysInMonth } from '@/lib/dtr'
 import DtrSelectionView from './DtrSelectionView'
+import { Surface } from '@/components/ui'
 
 export default function DtrModal({ onClose }) {
   const [dtrMonth, setDtrMonth] = useState(new Date().getMonth() + 1)
@@ -153,8 +154,8 @@ export default function DtrModal({ onClose }) {
   }, [])
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-white p-3 sm:p-6">
-      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
+    <section className="flex h-full min-h-0 flex-col">
+      <Surface className="min-h-0 flex-1 overflow-hidden">
         <DtrSelectionView
           allVisibleSelected={allVisibleSelected}
           customEndDay={customEndDay}
@@ -190,7 +191,7 @@ export default function DtrModal({ onClose }) {
           signatoryPosition={signatoryPosition}
           uniqueEmployees={uniqueEmployees}
         />
-      </div>
+      </Surface>
     </section>
   )
 }

@@ -1,40 +1,35 @@
 import { getFaceSizeGuidance } from '@/lib/biometrics/face-size-guidance'
+import { Status } from '@/components/ui'
 
 function resolveToneClasses(status, theme) {
   if (theme === 'light') {
     if (status === 'ready') {
       return {
-        badge: 'bg-emerald-100 text-emerald-800',
-        marker: 'bg-emerald-500 shadow-lg shadow-emerald-500/35',
+        marker: 'bg-emerald-500',
       }
     }
     if (status === 'not-detected') {
       return {
-        badge: 'bg-stone-100 text-muted',
         marker: 'bg-stone-400',
       }
     }
     return {
-      badge: 'bg-amber-100 text-amber-900',
-      marker: 'bg-amber-500 shadow-lg shadow-amber-500/35',
+      marker: 'bg-amber-500',
     }
   }
 
   if (status === 'ready') {
     return {
-      badge: 'bg-emerald-500/80 text-white',
-      marker: 'bg-emerald-400 shadow-lg shadow-emerald-400/50',
+      marker: 'bg-emerald-400',
     }
   }
   if (status === 'not-detected') {
     return {
-      badge: 'bg-white/12 text-white/78',
       marker: 'bg-white/70',
     }
   }
   return {
-    badge: 'bg-amber-500/80 text-white',
-    marker: 'bg-amber-400 shadow-lg shadow-amber-400/50',
+    marker: 'bg-amber-400',
   }
 }
 
@@ -49,12 +44,12 @@ export default function FaceSizeGuidance({
   const tone = resolveToneClasses(resolvedGuidance.status, theme)
 
   const shellClass = theme === 'light'
-    ? 'border-black/8 bg-white/92 text-ink shadow-sm'
-    : 'border-white/12 bg-black/48 text-white shadow-[0_12px_30px_rgba(0,0,0,0.26)] backdrop-blur-xl'
+    ? 'border-line bg-surface text-foreground'
+    : 'border-white/20 bg-black/80 text-white'
 
   const labelClass = theme === 'light'
-    ? 'text-[10px] uppercase tracking-[0.16em] text-muted'
-    : 'text-[10px] uppercase tracking-[0.16em] text-white/44'
+    ? 'text-xs font-medium text-secondary'
+    : 'text-xs font-medium text-white/70'
 
   const endpointClass = theme === 'light'
     ? 'text-[10px] font-medium text-muted'
@@ -71,12 +66,10 @@ export default function FaceSizeGuidance({
 
   return (
     <div className={className}>
-      <div className={`rounded-[1.05rem] border ${compact ? 'px-3 py-2.5' : 'px-3.5 py-3'} ${shellClass}`}>
+      <div className={`rounded-control border ${compact ? 'px-3 py-2.5' : 'px-3.5 py-3'} ${shellClass}`}>
         <div className="flex items-center justify-between gap-3">
           <span className={labelClass}>Distance</span>
-          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone.badge}`}>
-            {resolvedGuidance.label}
-          </span>
+          <Status tone={resolvedGuidance.status === 'ready' ? 'active' : resolvedGuidance.status === 'not-detected' ? 'neutral' : 'warning'}>{resolvedGuidance.label}</Status>
         </div>
 
         <div className="mt-2 flex min-w-0 items-center gap-2">

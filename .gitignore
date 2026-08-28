@@ -7,11 +7,24 @@ dist/
 datasets/
 reports/biometric-shadow/
 
-.env
-.env.local
-.env.test.local
+# Local analysis, generated output, and portable tooling
+/.superpowers/
+/.tools/
+/graphify-out/
+/outputs/
+/.tmp-*/
+/tmp-*/
+
+# Local session and process artifacts
+/cookies.txt
+/render.bin
+/*.log
+/node_*.log
+
+.env*
+!.env.example
+!.env.test.example
 .faceattend-test-runtime/
 analysis.md
-.env.example
 AGENTS.md
 CLAUDE.md

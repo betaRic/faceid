@@ -2,6 +2,7 @@
 
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
+import { LoadingState } from '@/components/ui'
 
 // Region XII center (Koronadal / South Cotabato)
 const REGION_XII_CENTER = [6.5069, 124.8480]
@@ -136,14 +137,14 @@ export default function OfficeLocationPicker({
   // ── No office selected guard ───────────────────────────────────────────
   if (!officeId) {
     return (
-      <div className="flex h-[340px] items-center justify-center rounded-[1.5rem] border border-black/5 bg-stone-100 text-sm text-muted">
+      <div className="flex h-[340px] items-center justify-center rounded-surface border border-line bg-canvas text-sm text-secondary">
         Select an office to configure its location
       </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-black/5 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-surface border border-line bg-surface">
 
       {/* Map canvas */}
       <div className="relative">
@@ -153,18 +154,13 @@ export default function OfficeLocationPicker({
           style={{
             height: 340,
             width: '100%',
-            backgroundImage: 'linear-gradient(rgba(3,45,87,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(3,45,87,0.08) 1px, transparent 1px)',
-            backgroundSize: '28px 28px',
           }}
         />
 
         {/* Loading skeleton shown until Leaflet boots */}
         {!mapReady && (
           <div className="absolute inset-0 flex items-center justify-center bg-stone-100">
-            <div className="flex items-center gap-2 text-sm text-muted">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-              Loading map...
-            </div>
+            <LoadingState label="Loading map…" />
           </div>
         )}
 

@@ -1,6 +1,7 @@
 import test, { after, before } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
+import { strFromU8, unzipSync } from 'fflate'
 import sharp from 'sharp'
 import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
 import { createPersonsPostHandler } from '../../lib/routes/persons-route.js'
@@ -38,6 +39,9 @@ import {
   GET as getGlobalThresholds,
   POST as updateGlobalThresholds,
 } from '../../app/api/admin/thresholds/route.js'
+import { GET as getMaintenanceEvidence } from '../../app/api/admin/biometric-benchmark/route.js'
+import { GET as getReenrollmentCandidates } from '../../app/api/admin/reenrollment-candidates/route.js'
+import { GET as getHealth } from '../../app/api/health/route.js'
 import {
   DEFAULTS as THRESHOLD_DEFAULTS,
   getActiveThresholdsForUpdate,
@@ -54,6 +58,14 @@ import {
 } from '../../app/api/persons/[personId]/reenroll/route.js'
 import { GET as getAttendanceTable } from '../../app/api/attendance/table/route.js'
 import { GET as getAttendanceDtr } from '../../app/api/attendance/dtr/route.js'
+import {
+  POST as createAttendanceCorrection,
+} from '../../app/api/admin/attendance/route.js'
+import {
+  DELETE as deleteAttendanceCorrection,
+} from '../../app/api/admin/attendance/[attendanceId]/route.js'
+import { GET as rebuildDailySummary } from '../../app/api/cron/rebuild-daily-summary/route.js'
+import { formatAttendanceDateKey } from '../../lib/attendance-time.js'
 import { createAttendanceV2PostHandler } from '../../app/api/attendance/v2/route.js'
 import { consumePostgresRateLimit, hashRateLimitKey } from '../../lib/postgres/rate-limit-store.js'
 import { enforceRateLimit, getRequestIp } from '../../lib/rate-limit.js'
@@ -312,6 +324,218 @@ test('legacy shared Regional PIN session keeps shared attribution', () => {
 
   const session = parseAdminSessionCookieValue(`${encoded}.${signature}`)
   assert.equal(session.authMethod, 'shared_regional_pin')
+})
+
+test('public health reports process liveness without claiming dependency readiness', async () => {
+  const response = await getHealth()
+  const payload = await response.json()
+  assert.deepEqual(payload, {
+    ok: true,
+    kind: 'process-liveness',
+    service: 'faceattend',
+    timestamp: payload.timestamp,
+  })
+})
+
+test('maintenance evidence scopes before the server detail cap and reports honest truncation', async () => {
+  const baseTimestamp = Date.parse('2026-08-27T09:00:00+08:00')
+  await queryPostgres(
+    `
+      INSERT INTO scan_events (
+        status, decision_code, timestamp_ms, office_id, match_debug,
+        performance, scan_diagnostics, capture_context
+      )
+      SELECT
+        'accepted', 'accepted', $1::bigint + sequence, $2,
+        jsonb_build_object('resolvedPersonId', 'other-person-' || sequence),
+        '{"totalMeasuredMs":125}'::jsonb,
+        '{"bestFaceAreaRatio":0.18,"deviceClass":"desktop"}'::jsonb,
+        '{"authoritativeDescriptorSource":"server","serverEmbeddingFrames":2}'::jsonb
+      FROM generate_series(1, 1205) AS sequence
+    `,
+    [baseTimestamp, otherOffice.id],
+  )
+  await queryPostgres(
+    `
+      INSERT INTO scan_events (
+        status, decision_code, timestamp_ms, office_id, match_debug,
+        performance, scan_diagnostics, capture_context
+      ) VALUES (
+        'blocked', 'blocked_claimed_employee_mismatch', $1, $2,
+        '{"resolvedPersonId":"office-person","resolvedEmployeeId":"office-employee","bestDistance":0.82,"threshold":0.75}'::jsonb,
+        '{"totalMeasuredMs":150}'::jsonb,
+        '{"bestFaceAreaRatio":0.17,"deviceClass":"mobile"}'::jsonb,
+        '{"authoritativeDescriptorSource":"server","serverEmbeddingFrames":2}'::jsonb
+      )
+    `,
+    [baseTimestamp - 1, office.id],
+  )
+  await queryPostgres(
+    `
+      INSERT INTO scan_events (
+        status, decision_code, timestamp_ms, office_id, match_debug
+      ) VALUES (
+        'blocked', 'blocked_claimed_employee_mismatch', $1, $2,
+        jsonb_build_object(
+          'resolvedPersonId', 'resolved-other-person',
+          'resolvedEmployeeId', 'resolved-other-employee',
+          'officeId', $3::text,
+          'bestDistance', 0.83,
+          'threshold', 0.75
+        )
+      )
+    `,
+    [baseTimestamp - 2, office.id, otherOffice.id],
+  )
+
+  const officeResponse = await getMaintenanceEvidence(sameOriginRequest('/api/admin/biometric-benchmark?date=2026-08-27', {
+    headers: { cookie: adminCookie({
+      email: 'route-test-office-admin@example.test',
+      uid: 'route-test-office-admin',
+      scope: 'office',
+      officeId: office.id,
+    }) },
+  }))
+  const officePayload = await officeResponse.json()
+  assert.equal(officeResponse.status, 200, JSON.stringify(officePayload))
+  assert.equal(officePayload.version, 2)
+  assert.equal(officePayload.scope.officeId, office.id)
+  assert.equal(officePayload.evidence.totalWindowEvents, 1)
+  assert.equal(officePayload.evidence.loadedEvents, 1)
+  assert.equal(officePayload.system, null)
+  assert.equal(
+    officePayload.breakdowns.categories.reduce((sum, item) => sum + item.count, 0),
+    officePayload.evidence.loadedEvents,
+  )
+
+  const regionalResponse = await getMaintenanceEvidence(sameOriginRequest('/api/admin/biometric-benchmark?date=2026-08-27', {
+    headers: { cookie: adminCookie() },
+  }))
+  const regionalPayload = await regionalResponse.json()
+  assert.equal(regionalResponse.status, 200, JSON.stringify(regionalPayload))
+  assert.equal(regionalPayload.version, 2)
+  assert.equal(regionalPayload.evidence.totalWindowEvents, 1207)
+  assert.equal(regionalPayload.evidence.loadedEvents, 1200)
+  assert.equal(regionalPayload.evidence.truncated, true)
+  assert.notEqual(regionalPayload.statuses.telemetry.status, 'sufficient')
+  assert.notEqual(regionalPayload.statuses.verification1to1.status, 'stable')
+  assert.ok(regionalPayload.system)
+})
+
+test('biometric follow-up stays separate from pending employee approval', async () => {
+  const photoDataUrl = await pngDataUrl()
+  const pendingResponse = await register(registrationFixture({ employeeId: '680001', lastName: 'Pendingqueue', photoDataUrl }))
+  const pending = await pendingResponse.json()
+  assert.equal(pendingResponse.status, 200, JSON.stringify(pending))
+
+  const missingResponse = await register(registrationFixture({ employeeId: '680002', lastName: 'Missingsamples', photoDataUrl }))
+  const missing = await missingResponse.json()
+  assert.equal(missingResponse.status, 200, JSON.stringify(missing))
+  await transitionLifecycle(missing.personId, 'active')
+  await queryPostgres('DELETE FROM biometric_index WHERE person_id = $1', [missing.personId])
+  await queryPostgres('UPDATE persons SET sample_count = 0 WHERE id = $1', [missing.personId])
+
+  const mismatchResponse = await register(registrationFixture({ employeeId: '680003', lastName: 'Mismatchrepeat', photoDataUrl }))
+  const mismatch = await mismatchResponse.json()
+  assert.equal(mismatchResponse.status, 200, JSON.stringify(mismatch))
+  await transitionLifecycle(mismatch.personId, 'active')
+  await queryPostgres(
+    `
+      INSERT INTO scan_events (
+        status, decision_code, timestamp_ms, employee_id, person_id,
+        office_id, match_debug
+      )
+      SELECT
+        'blocked', 'blocked_claimed_employee_mismatch', $1::bigint + sequence,
+        'claimed-code', NULL, $2,
+        jsonb_build_object(
+          'resolvedPersonId', $3::text,
+          'resolvedEmployeeId', '680003',
+          'officeId', $2::text,
+          'bestDistance', 0.82,
+          'threshold', 0.75
+        )
+      FROM generate_series(1, 3) AS sequence
+    `,
+    [Date.now() - 1000, office.id, mismatch.personId],
+  )
+  const duplicateFallbackIds = ['route-test-duplicate-fallback-a', 'route-test-duplicate-fallback-b']
+  for (const [index, personId] of duplicateFallbackIds.entries()) {
+    await queryPostgres(
+      `
+        INSERT INTO persons (
+          id, employee_id, employee_id_lower, name, name_lower,
+          office_id, office_name, active, approval_status, lifecycle_status,
+          sample_count, data, access_code
+        ) VALUES ($1, 'DUP-FALLBACK', 'dup-fallback', $2, $3, $4, $5, true, 'approved', 'active', 8, '{}'::jsonb, $6)
+      `,
+      [personId, `Duplicate fallback ${index + 1}`, `duplicate fallback ${index + 1}`, office.id, office.name, `99${index + 1}0`],
+    )
+  }
+  await queryPostgres(
+    `
+      INSERT INTO scan_events (
+        status, decision_code, timestamp_ms, employee_id, person_id,
+        office_id, match_debug
+      ) VALUES (
+        'blocked', 'blocked_claimed_employee_mismatch', $1,
+        'DUP-FALLBACK', NULL, $2,
+        jsonb_build_object(
+          'resolvedEmployeeId', 'DUP-FALLBACK',
+          'officeId', $2::text,
+          'bestDistance', 0.82,
+          'threshold', 0.75
+        )
+      )
+    `,
+    [Date.now(), office.id],
+  )
+  await queryPostgres(
+    `
+      INSERT INTO persons (
+        id, employee_id, employee_id_lower, name, name_lower,
+        office_id, office_name, active, approval_status, lifecycle_status,
+        sample_count, data, access_code
+      ) VALUES (
+        'route-test-claimed-code-fallback', '8877', '8877',
+        'Claimed code fallback', 'claimed code fallback', $1, $2,
+        true, 'approved', 'active', 8, '{}'::jsonb, '9930'
+      )
+    `,
+    [office.id, office.name],
+  )
+  await queryPostgres(
+    `
+      INSERT INTO scan_events (
+        status, decision_code, timestamp_ms, employee_id, person_id,
+        office_id, match_debug
+      )
+      SELECT
+        'blocked', 'blocked_claimed_employee_mismatch', $1::bigint + sequence,
+        '8877', NULL, $2,
+        jsonb_build_object('officeId', $2::text, 'bestDistance', 0.82, 'threshold', 0.75)
+      FROM generate_series(1, 2) AS sequence
+    `,
+    [Date.now() + 1, office.id],
+  )
+
+  const response = await getReenrollmentCandidates(sameOriginRequest('/api/admin/reenrollment-candidates?days=14', {
+    headers: { cookie: adminCookie() },
+  }))
+  const payload = await response.json()
+  assert.equal(response.status, 200, JSON.stringify(payload))
+  assert.deepEqual(payload.pendingApproval.map(item => item.personId), [pending.personId])
+  assert.equal(payload.biometricFollowUp.some(item => duplicateFallbackIds.includes(item.personId)), false)
+  assert.equal(payload.biometricFollowUp.some(item => item.personId === 'route-test-claimed-code-fallback'), false)
+  assert.deepEqual(
+    new Set(payload.biometricFollowUp.map(item => item.personId)),
+    new Set([missing.personId, mismatch.personId]),
+  )
+  assert.equal(
+    payload.biometricFollowUp.find(item => item.personId === mismatch.personId).claimedMismatchCount,
+    3,
+  )
+  assert.equal(payload.biometricFollowUp.some(item => item.personId === pending.personId), false)
 })
 
 test('named Admin PIN creates a named Admin session', async () => {
@@ -1833,9 +2057,9 @@ test('employee with no Employee ID can load attendance by canonical session pers
   await queryPostgres(
     `
       INSERT INTO attendance (id, employee_id, person_id, name, action, timestamp_ms, date_key, date_label, time_label)
-      VALUES ('optional-id-attendance', '', $1, 'OptionalId, Test', 'checkin', 1787260800000, '2026-08-21', 'August 21, 2026', '8:00 AM')
+      VALUES ('optional-id-attendance', '', $1, 'OptionalId, Test', 'checkout', $2, '2026-08-21', 'August 21, 2026', '11:58 AM')
     `,
-    [enrolled.personId],
+    [enrolled.personId, Date.parse('2026-08-21T11:58:00+08:00')],
   )
   const token = createEmployeeViewSessionCookieValue({ personId: enrolled.personId, employeeId: '' })
   const attendance = await getAttendanceTable(sameOriginRequest('/api/attendance/table?month=8&year=2026', {
@@ -1846,12 +2070,153 @@ test('employee with no Employee ID can load attendance by canonical session pers
   assert.equal(payload.personId, enrolled.personId)
   assert.equal(payload.employeeId, '')
   assert.equal(payload.totalLogs, 1)
+  assert.equal(payload.days[0].amIn, '--')
+  assert.notEqual(payload.days[0].amOut, '--')
+
+  await queryPostgres(
+    `INSERT INTO holidays (id, holiday_date, name, scope_type, office_id, division_id, remarks)
+     VALUES ('optional-id-holiday', '2026-08-18', 'Route Test Holiday', 'office', $1, '', 'DTR route proof')`,
+    [office.id],
+  )
+  await queryPostgres(
+    `INSERT INTO employee_leaves (id, person_id, leave_type, start_date, end_date, remarks)
+     VALUES ('optional-id-leave', $1, 'SL', '2026-08-19', '2026-08-19', 'DTR route proof')`,
+    [enrolled.personId],
+  )
+  await queryPostgres(
+    `INSERT INTO official_orders (id, person_id, order_type, order_number, start_date, end_date, remarks)
+     VALUES ('optional-id-order', $1, 'Regional Order', 'ROUTE-DTR-1', '2026-08-20', '2026-08-20', 'DTR route proof')`,
+    [enrolled.personId],
+  )
 
   const dtr = await getAttendanceDtr(sameOriginRequest('/api/attendance/dtr?month=8&year=2026', {
     headers: { 'x-employee-view-session': token },
   }))
   assert.equal(dtr.status, 200, await dtr.clone().text())
   assert.match(String(dtr.headers.get('content-type') || ''), /spreadsheetml/)
+  const workbook = unzipSync(new Uint8Array(await dtr.arrayBuffer()))
+  const workbookXml = strFromU8(workbook['xl/workbook.xml'])
+  const dtrXml = strFromU8(workbook['xl/worksheets/sheet1.xml'])
+  const cellXml = reference => dtrXml.match(new RegExp(`<c r="${reference}"[^>]*>[\\s\\S]*?</c>`))?.[0] || ''
+  assert.match(workbookXml, /Time Log Details/)
+  assert.match(cellXml('B28'), /<t>HOLIDAY<\/t>/)
+  assert.match(cellXml('B29'), /<t>SL<\/t>/)
+  assert.match(cellXml('B30'), /<t>OB<\/t>/)
+})
+
+test('attendance correction creates and deletes a scoped manual entry with daily projection and audit', async () => {
+  const response = await register(registrationFixture({
+    employeeId: '799001',
+    lastName: 'Correction',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const enrolled = await response.json()
+  assert.equal(response.status, 200, JSON.stringify(enrolled))
+  await transitionLifecycle(enrolled.personId, 'active', 'Activate attendance correction test employee')
+
+  const timestamp = Date.parse('2026-08-22T08:00:00+08:00')
+  const createResponse = await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', {
+    method: 'POST',
+    headers: { cookie: adminCookie() },
+    body: {
+      employeeId: '799001',
+      personId: enrolled.personId,
+      name: 'Correction, Test',
+      officeId: office.id,
+      officeName: office.name,
+      action: 'checkin',
+      manualSlot: 'amIn',
+      timestamp,
+      dateKey: '2026-08-22',
+      reason: 'Route-test correction',
+    },
+  }))
+  const created = await createResponse.json()
+  assert.equal(createResponse.status, 200, JSON.stringify(created))
+  assert.ok(created.attendanceId)
+
+  const stored = await queryPostgres(
+    "SELECT data->>'source' AS source, person_id, date_key FROM attendance WHERE id = $1",
+    [created.attendanceId],
+  )
+  assert.deepEqual(stored.rows[0], {
+    source: 'manual_override',
+    person_id: enrolled.personId,
+    date_key: '2026-08-22',
+  })
+  const daily = await queryPostgres(
+    'SELECT log_count, data FROM attendance_daily WHERE person_id = $1 AND date_key = $2',
+    [enrolled.personId, '2026-08-22'],
+  )
+  assert.equal(daily.rows[0]?.log_count, 1)
+  assert.equal(daily.rows[0]?.data?.personId, enrolled.personId)
+
+  const deleteResponse = await deleteAttendanceCorrection(
+    sameOriginRequest(`/api/admin/attendance/${created.attendanceId}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie() },
+    }),
+    { params: Promise.resolve({ attendanceId: created.attendanceId }) },
+  )
+  assert.equal(deleteResponse.status, 200, await deleteResponse.clone().text())
+  assert.equal((await queryPostgres('SELECT count(*)::integer AS count FROM attendance WHERE id = $1', [created.attendanceId])).rows[0].count, 0)
+  const audit = await queryPostgres(
+    "SELECT action FROM audit_logs WHERE target_id = $1 AND action IN ('attendance_override_add', 'attendance_override_delete') ORDER BY created_at",
+    [created.attendanceId],
+  )
+  assert.deepEqual(audit.rows.map(row => row.action), ['attendance_override_add', 'attendance_override_delete'])
+})
+
+test('daily-summary cron rejects wrong authorization and rebuilds yesterday through PostgreSQL', async () => {
+  const previousSecret = process.env.CRON_SECRET
+  try {
+    delete process.env.CRON_SECRET
+    const missingSecret = await rebuildDailySummary(new Request('http://127.0.0.1:3000/api/cron/rebuild-daily-summary', {
+      headers: { authorization: 'Bearer undefined' },
+    }))
+    assert.equal(missingSecret.status, 401)
+
+    process.env.CRON_SECRET = 'route-test-cron-secret'
+    const unauthorized = await rebuildDailySummary(new Request('http://127.0.0.1:3000/api/cron/rebuild-daily-summary', {
+      headers: { authorization: 'Bearer wrong-secret' },
+    }))
+    assert.equal(unauthorized.status, 401)
+
+    const response = await register(registrationFixture({
+      employeeId: '799002',
+      lastName: 'Cron',
+      photoDataUrl: await pngDataUrl(),
+    }))
+    const enrolled = await response.json()
+    assert.equal(response.status, 200, JSON.stringify(enrolled))
+    const dateKey = formatAttendanceDateKey(new Date(Date.now() - 86400000))
+    const timestamp = Date.parse(`${dateKey}T08:00:00+08:00`)
+    await queryPostgres(
+      `
+        INSERT INTO attendance (
+          id, employee_id, person_id, name, action, timestamp_ms, date_key,
+          date_label, time_label, office_id, office_name
+        ) VALUES ($1, $2, $3, $4, 'checkin', $5, $6, $6, '8:00 AM', $7, $8)
+      `,
+      ['route-test-cron-attendance', '799002', enrolled.personId, 'Cron, Test', timestamp, dateKey, office.id, office.name],
+    )
+
+    const authorized = await rebuildDailySummary(new Request('http://127.0.0.1:3000/api/cron/rebuild-daily-summary', {
+      headers: { authorization: 'Bearer route-test-cron-secret' },
+    }))
+    const payload = await authorized.json()
+    assert.equal(authorized.status, 200, JSON.stringify(payload))
+    assert.ok(payload.rebuilt >= 1)
+    const daily = await queryPostgres(
+      'SELECT log_count, data FROM attendance_daily WHERE person_id = $1 AND date_key = $2',
+      [enrolled.personId, dateKey],
+    )
+    assert.equal(daily.rows[0]?.log_count, 1)
+    assert.equal(daily.rows[0]?.data?.personId, enrolled.personId)
+  } finally {
+    if (previousSecret === undefined) delete process.env.CRON_SECRET
+    else process.env.CRON_SECRET = previousSecret
+  }
 })
 
 test('kiosk persists the matched person ID and rejects unsafe submissions without attendance writes', async () => {

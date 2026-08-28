@@ -12,6 +12,7 @@
  */
 
 import OfficeLocationPicker from './OfficeLocationPicker'
+import { Button, Icon } from '@/components/ui'
 
 const DAY_OPTIONS = [
   { value: 1, label: 'Mon' },
@@ -35,7 +36,7 @@ function formatTime(value) {
 function Field({ label, children }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
       {children}
     </label>
   )
@@ -56,30 +57,31 @@ function TimeInput({ label, value, onChange }) {
 
 function NumberInput({ label, value, onChange, description }) {
   return (
-    <div className="grid gap-1">
-      <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</label>
+    <label className="grid gap-1">
+      <span className="text-sm font-medium text-foreground">{label}</span>
       {description && <p className="text-xs text-muted/70">{description}</p>}
       <input
-        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+        className="min-h-11 w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none"
         onChange={e => onChange(Number(e.target.value))}
         type="number"
         value={value ?? ''}
       />
-    </div>
+    </label>
   )
 }
 
 function DayToggle({ label, activeValues = [], onToggle, accent = false }) {
   return (
-    <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">{label}</div>
+    <div className="rounded-surface border border-line bg-canvas p-3">
+      <div className="mb-2 text-sm font-semibold text-primary">{label}</div>
       <div className="flex flex-wrap gap-1.5">
         {DAY_OPTIONS.map(day => {
           const active = activeValues.includes(day.value)
           return (
             <button
+              aria-pressed={active}
               key={day.value}
-              className={`rounded-full border px-3 py-1 text-sm font-semibold transition ${
+              className={`min-h-11 rounded-control border px-3 py-2 text-sm font-semibold transition ${
                 active
                   ? accent
                     ? 'border-amber/40 bg-amber/15 text-amber-dark'
@@ -131,7 +133,7 @@ export default function AdminOfficePanel({
   return (
     <div className="grid gap-4">
       {/* ── Identity: name, code, short name, type ── */}
-      <div className="grid gap-3 rounded-[1.5rem] border border-black/5 bg-stone-50 p-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 rounded-surface border border-line bg-canvas p-4 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="Office name">
           <input
             className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
@@ -185,8 +187,8 @@ export default function AdminOfficePanel({
       </div>
 
       {/* ── Office head (signs DTRs unless overridden by a division head) ── */}
-      <div className="grid gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">
+      <div className="grid gap-3 rounded-surface border border-line bg-canvas p-4">
+        <div className="text-sm font-semibold text-primary">
           Office head{isRegional ? ' — Regional Director' : ''}
         </div>
         <p className="text-xs text-muted">
@@ -216,25 +218,24 @@ export default function AdminOfficePanel({
 
       {/* ── Divisions / Units (Regional Office only) ── */}
       {isRegional ? (
-        <div className="grid gap-3 rounded-[1.25rem] border border-black/5 bg-stone-50 p-4">
+        <div className="grid gap-3 rounded-surface border border-line bg-canvas p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Divisions / Units</div>
+              <div className="text-sm font-semibold text-primary">Divisions / Units</div>
               <p className="mt-1 text-xs text-muted">
                 Each division or unit chief signs the DTR for staff assigned to that division.
               </p>
             </div>
-            <button
-              className="rounded-full border border-navy/30 bg-white px-4 py-2 text-xs font-semibold text-navy transition hover:bg-navy/5"
+            <Button
               onClick={addDivision}
-              type="button"
+              variant="secondary"
             >
-              + Add division
-            </button>
+              <Icon name="add" />Add division
+            </Button>
           </div>
 
           {divisions.length === 0 ? (
-            <div className="rounded-[1rem] border border-dashed border-black/10 bg-white px-4 py-3 text-xs text-muted">
+            <div className="rounded-control border border-dashed border-line bg-surface px-4 py-3 text-xs text-secondary">
               No divisions added yet. Click "Add division" to start.
             </div>
           ) : (
@@ -242,27 +243,31 @@ export default function AdminOfficePanel({
               {divisions.map((division, index) => (
                 <div
                   key={index}
-                  className="grid gap-2 rounded-[1rem] border border-black/5 bg-white p-3 sm:grid-cols-[110px_minmax(0,1.5fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_auto]"
+                  className="grid gap-2 rounded-control border border-line bg-surface p-3 sm:grid-cols-2 xl:grid-cols-[110px_minmax(0,1.5fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_auto]"
                 >
                   <input
+                    aria-label={`Division ${index + 1} short name`}
                     className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy uppercase"
                     onChange={e => updateDivision(index, 'shortName', e.target.value.toUpperCase())}
                     placeholder="LGCDD"
                     value={division.shortName || ''}
                   />
                   <input
+                    aria-label={`Division ${index + 1} full name`}
                     className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy"
                     onChange={e => updateDivision(index, 'name', e.target.value)}
                     placeholder="Local Government Capability and Development Division"
                     value={division.name || ''}
                   />
                   <input
+                    aria-label={`Division ${index + 1} head name`}
                     className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy uppercase"
                     onChange={e => updateDivision(index, 'headName', e.target.value.toUpperCase())}
                     placeholder="MARY ANN T. TRASPE"
                     value={division.headName || ''}
                   />
                   <input
+                    aria-label={`Division ${index + 1} head position`}
                     className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy"
                     onChange={e => updateDivision(index, 'headPosition', e.target.value)}
                     placeholder="Division Chief / LGOO VII"
@@ -277,7 +282,7 @@ export default function AdminOfficePanel({
                   </button>
                 </div>
               ))}
-              <div className="grid grid-cols-[110px_minmax(0,1.5fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_auto] gap-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+              <div className="hidden grid-cols-[110px_minmax(0,1.5fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_auto] gap-2 px-3 text-xs font-medium text-secondary xl:grid">
                 <span>Short</span>
                 <span>Full name</span>
                 <span>Head name</span>
@@ -294,7 +299,7 @@ export default function AdminOfficePanel({
 
         {/* ── LOCATION ── */}
         <div className="grid gap-3 content-start">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">GPS Location</div>
+          <div className="text-sm font-semibold text-primary">GPS location</div>
           <OfficeLocationPicker
             latitude={activeOffice.gps?.latitude}
             longitude={activeOffice.gps?.longitude}
@@ -305,22 +310,21 @@ export default function AdminOfficePanel({
               updateDraft('gps.longitude', longitude)
             }}
           />
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50 disabled:opacity-50"
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
               disabled={locationLoading}
               onClick={handleUseMyLocation}
-              type="button"
+              variant="secondary"
             >
-              {locationLoading ? 'Getting location…' : '📍 Use my location'}
-            </button>
+              <Icon name="location" />{locationLoading ? 'Getting location…' : 'Use my location'}
+            </Button>
             {locationNotice && (
               <span className="self-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
                 {locationNotice}
               </span>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             <NumberInput
               label="Latitude"
               value={activeOffice.gps?.latitude}
@@ -337,10 +341,11 @@ export default function AdminOfficePanel({
               onChange={v => updateDraft('gps.radiusMeters', v)}
             />
           </div>
-          <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">WiFi SSIDs (optional)</div>
+          <div className="rounded-surface border border-line bg-canvas p-3">
+            <div className="mb-2 text-sm font-semibold text-primary">WiFi SSIDs (optional)</div>
             <p className="mb-2 text-xs text-muted">Comma-separated. Leave blank to skip WiFi check.</p>
             <input
+              aria-label="WiFi SSIDs"
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
               onChange={e => updateDraft('wifiSsid', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
               placeholder="DILG-Main, DILG-Guest"
@@ -351,7 +356,7 @@ export default function AdminOfficePanel({
 
         {/* ── SCHEDULE + WFH + COOLDOWNS ── */}
         <div className="grid gap-3 content-start">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Work Schedule</div>
+          <div className="text-sm font-semibold text-primary">Work schedule</div>
 
           {/* Schedule label */}
           <Field label="Schedule label">
@@ -364,11 +369,11 @@ export default function AdminOfficePanel({
           </Field>
 
           {/* Session times — 2×2 grid, no scroll */}
-          <div className="rounded-[1.25rem] border border-black/5 bg-stone-50 p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">
+          <div className="rounded-surface border border-line bg-canvas p-3">
+            <div className="mb-2 text-sm font-semibold text-primary">
               Session times
               <span className="ml-2 text-muted font-normal">
-                {formatTime(wp.morningIn)} → {formatTime(wp.morningOut)} | {formatTime(wp.afternoonIn)} → {formatTime(wp.afternoonOut)}
+                {formatTime(wp.morningIn)} to {formatTime(wp.morningOut)} | {formatTime(wp.afternoonIn)} to {formatTime(wp.afternoonOut)}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -380,7 +385,7 @@ export default function AdminOfficePanel({
           </div>
 
           {/* Working days & WFH days — side by side */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <DayToggle
               label="Working days"
               activeValues={wp.workingDays || []}

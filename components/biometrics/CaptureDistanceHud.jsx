@@ -1,6 +1,6 @@
 'use client'
 
-import { motion } from 'framer-motion'
+import { Status } from '@/components/ui'
 import {
   CAPTURE_DISTANCE_METER_READY_END,
   CAPTURE_DISTANCE_METER_READY_START,
@@ -10,21 +10,21 @@ import {
 function resolveTone(status) {
   if (status === 'ready') {
     return {
-      badge: 'border-emerald-400/24 bg-emerald-400/14 text-emerald-50',
-      marker: 'bg-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.48)]',
+      status: 'active',
+      marker: 'bg-emerald-300',
     }
   }
 
   if (status === 'not-detected') {
     return {
-      badge: 'border-white/12 bg-white/8 text-white/74',
+      status: 'neutral',
       marker: 'bg-white/80',
     }
   }
 
   return {
-    badge: 'border-amber-400/24 bg-amber-400/14 text-amber-50',
-    marker: 'bg-amber-300 shadow-[0_0_14px_rgba(252,211,77,0.38)]',
+    status: 'warning',
+    marker: 'bg-amber-300',
   }
 }
 
@@ -35,15 +35,10 @@ export default function CaptureDistanceHud({ guidance, faceAreaRatio, className 
   const nearWidth = 100 - CAPTURE_DISTANCE_METER_READY_END
 
   return (
-    <motion.div
-      animate={{ opacity: 1, y: 0 }}
-      className={className}
-      initial={{ opacity: 0, y: 12 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-    >
-      <div className="rounded-full border border-white/12 bg-black/50 px-3 py-2 text-white shadow-[0_14px_30px_rgba(0,0,0,0.24)] backdrop-blur-xl">
+    <div className={className}>
+      <div className="rounded-control border border-white/20 bg-black/80 px-3 py-2 text-white">
         <div className="flex items-center gap-2.5">
-          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/44">
+          <span className="shrink-0 text-xs font-medium text-white/70">
             Distance
           </span>
 
@@ -63,11 +58,9 @@ export default function CaptureDistanceHud({ guidance, faceAreaRatio, className 
             <span className="text-[10px] font-medium text-white/38">Near</span>
           </div>
 
-          <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold ${tone.badge}`}>
-            {resolvedGuidance.label}
-          </span>
+          <Status tone={tone.status}>{resolvedGuidance.label}</Status>
         </div>
       </div>
-    </motion.div>
+    </div>
   )
 }

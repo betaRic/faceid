@@ -1,7 +1,7 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import AdminOfficePanel from '@/components/AdminOfficePanel'
+import { Button, LoadingState, PageHeader, Surface } from '@/components/ui'
 
 export default function OfficeEditorModal({
   activeOffice,
@@ -23,46 +23,25 @@ export default function OfficeEditorModal({
 }) {
   if (!activeOffice) return null
 
+  const title = activeOffice.id ? 'Edit office' : 'Add office'
   const saveDisabled = savePending || !officeDraftDirty
 
   return (
-    <section className="h-full min-h-0 bg-white p-3 sm:p-6">
-      <motion.div
-        animate={{ opacity: 1, scale: 1 }}
-        className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-sm"
-        initial={{ opacity: 0, scale: 0.97 }}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-black/5 px-5 py-4 sm:px-6">
-          <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">
-              {activeOffice?.id ? 'Edit office' : 'Add office'}
-            </div>
-            <div className="mt-1 truncate text-sm text-muted">
-              {activeOffice?.name || 'Create a new office configuration'}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-navy px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={saveDisabled}
-              onClick={handleSaveOffice}
-              type="button"
-              title={!officeDraftDirty && !savePending ? 'No changes to save' : undefined}
-            >
-              {savePending
-                ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving…</>
-                : (saveLabel || 'Save changes')}
-            </button>
-            <button
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100 disabled:opacity-50"
-              disabled={savePending}
-              onClick={handleCancel}
-              type="button"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+    <section className="h-full min-h-0">
+      <Surface className="relative flex h-full min-h-0 flex-col overflow-hidden">
+        <PageHeader
+          actions={(
+            <>
+              <Button disabled={saveDisabled} onClick={handleSaveOffice} title={!officeDraftDirty && !savePending ? 'No changes to save' : undefined}>
+                {savePending ? 'Saving…' : (saveLabel || 'Save changes')}
+              </Button>
+              <Button disabled={savePending} onClick={handleCancel} variant="secondary">Close</Button>
+            </>
+          )}
+          className="border-b border-line px-4 py-4 sm:px-6"
+          description={activeOffice.name || 'Create a new office configuration'}
+          title={title}
+        />
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           <AdminOfficePanel
@@ -81,15 +60,14 @@ export default function OfficeEditorModal({
         </div>
 
         {savePending ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-black/5 bg-white px-6 py-5 shadow-xl">
-              <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-navy border-t-transparent" />
-              <div className="text-sm font-semibold text-ink">Saving office settings…</div>
-              <div className="text-xs text-muted">Don't close this window.</div>
-            </div>
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface/90 px-4" role="status">
+            <Surface className="px-5 py-4">
+              <LoadingState label="Saving office settings…" />
+              <p className="mt-2 text-xs text-secondary">Keep this page open until saving finishes.</p>
+            </Surface>
           </div>
         ) : null}
-      </motion.div>
+      </Surface>
     </section>
   )
 }

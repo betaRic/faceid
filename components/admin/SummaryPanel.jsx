@@ -6,6 +6,7 @@ import AttendanceOverrideModal from './AttendanceOverrideModal'
 import DtrModal from './summary/DtrModal'
 import SummaryFilters from './summary/SummaryFilters'
 import SummaryTable from './summary/SummaryTable'
+import { PageHeader } from '@/components/ui'
 
 function SummaryPanelInner() {
   const {
@@ -37,7 +38,8 @@ function SummaryPanelInner() {
   }
 
   return (
-    <section className="flex min-h-0 flex-col gap-2 bg-white p-3 sm:p-4 md:h-full md:overflow-hidden">
+    <section className="flex min-h-0 flex-col gap-4 md:h-full md:overflow-hidden">
+      <PageHeader description="Review daily records, correct audited entries, and generate CSC Form 48 workbooks." title="Attendance summary" />
       <SummaryFilters
         summaryDate={summaryDate}
         summaryEmployeeFilter={summaryEmployeeFilter}

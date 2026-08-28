@@ -7,8 +7,29 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertSafeTestDatabaseUrl, canonicalDataDirectory, migrateTestDatabase } from './test-database.mjs'
 import { sameOriginRequest } from './route-request.mjs'
+import { loadRepoEnv } from '../../scripts/lib/load-local-env.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+
+test('loadRepoEnv prefers development-local settings for local scripts', async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'faceid-local-env-'))
+  const key = 'FACEID_LOCAL_ENV_PRIORITY_TEST'
+  const originalValue = process.env[key]
+  try {
+    delete process.env[key]
+    await writeFile(path.join(fixtureRoot, '.env'), `${key}=production\n`)
+    await writeFile(path.join(fixtureRoot, '.env.development.local'), `${key}=local\n`)
+
+    const result = loadRepoEnv({ cwd: fixtureRoot })
+
+    assert.equal(process.env[key], 'local')
+    assert.deepEqual(result.loadedFiles, ['.env', '.env.development.local'])
+  } finally {
+    if (originalValue === undefined) delete process.env[key]
+    else process.env[key] = originalValue
+    await rm(fixtureRoot, { recursive: true, force: true })
+  }
+})
 
 test('accepts only loopback faceid_rc databases', () => {
   const url = assertSafeTestDatabaseUrl('postgres://postgres@127.0.0.1:55432/faceid_rc_local')
@@ -421,7 +442,7 @@ test('route loader resolves extensionless local imports below an alias import', 
     '--loader', loaderUrl,
     '--input-type=module',
     '--eval',
-    "await import('@/app/api/system/status/route.js')",
+    "await import('@/app/api/admin/biometric-benchmark/route.js')",
   ], {
     cwd: projectRoot,
     env: {
@@ -434,6 +455,13 @@ test('route loader resolves extensionless local imports below an alias import', 
   })
 
   assert.equal(result.status, 0, result.stderr)
+})
+
+test('obsolete system status route is removed', async () => {
+  await assert.rejects(
+    stat(path.join(projectRoot, 'app', 'api', 'system', 'status', 'route.js')),
+    error => error?.code === 'ENOENT',
+  )
 })
 
 test('route test runner requires the controller IPv4 test-cluster URL', () => {

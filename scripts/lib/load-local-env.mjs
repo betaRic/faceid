@@ -16,7 +16,7 @@ export function loadRepoEnv(options = {}) {
   const cwd = options.cwd || process.cwd()
   const files = Array.isArray(options.files) && options.files.length > 0
     ? options.files
-    : ['.env', '.env.local']
+    : ['.env', '.env.local', '.env.development.local']
   const protectedKeys = new Set(Object.keys(process.env))
   const loadedFiles = []
 

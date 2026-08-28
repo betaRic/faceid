@@ -1,8 +1,8 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import { useEffect, useMemo } from 'react'
 import { formatAttendanceTimeLabel } from '@/lib/attendance-time'
+import { Button, Icon, Status } from '@/components/ui'
 
 const AUTO_RETURN_MS = 2200
 
@@ -20,6 +20,8 @@ export default function KioskSuccessScreen({
 }) {
   const recordedTime = useMemo(() => getRecordedTime(currentMatch), [currentMatch])
   const employeeName = String(currentMatch?.name || 'Employee').trim()
+  const alreadyRecorded = currentMatch?.resultState === 'already-recorded'
+  const resultTone = alreadyRecorded ? 'warning' : 'success'
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -30,17 +32,14 @@ export default function KioskSuccessScreen({
 
   return (
     <div className="absolute inset-0 z-[6] grid place-items-center bg-white px-5 py-6">
-      <motion.div
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="grid w-full max-w-md justify-items-center text-center"
-        initial={{ opacity: 0, scale: 0.98, y: 10 }}
-        transition={{ duration: 0.18, ease: 'easeOut' }}
-      >
-        <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-          <svg className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 6L9 17l-5-5" />
-          </svg>
+      <div className="grid w-full max-w-md justify-items-center text-center">
+        <div
+          className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full ${alreadyRecorded ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}
+          data-tone={resultTone}
+        >
+          <Icon name={alreadyRecorded ? 'clock' : 'check'} size={36} strokeWidth={2.5} />
         </div>
+        <Status tone={resultTone}>{alreadyRecorded ? 'Already recorded' : 'Attendance recorded'}</Status>
 
         <div className="font-display text-[clamp(3.5rem,13vw,7rem)] font-bold leading-none text-ink">
           {recordedTime}
@@ -49,14 +48,14 @@ export default function KioskSuccessScreen({
           {employeeName}
         </div>
 
-        <button
-          className="mt-10 rounded-full bg-navy px-8 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-navy/90"
+        <Button
+          className="mt-10"
           onClick={onBack}
           type="button"
         >
           Scan next
-        </button>
-      </motion.div>
+        </Button>
+      </div>
     </div>
   )
 }

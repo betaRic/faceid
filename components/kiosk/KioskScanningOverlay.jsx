@@ -2,6 +2,7 @@ import { OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
 import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
 import { toCompactGuideLabel } from '@/lib/biometrics/compact-guide-copy'
+import { Icon } from '@/components/ui'
 
 const OVAL_STYLE = { borderRadius: '44% / 34%' }
 
@@ -26,33 +27,19 @@ export default function KioskScanningOverlay({
   const showLiveVideo = !hasCapturedFrame
 
   const ringState = isVerifying
-    ? 'ring-2 ring-blue-400/80 shadow-[0_0_30px_rgba(59,130,246,0.3)]'
+    ? 'ring-2 ring-blue-400/80'
     : isConfirmed
-        ? 'ring-2 ring-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+        ? 'ring-2 ring-emerald-400/80'
         : isBlocked || isUnknown
           ? 'ring-2 ring-red-400/80'
           : isScanning
-            ? 'ring-2 ring-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.18)]'
+            ? 'ring-2 ring-emerald-400/40'
             : 'ring-1 ring-white/18'
-
-  const statusMessage = isVerifying
-    ? 'Verifying...'
-    : isConfirmed
-        ? 'Verified'
-        : isBlocked
-          ? 'Try again'
-          : isUnknown
-            ? 'Face not recognized'
-            : isScanning
-              ? 'Face detected — hold steady'
-              : camera.camOn
-                ? 'Ready — look at camera'
-                : 'Camera off'
 
   const guideTitle = isVerifying
       ? 'Verifying'
       : isScanning
-        ? toCompactGuideLabel(faceDistanceInfo?.isCaptureReady ? 'Hold steady' : faceDistanceInfo?.label, 'Adjust distance')
+        ? (faceDistanceInfo?.isCaptureReady ? 'Hold steady' : 'Adjust distance')
         : toCompactGuideLabel(faceDistanceInfo?.label, 'Center face')
 
   const guideTone = isVerifying
@@ -63,16 +50,17 @@ export default function KioskScanningOverlay({
 
   return (
     <>
-      <div className="absolute inset-0 z-[0] bg-[radial-gradient(circle_at_top,rgba(17,133,108,0.12),transparent_40%),linear-gradient(180deg,rgba(2,8,7,0.96),rgba(5,8,8,0.99))]" />
+      <div className="absolute inset-0 z-[0] bg-neutral-950" />
 
       <div className="absolute inset-x-0 top-3 z-[4] px-3 sm:top-4 sm:px-4">
         <div className="mx-auto flex w-full max-w-[24rem] flex-col gap-2 sm:max-w-none sm:flex-row sm:items-start sm:justify-between">
           <div className="grid grid-cols-2 gap-2 sm:w-auto sm:min-w-[14rem] sm:grid-cols-1">
-            <div className="rounded-full border border-white/12 bg-slate-950/58 px-3 py-2 text-left shadow-lg backdrop-blur-xl">
+            <div className="rounded-control border border-white/20 bg-black/75 px-3 py-2 text-left">
               <div className="truncate text-[11px] font-semibold text-white/92">{locationBadgeLabel}</div>
             </div>
-            <div className="rounded-full border border-white/12 bg-slate-950/58 px-3 py-2 text-right shadow-lg backdrop-blur-xl sm:hidden">
+            <div className="rounded-control border border-white/20 bg-black/75 px-3 py-2 text-right sm:hidden">
               <div className="font-display text-sm leading-none text-white">{clock}</div>
+              <div className="mt-1 text-[10px] text-white/70">{dateStr}</div>
             </div>
           </div>
 
@@ -84,8 +72,9 @@ export default function KioskScanningOverlay({
             />
           ) : null}
 
-          <div className="hidden rounded-full border border-white/12 bg-slate-950/58 px-3 py-2 text-right shadow-lg backdrop-blur-xl sm:block sm:min-w-[10rem]">
+          <div className="hidden rounded-control border border-white/20 bg-black/75 px-3 py-2 text-right sm:block sm:min-w-[10rem]">
             <div className="font-display text-sm leading-none text-white sm:text-base">{clock}</div>
+            <div className="mt-1 text-[10px] text-white/70">{dateStr}</div>
           </div>
         </div>
       </div>
@@ -99,7 +88,7 @@ export default function KioskScanningOverlay({
           }}
         >
           <div
-            className={`absolute inset-0 shadow-[0_30px_80px_rgba(0,0,0,0.38)] transition-all duration-300 ${ringState}`}
+            className={`absolute inset-0 transition-colors duration-300 ${ringState}`}
             style={OVAL_STYLE}
           />
           <div className="absolute inset-[2px] overflow-hidden bg-black" style={OVAL_STYLE}>
@@ -120,18 +109,7 @@ export default function KioskScanningOverlay({
               />
             )}
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,transparent,rgba(0,0,0,0.1)_54%,rgba(0,0,0,0.36)_100%)]" />
-            {(isScanning || isVerifying) ? (
-              <div aria-hidden="true" className={`scan-visual ${isVerifying ? 'scan-visual--verifying' : ''}`}>
-                <div className="scan-visual__grid" />
-                <div className="scan-visual__sweep" />
-                <div className="scan-visual__target" />
-                <span className="scan-visual__corner scan-visual__corner--tl" />
-                <span className="scan-visual__corner scan-visual__corner--tr" />
-                <span className="scan-visual__corner scan-visual__corner--bl" />
-                <span className="scan-visual__corner scan-visual__corner--br" />
-              </div>
-            ) : null}
+            <div aria-hidden="true" className="absolute inset-0 border border-white/15" style={OVAL_STYLE} />
           </div>
         </div>
       </div>
@@ -149,7 +127,7 @@ export default function KioskScanningOverlay({
 
       {!camera.camOn && (
         <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center text-white">
-          <div className="text-5xl opacity-60">◈</div>
+          <Icon name="scan" size={42} />
           <div className="text-sm font-medium">{camera.camError || 'Camera idle'}</div>
         </div>
       )}

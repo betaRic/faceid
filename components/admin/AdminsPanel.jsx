@@ -1,281 +1,118 @@
 'use client'
 
 import { memo, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useAdmins, useHrUsers } from '@/lib/admin/hooks'
 import { useAdminStore } from '@/lib/admin/store'
-import { StatusBadge } from '@/components/shared/ui'
+import { Button, EmptyState, LoadingState, PageHeader, ResponsiveRecordList, Select, Status, TableFrame } from '@/components/ui'
 import { AddRoleModal } from './AddRoleModal'
 
 function AdminsPanelInner() {
-  const roleScope = useAdminStore((state) => state.roleScope)
+  const { roleScope, offices } = useAdminStore(useShallow((state) => ({ roleScope: state.roleScope, offices: state.offices || [] })))
   const { admins, adminsLoaded, handleCreateAdmin, handleUpdateAdmin, handleDeleteAdmin, isPending } = useAdmins()
   const { hrUsers, hrUsersLoaded, createHrUser, updateHrUser, deleteHrUser, isPending: isHrPending } = useHrUsers()
   const [showAddModal, setShowAddModal] = useState(false)
   const [filterRole, setFilterRole] = useState('all')
 
   if (roleScope !== 'regional') {
-    return (
-      <section className="flex min-h-64 items-center justify-center bg-white p-6 md:h-full">
-        <div className="rounded-xl border border-dashed border-black/10 bg-stone-50 px-8 py-6 text-center text-sm text-muted">
-          Only regional admins can manage admin accounts.
-        </div>
-      </section>
-    )
+    return <EmptyState className="my-auto" description="Only Regional administrators can create, disable, or remove administrator and Office HR accounts." title="Regional access required" />
   }
 
   const allUsers = [
-    ...admins.map(a => ({ ...a, userType: 'admin' })),
-    ...hrUsers.map(h => ({ ...h, userType: 'hr', role: 'hr', scope: 'office' })),
+    ...admins.map((user) => ({ ...user, userType: 'admin' })),
+    ...hrUsers.map((user) => ({ ...user, userType: 'hr', role: 'hr', scope: 'office' })),
   ]
-
   const filteredUsers = filterRole === 'all'
     ? allUsers
-    : filterRole === 'hr'
-      ? allUsers.filter(u => u.userType === 'hr')
-      : allUsers.filter(u => u.userType === 'admin' && u.role === filterRole)
+    : allUsers.filter((user) => filterRole === 'hr' ? user.userType === 'hr' : user.userType === 'admin')
+  const loaded = adminsLoaded && hrUsersLoaded
+  const officeName = (officeId) => offices.find((office) => office.id === officeId)?.name || (officeId ? 'Assigned office' : '—')
 
   const handleAddRole = async (data) => {
     if (data.type === 'admin') {
-      await handleCreateAdmin({
-        email: data.email,
-        displayName: data.displayName,
-        scope: data.scope,
-        officeId: data.officeId,
-        pin: data.pin,
-        role: 'admin',
-      })
-    } else if (data.type === 'hr') {
-      await createHrUser({
-        displayName: data.displayName,
-        officeId: data.officeId,
-        pin: data.pin,
-        scope: 'office',
-      })
+      await handleCreateAdmin({ email: data.email, displayName: data.displayName, scope: data.scope, officeId: data.officeId, pin: data.pin, role: 'admin' })
+    } else {
+      await createHrUser({ displayName: data.displayName, officeId: data.officeId, pin: data.pin, scope: 'office' })
     }
     setShowAddModal(false)
   }
 
-  const handleUpdate = async (user, updates, userType) => {
-    if (userType === 'hr') {
-      await updateHrUser(user, updates)
-    } else {
-      await handleUpdateAdmin(user, updates)
-    }
-  }
-
-  const handleDelete = async (user, userType) => {
-    if (userType === 'hr') {
-      await deleteHrUser(user)
-    } else {
-      await handleDeleteAdmin(user)
-    }
-  }
+  const handleUpdate = (user, updates) => user.userType === 'hr' ? updateHrUser(user, updates) : handleUpdateAdmin(user, updates)
+  const handleDelete = (user) => user.userType === 'hr' ? deleteHrUser(user) : handleDeleteAdmin(user)
+  const renderActions = (user) => (
+    <>
+      <Button onClick={() => handleUpdate(user, { active: user.active === false })} variant="secondary">{user.active === false ? 'Enable' : 'Disable'}</Button>
+      <Button onClick={() => handleDelete(user)} variant="destructive">Delete</Button>
+    </>
+  )
+  const mobileRecords = filteredUsers.map((user) => ({
+    ...user,
+    id: `${user.userType}-${user.id}`,
+    fields: [
+      { label: 'Account', value: <><strong className="block">{user.displayName || user.email}</strong><span className="text-xs text-secondary">{user.email || 'PIN sign-in'}</span></> },
+      { label: 'Role', value: user.userType === 'hr' ? 'Office HR' : 'Administrator' },
+      { label: 'Scope', value: user.scope === 'regional' ? 'Regional' : 'Office' },
+      { label: 'Office', value: user.scope === 'regional' ? 'All offices' : officeName(user.officeId) },
+      { label: 'Status', value: <Status tone={user.active === false ? 'neutral' : 'success'}>{user.active === false ? 'Disabled' : 'Active'}</Status> },
+    ],
+  }))
 
   return (
-    <section className="flex min-h-0 flex-col gap-3 bg-white p-3 sm:p-4 md:h-full md:overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setFilterRole('all')}
-            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-              filterRole === 'all' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
-            }`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilterRole('admin')}
-            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-              filterRole === 'admin' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
-            }`}
-          >
-            Admins
-          </button>
-          <button
-            onClick={() => setFilterRole('hr')}
-            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-              filterRole === 'hr' ? 'bg-navy text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'
-            }`}
-          >
-            HR
-          </button>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="w-full rounded-xl bg-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-navy-dark sm:w-auto sm:py-2.5"
-        >
-          + Add Role
-        </button>
-      </div>
+    <section className="flex min-h-0 flex-col gap-4 md:h-full">
+      <PageHeader title="Roles and access" description="Regional control of administrator and Office HR accounts. PIN values are never shown after creation." actions={<Button onClick={() => setShowAddModal(true)}>Add role</Button>} />
 
-      <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">
-        <div className="divide-y divide-black/5 bg-white lg:hidden">
-          {(!adminsLoaded || !hrUsersLoaded) ? (
-            <div className="px-4 py-8 text-center text-sm text-muted">Loading...</div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted">No records found.</div>
-          ) : (
-            filteredUsers.map((user) => (
-              <div key={user.id} className="grid gap-3 px-4 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-base font-semibold text-ink">{user.displayName || user.email}</div>
-                    <div className="mt-1 text-xs text-muted">{user.email || 'No email'}</div>
-                  </div>
-                  <StatusBadge active={user.active !== false} />
-                </div>
+      <nav aria-label="Role filters" className="flex flex-wrap gap-2">
+        {[
+          ['all', 'All'],
+          ['admin', 'Administrators'],
+          ['hr', 'Office HR'],
+        ].map(([value, label]) => (
+          <Button aria-pressed={filterRole === value} key={value} onClick={() => setFilterRole(value)} variant={filterRole === value ? 'primary' : 'secondary'}>{label}</Button>
+        ))}
+      </nav>
 
-                <div className="grid gap-2 text-sm sm:grid-cols-2">
-                  <div className="rounded-xl bg-stone-50 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-widest text-muted">Role</div>
-                    <div className="mt-1">
-                      {user.userType === 'hr' ? (
-                        <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">HR</span>
-                      ) : (
-                        <select
-                          className="w-full rounded-xl border border-black/10 bg-white px-2 py-2 text-xs outline-none transition focus:border-navy capitalize"
-                          onChange={(e) => handleUpdate(user, { role: e.target.value }, user.userType)}
-                          value={user.role || 'admin'}
-                        >
-                          <option value="admin">Admin</option>
-                          <option value="hr">HR</option>
-                        </select>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl bg-stone-50 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-widest text-muted">Scope</div>
-                    <div className="mt-1">
-                      {user.userType === 'hr' ? (
-                        <span className="text-sm text-ink">Office</span>
-                      ) : (
-                        <select
-                          className="w-full rounded-xl border border-black/10 bg-white px-2 py-2 text-xs outline-none transition focus:border-navy"
-                          onChange={(e) => handleUpdate(user, { scope: e.target.value, officeId: e.target.value === 'office' ? (user.officeId || '') : '' }, user.userType)}
-                          value={user.scope}
-                        >
+      {!loaded ? <LoadingState>Loading accounts…</LoadingState> : null}
+      {loaded && filteredUsers.length === 0 ? <EmptyState title="No matching accounts" /> : null}
+      {loaded && filteredUsers.length > 0 ? (
+        <>
+          <ResponsiveRecordList className="lg:hidden" records={mobileRecords} renderActions={renderActions} />
+          <TableFrame className="hidden lg:block">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-canvas text-secondary">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Account</th>
+                  <th className="px-4 py-3 font-medium">Role</th>
+                  <th className="px-4 py-3 font-medium">Scope</th>
+                  <th className="px-4 py-3 font-medium">Office</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {filteredUsers.map((user) => (
+                  <tr key={`${user.userType}-${user.id}`}>
+                    <td className="px-4 py-3"><strong className="block text-foreground">{user.displayName || user.email}</strong><span className="text-xs text-secondary">{user.email || 'PIN sign-in'}</span></td>
+                    <td className="px-4 py-3">{user.userType === 'hr' ? 'Office HR' : 'Administrator'}</td>
+                    <td className="px-4 py-3">
+                      {user.userType === 'hr' ? 'Office' : (
+                        <Select aria-label={`Scope for ${user.displayName || user.email}`} className="min-w-32" value={user.scope} onChange={(event) => handleUpdate(user, { scope: event.target.value, officeId: event.target.value === 'office' ? (user.officeId || '') : '' })}>
                           <option value="office">Office</option>
                           <option value="regional">Regional</option>
-                        </select>
+                        </Select>
                       )}
-                    </div>
-                  </div>
-                </div>
+                    </td>
+                    <td className="px-4 py-3">{user.scope === 'regional' ? 'All offices' : officeName(user.officeId)}</td>
+                    <td className="px-4 py-3"><Status tone={user.active === false ? 'neutral' : 'success'}>{user.active === false ? 'Disabled' : 'Active'}</Status></td>
+                    <td className="px-4 py-3"><div className="flex flex-wrap gap-2">{renderActions(user)}</div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableFrame>
+        </>
+      ) : null}
 
-                <div className="flex flex-wrap gap-2 text-xs text-muted">
-                  <span>{user.officeId ? 'Assigned office' : 'No office assigned'}</span>
-                  <span>{user.userType === 'hr' ? 'HR user' : 'Admin user'}</span>
-                </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
-                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${user.active !== false ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
-                    onClick={() => handleUpdate(user, { active: !user.active }, user.userType)}
-                    type="button"
-                  >
-                    {user.active !== false ? 'Disable' : 'Enable'}
-                  </button>
-                  <button
-                    className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-stone-100"
-                    onClick={() => handleDelete(user, user.userType)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <table className="hidden w-full text-left text-sm lg:table">
-          <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
-            <tr>
-              <th className="px-5 py-3">User</th>
-              <th className="px-5 py-3">Role</th>
-              <th className="px-5 py-3">Scope</th>
-              <th className="px-5 py-3">Office</th>
-              <th className="px-5 py-3">Status</th>
-              <th className="px-5 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-black/5 bg-white">
-            {(!adminsLoaded || !hrUsersLoaded) ? (
-              <tr><td className="px-5 py-8 text-center text-muted" colSpan={6}>Loading...</td></tr>
-            ) : filteredUsers.length === 0 ? (
-              <tr><td className="px-5 py-8 text-center text-muted" colSpan={6}>No records found.</td></tr>
-            ) : (
-              filteredUsers.map((user) => (
-                <tr key={user.id} className="bg-white">
-                  <td className="px-5 py-3">
-                    <div className="font-medium text-ink">{user.displayName || user.email}</div>
-                    <div className="text-xs text-muted">{user.email || 'No email'}</div>
-                  </td>
-                  <td className="px-5 py-3">
-                    {user.userType === 'hr' ? (
-                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">HR</span>
-                    ) : (
-                      <select
-                        className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy capitalize"
-                        onChange={(e) => handleUpdate(user, { role: e.target.value }, user.userType)}
-                        value={user.role || 'admin'}
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="hr">HR</option>
-                      </select>
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
-                    {user.userType === 'hr' ? (
-                      <span className="text-xs text-muted">Office</span>
-                    ) : (
-                      <select
-                        className="w-full rounded-xl border border-black/10 bg-white px-2 py-1 text-xs outline-none transition focus:border-navy"
-                        onChange={(e) => handleUpdate(user, { scope: e.target.value, officeId: e.target.value === 'office' ? (user.officeId || '') : '' }, user.userType)}
-                        value={user.scope}
-                      >
-                        <option value="office">Office</option>
-                        <option value="regional">Regional</option>
-                      </select>
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="text-xs text-muted">{user.officeId ? 'Assigned' : '-'}</span>
-                  </td>
-                  <td className="px-5 py-3"><StatusBadge active={user.active !== false} /></td>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${user.active !== false ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
-                        onClick={() => handleUpdate(user, { active: !user.active }, user.userType)}
-                        type="button"
-                      >
-                        {user.active !== false ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-ink hover:bg-stone-100"
-                        onClick={() => handleDelete(user, user.userType)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <AddRoleModal
-        adminPending={isPending('admin-create')}
-        hrPending={isHrPending('hr-user-create')}
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onSubmit={handleAddRole}
-      />
+      <AddRoleModal adminPending={isPending('admin-create')} hrPending={isHrPending('hr-user-create')} isOpen={showAddModal} onClose={() => setShowAddModal(false)} onSubmit={handleAddRole} />
     </section>
   )
 }

@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAudioCue } from '@/hooks/useAudioCue'
 import { useKioskState } from '@/hooks/useKioskState'
@@ -13,6 +12,7 @@ import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
 import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
 import { clearAttendanceMatch, saveAttendanceMatch } from '@/lib/attendance-match'
+import { Button, Dialog, Field, Input, Select, Surface, Textarea } from '@/components/ui'
 
 const FIELD_DUTY_REASONS = ['Official Meeting', 'Field Work', 'Training / Seminar', 'Official Travel', 'Emergency / Other']
 
@@ -238,39 +238,29 @@ export default function KioskView({
         showFooter={false}
       >
         <div className="page-frame h-full min-h-0">
-          <motion.section
-            animate={{ opacity: 1, y: 0 }}
-            className="grid h-full min-h-0 place-items-center overflow-hidden rounded-[1.4rem] border border-black/5 bg-white px-4 py-6 shadow-glow sm:rounded-[1.75rem]"
-            initial={{ opacity: 0, y: 18 }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-          >
+          <Surface className="grid h-full min-h-0 place-items-center overflow-hidden px-4 py-6">
             <form className="grid w-full max-w-sm gap-4" onSubmit={handleConfirmEmployeeId}>
               <div className="text-center">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-navy-dark">Face Scan</div>
-                <h1 className="mt-2 font-display text-3xl font-bold text-ink">VeriFace Access Code</h1>
+                <h1 className="text-3xl font-semibold text-foreground">VeriFace access code</h1>
+                <p className="mt-2 text-sm text-secondary">Enter the four-digit code issued after enrollment.</p>
               </div>
 
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Four-digit access code</span>
-                <input
-                  autoCapitalize="characters"
+              <Field error={employeeIdError} label="Four-digit access code" required>
+                <Input
                   autoComplete="username"
                   autoFocus
-                  className={`input h-14 text-center font-display text-xl tracking-[0.08em] ${employeeIdError ? 'border-amber-400' : ''}`}
-                  inputMode="text"
+                  className="h-14 text-center text-xl tracking-[0.08em]"
+                  inputMode="numeric"
                   onChange={handleEmployeeIdChange}
                   placeholder="0000"
                   type="text"
                   value={employeeIdInput}
                 />
-                {employeeIdError ? <span className="text-center text-xs font-medium text-amber-600">{employeeIdError}</span> : null}
-              </label>
+              </Field>
 
-              <button className="btn btn-primary h-12 w-full" type="submit">
-                Continue to Scan
-              </button>
+              <Button className="w-full" type="submit">Continue to scan</Button>
             </form>
-          </motion.section>
+          </Surface>
         </div>
       </AppShell>
     )
@@ -283,12 +273,12 @@ export default function KioskView({
           <span className="hidden max-w-[8rem] truncate rounded-full border border-navy/10 bg-white px-3 py-1.5 text-xs font-semibold text-navy sm:inline">
             {claimedEmployeeId}
           </span>
-          <button className="btn btn-ghost px-3 py-2 text-xs" onClick={handleChangeEmployeeId} type="button">
+          <Button onClick={handleChangeEmployeeId} variant="quiet">
             Change code
-          </button>
-          <button className={`btn px-3 py-2 text-xs ${fieldDutyReason && fieldDutyRemarks.trim() ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFieldDutyOpen(true)} type="button">
+          </Button>
+          <Button onClick={() => setFieldDutyOpen(true)} variant={fieldDutyReason && fieldDutyRemarks.trim() ? 'primary' : 'secondary'}>
             {fieldDutyReason ? 'Field Duty set' : 'Offsite / Field Duty'}
-          </button>
+          </Button>
         </div>
       )}
       fitViewport
@@ -297,12 +287,7 @@ export default function KioskView({
       showFooter={false}
     >
       <div className="page-frame h-full min-h-0">
-        <motion.section
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 18 }}
-          transition={{ duration: 0.35, ease: 'easeOut' }}
-          className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-[1.4rem] border border-black/5 shadow-glow sm:rounded-[1.75rem] ${showResultScreen ? 'bg-white' : 'bg-black'}`}
-        >
+        <section className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-surface border border-line ${showResultScreen ? 'bg-white' : 'bg-black'}`}>
           {showResultScreen ? (
             <KioskSuccessScreen
               currentMatch={currentMatch}
@@ -326,31 +311,32 @@ export default function KioskView({
           )}
           <KioskAlert alertState={alertState} />
           {errorMessage ? (
-            <div className="absolute inset-x-3 bottom-3 z-[4] rounded-2xl bg-red-50/95 px-4 py-3 text-sm text-warn shadow-lg backdrop-blur sm:inset-x-5 sm:bottom-5">
+            <div className="absolute inset-x-3 bottom-3 z-[4] rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-destructive sm:inset-x-5 sm:bottom-5" role="alert">
               {errorMessage}
             </div>
           ) : null}
-        </motion.section>
+        </section>
       </div>
-      {fieldDutyOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/45 p-4 sm:items-center sm:justify-center">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <h2 className="text-lg font-bold text-navy">Offsite / Field Duty</h2>
-            <p className="mt-1 text-sm text-slate">Use only for official work outside a DILG office. Your scan time and actual GPS location will be recorded and sent to HR/Admin for approval.</p>
-            <label className="mt-4 block text-xs font-semibold uppercase tracking-wider text-muted">Reason</label>
-            <select className="input mt-1 w-full" value={fieldDutyReason} onChange={event => setFieldDutyReason(event.target.value)}>
+      <Dialog
+        open={fieldDutyOpen}
+        title="Offsite / field duty"
+        onClose={() => setFieldDutyOpen(false)}
+        footer={(
+          <>
+            <Button onClick={() => setFieldDutyOpen(false)} variant="secondary">Cancel</Button>
+            <Button disabled={!fieldDutyReason || !fieldDutyRemarks.trim()} onClick={() => setFieldDutyOpen(false)}>Use for scan</Button>
+          </>
+        )}
+      >
+            <p className="text-sm leading-6 text-secondary">Use only for official work outside a DILG office. Scan time and actual GPS position are recorded for HR/Admin review.</p>
+            <div className="mt-4 grid gap-4">
+            <Field label="Reason" required><Select value={fieldDutyReason} onChange={event => setFieldDutyReason(event.target.value)}>
               <option value="">Select reason</option>
               {FIELD_DUTY_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
-            </select>
-            <label className="mt-3 block text-xs font-semibold uppercase tracking-wider text-muted">Remarks</label>
-            <textarea className="input mt-1 min-h-24 w-full" maxLength={500} placeholder="State the meeting, assignment, or official activity." value={fieldDutyRemarks} onChange={event => setFieldDutyRemarks(event.target.value)} />
-            <div className="mt-4 flex justify-end gap-2">
-              <button className="btn btn-ghost" onClick={() => setFieldDutyOpen(false)} type="button">Cancel</button>
-              <button className="btn btn-primary" disabled={!fieldDutyReason || !fieldDutyRemarks.trim()} onClick={() => setFieldDutyOpen(false)} type="button">Use for scan</button>
+            </Select></Field>
+            <Field label="Remarks" hint={`${fieldDutyRemarks.length}/500 characters`} required><Textarea maxLength={500} placeholder="State the meeting, assignment, or official activity." value={fieldDutyRemarks} onChange={event => setFieldDutyRemarks(event.target.value)} /></Field>
             </div>
-          </div>
-        </div>
-      ) : null}
+      </Dialog>
     </AppShell>
   )
 }

@@ -1,112 +1,74 @@
-import { Badge } from '@/components/shared/ui'
-import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
+import {
+  Button, EmptyState, LoadingState, ResponsiveRecordList, Status, TableFrame,
+} from '@/components/ui'
+
+function rowKey(row) {
+  return `${row.personId || row.employeeId || row.name}-${row.dateKey}`
+}
+
+function statusFor(row) {
+  const label = row.status || 'Incomplete'
+  return <Status tone={label === 'Complete' ? 'active' : 'pending'}>{label}</Status>
+}
 
 export default function SummaryTable({ summaryLoading, summaryRows, onEditAttendance }) {
-  return (
-    <div className="rounded-xl border border-black/5 md:min-h-0 md:flex-1 md:overflow-auto">
-      {summaryLoading ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-12">
-          <DilgLoadingIndicator compact label="Loading attendance…" />
-        </div>
-      ) : (
-        <>
-          <div className="divide-y divide-black/5 bg-white md:hidden">
-            {summaryRows.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-muted">
-                No attendance records for this date.
-              </div>
-            ) : (
-              summaryRows.map(row => (
-                <div key={`${row.employeeId}-${row.dateKey}`} className="grid gap-3 px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-base font-semibold text-ink">{row.name}</div>
-                      <div className="mt-1 text-xs uppercase tracking-wider text-muted">{row.employeeId}</div>
-                    </div>
-                    <Badge variant={row.status === 'Complete' ? 'success' : 'warning'}>
-                      {row.status || '--'}
-                    </Badge>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-xl bg-stone-50 px-3 py-2"><span className="block text-[11px] uppercase tracking-widest text-muted">AM In</span>{row.amIn || '--'}</div>
-                    <div className="rounded-xl bg-stone-50 px-3 py-2"><span className="block text-[11px] uppercase tracking-widest text-muted">AM Out</span>{row.amOut || '--'}</div>
-                    <div className="rounded-xl bg-stone-50 px-3 py-2"><span className="block text-[11px] uppercase tracking-widest text-muted">PM In</span>{row.pmIn || '--'}</div>
-                    <div className="rounded-xl bg-stone-50 px-3 py-2"><span className="block text-[11px] uppercase tracking-widest text-muted">PM Out</span>{row.pmOut || '--'}</div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs text-muted">
-                    <span>{row.officeName}</span>
-                    <span>{`Late: ${row.lateMinutes ? `${row.lateMinutes}m` : '--'}`}</span>
-                    <span>{`Hours: ${row.workingHours || '--'}`}</span>
-                  </div>
-                  <button
-                    className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
-                    onClick={() => onEditAttendance(row)}
-                    type="button"
-                  >
-                    Edit attendance
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
+  if (summaryLoading) {
+    return <LoadingState className="justify-center rounded-surface border border-line bg-surface py-12" label="Loading attendance…" />
+  }
 
-          <table className="hidden w-full text-left text-sm md:table">
-            <thead className="sticky top-0 bg-stone-100 text-xs uppercase tracking-widest text-muted">
-              <tr>
-                <th className="px-5 py-3">Employee</th>
-                <th className="px-5 py-3">Office</th>
-                <th className="px-5 py-3">AM In</th>
-                <th className="px-5 py-3">AM Out</th>
-                <th className="px-5 py-3">PM In</th>
-                <th className="px-5 py-3">PM Out</th>
-                <th className="px-5 py-3">Late</th>
-                <th className="px-5 py-3">Hours</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Override</th>
+  if (summaryRows.length === 0) {
+    return <EmptyState description="Change the date or filters to inspect another attendance period." title="No attendance records" />
+  }
+
+  const records = summaryRows.map(row => ({
+    id: rowKey(row), row,
+    fields: [
+      { label: 'Employee', value: <div><strong className="font-semibold">{row.name}</strong><div className="mt-1 text-xs text-secondary">{row.employeeId || 'No Employee ID'}</div></div> },
+      { label: 'Office', value: row.officeName || '—' },
+      { label: 'AM in', value: row.amIn || '—' },
+      { label: 'AM out', value: row.amOut || '—' },
+      { label: 'PM in', value: row.pmIn || '—' },
+      { label: 'PM out', value: row.pmOut || '—' },
+      { label: 'Late', value: row.lateMinutes ? `${row.lateMinutes}m` : '—' },
+      { label: 'Hours', value: row.workingHours || '—' },
+      { label: 'Status', value: statusFor(row) },
+    ],
+  }))
+
+  return (
+    <div className="min-h-0 md:flex-1 md:overflow-y-auto">
+      <ResponsiveRecordList
+        className="md:hidden"
+        records={records}
+        renderActions={record => <Button onClick={() => onEditAttendance(record.row)} variant="secondary">Correct attendance</Button>}
+      />
+      <TableFrame className="hidden md:block">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 border-b border-line bg-canvas text-xs font-medium text-secondary">
+            <tr>
+              <th className="px-4 py-3">Employee</th><th className="px-4 py-3">Office</th>
+              <th className="px-4 py-3">AM in</th><th className="px-4 py-3">AM out</th>
+              <th className="px-4 py-3">PM in</th><th className="px-4 py-3">PM out</th>
+              <th className="px-4 py-3">Late</th><th className="px-4 py-3">Hours</th>
+              <th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {summaryRows.map(row => (
+              <tr className="hover:bg-canvas" key={rowKey(row)}>
+                <td className="px-4 py-3"><div className="font-semibold text-foreground">{row.name}</div><div className="mt-1 text-xs text-secondary">{row.employeeId || 'No Employee ID'}</div></td>
+                <td className="px-4 py-3 text-secondary">{row.officeName || '—'}</td>
+                <td className="px-4 py-3 tabular-nums">{row.amIn || '—'}</td><td className="px-4 py-3 tabular-nums">{row.amOut || '—'}</td>
+                <td className="px-4 py-3 tabular-nums">{row.pmIn || '—'}</td><td className="px-4 py-3 tabular-nums">{row.pmOut || '—'}</td>
+                <td className="px-4 py-3 tabular-nums">{row.lateMinutes ? `${row.lateMinutes}m` : '—'}</td>
+                <td className="px-4 py-3 tabular-nums">{row.workingHours || '—'}</td>
+                <td className="px-4 py-3">{statusFor(row)}</td>
+                <td className="px-4 py-3"><Button onClick={() => onEditAttendance(row)} variant="secondary">Correct</Button></td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5 bg-white">
-              {summaryRows.length === 0 ? (
-                <tr>
-                  <td className="px-5 py-10 text-center text-muted" colSpan={10}>
-                    No attendance records for this date.
-                  </td>
-                </tr>
-              ) : (
-                summaryRows.map(row => (
-                  <tr key={`${row.employeeId}-${row.dateKey}`} className="bg-white">
-                    <td className="px-5 py-3">
-                      <div className="font-medium text-ink">{row.name}</div>
-                      <div className="text-xs uppercase tracking-wider text-muted">{row.employeeId}</div>
-                    </td>
-                    <td className="px-5 py-3 text-muted">{row.officeName}</td>
-                    <td className="px-5 py-3">{row.amIn || '--'}</td>
-                    <td className="px-5 py-3">{row.amOut || '--'}</td>
-                    <td className="px-5 py-3">{row.pmIn || '--'}</td>
-                    <td className="px-5 py-3">{row.pmOut || '--'}</td>
-                    <td className="px-5 py-3">{row.lateMinutes ? `${row.lateMinutes}m` : '--'}</td>
-                    <td className="px-5 py-3">{row.workingHours || '--'}</td>
-                    <td className="px-5 py-3">
-                      <Badge variant={row.status === 'Complete' ? 'success' : 'warning'}>
-                        {row.status || '--'}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3">
-                      <button
-                        className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-stone-100"
-                        onClick={() => onEditAttendance(row)}
-                        type="button"
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </TableFrame>
     </div>
   )
 }

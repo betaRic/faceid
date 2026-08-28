@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useCallback, useEffect, useState } from 'react'
 import { buildEmployeeViewHeaders } from '@/lib/attendance-match'
 import { downloadResponseBlob } from '@/lib/browser-download'
 import {
@@ -11,103 +10,38 @@ import {
   filterAttendanceDaysByRange,
   getDaysInMonth,
 } from '@/lib/dtr'
-
-const ChevronLeftIcon = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 18 9 12 15 6" />
-  </svg>
-)
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Field,
+  FilterBar,
+  Icon,
+  LoadingState,
+  PageHeader,
+  ResponsiveRecordList,
+  Select,
+  TableFrame,
+} from '@/components/ui'
 
 function buildYearOptions(currentYear) {
   const anchorYear = new Date().getFullYear()
   const values = new Set()
-  for (let year = anchorYear - 3; year <= anchorYear + 3; year += 1) {
-    values.add(year)
-  }
+  for (let year = anchorYear - 3; year <= anchorYear + 3; year += 1) values.add(year)
   values.add(currentYear)
   return [...values].sort((left, right) => left - right)
 }
 
 function formatUndertime(minutes) {
-  if (!minutes || minutes === 0) return '--'
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return `${h}h ${m}m`
+  if (!minutes) return '—'
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
-function DayCard({ day }) {
-  const hasData = day.amIn !== '--' || day.pmIn !== '--'
-
-  return (
-    <div className={`rounded-xl border p-3 ${hasData ? 'border-black/5 bg-white' : 'border-black/5 bg-stone-50/50'}`}>
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-bold text-ink">{day.date}</span>
-        {day.undertime > 0 ? (
-          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-            {formatUndertime(day.undertime)}
-          </span>
-        ) : null}
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
-        <div>
-          <span className="text-muted">AM In: </span>
-          <span className="font-mono font-medium text-ink">{day.amIn}</span>
-        </div>
-        <div>
-          <span className="text-muted">AM Out: </span>
-          <span className="font-mono font-medium text-ink">{day.amOut}</span>
-        </div>
-        <div>
-          <span className="text-muted">PM In: </span>
-          <span className="font-mono font-medium text-ink">{day.pmIn}</span>
-        </div>
-        <div>
-          <span className="text-muted">PM Out: </span>
-          <span className="font-mono font-medium text-ink">{day.pmOut}</span>
-        </div>
-      </div>
-    </div>
-  )
+function display(value) {
+  return value || '—'
 }
 
-function FilterField({ label, children }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function StateMessage({ title, message, actionLabel = 'Back to scan', onAction }) {
-  return (
-    <div className="flex h-full items-center justify-center p-4 sm:p-6">
-      <div className="w-full max-w-md rounded-[1.5rem] border border-black/5 bg-white p-5 text-center shadow-sm">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-stone-100 text-navy">
-          <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 8v4l3 3" />
-            <circle cx="12" cy="12" r="9" />
-          </svg>
-        </div>
-        <h3 className="mt-4 text-lg font-semibold text-ink">{title}</h3>
-        <p className="mt-2 text-sm leading-6 text-muted">{message}</p>
-        {onAction ? (
-          <button
-            onClick={onAction}
-            className="mt-5 w-full rounded-2xl bg-navy px-4 py-3 text-sm font-semibold text-white transition hover:bg-navy/90"
-          >
-            {actionLabel}
-          </button>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
-export default function AttendanceTableView({
-  currentMatch,
-  onBack,
-}) {
+export default function AttendanceTableView({ currentMatch, onBack }) {
   const [days, setDays] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -115,20 +49,13 @@ export default function AttendanceTableView({
   const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear())
   const [selectedRange, setSelectedRange] = useState('full')
   const [customStartDay, setCustomStartDay] = useState(1)
-  const [customEndDay, setCustomEndDay] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate())
+  const [customEndDay, setCustomEndDay] = useState(() => getDaysInMonth(new Date().getFullYear(), new Date().getMonth() + 1))
   const [downloading, setDownloading] = useState(false)
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth)
   const yearOptions = buildYearOptions(currentYear)
-  const rangeSpec = buildDtrRangeSpec({
-    month: currentMonth,
-    year: currentYear,
-    range: selectedRange,
-    customStartDay,
-    customEndDay,
-  })
+  const rangeSpec = buildDtrRangeSpec({ month: currentMonth, year: currentYear, range: selectedRange, customStartDay, customEndDay })
   const visibleDays = filterAttendanceDaysByRange(days, rangeSpec)
-  const totalDays = visibleDays.length
   const totalUndertime = visibleDays.reduce((sum, day) => sum + (day.undertime || 0), 0)
 
   useEffect(() => {
@@ -137,10 +64,8 @@ export default function AttendanceTableView({
   }, [daysInMonth])
 
   useEffect(() => {
-    if (customStartDay > customEndDay) {
-      setCustomEndDay(customStartDay)
-    }
-  }, [customStartDay, customEndDay])
+    if (customStartDay > customEndDay) setCustomEndDay(customStartDay)
+  }, [customEndDay, customStartDay])
 
   useEffect(() => {
     if (!currentMatch?.personId && !currentMatch?.employeeId) {
@@ -148,43 +73,38 @@ export default function AttendanceTableView({
       return
     }
 
+    let cancelled = false
     async function fetchData() {
       setLoading(true)
       setError(null)
-
       try {
-        const res = await fetch(
+        const response = await fetch(
           `/api/attendance/table?employeeId=${encodeURIComponent(currentMatch.employeeId || '')}&month=${currentMonth}&year=${currentYear}`,
-          {
-            headers: buildEmployeeViewHeaders(currentMatch),
-            cache: 'no-store',
-          },
+          { headers: buildEmployeeViewHeaders(currentMatch), cache: 'no-store' },
         )
-        const data = await res.json()
+        const data = await response.json()
+        if (cancelled) return
         if (data.ok) {
           setDays(data.days || [])
         } else {
-          setError(
-            res.status === 401 || res.status === 403
-              ? 'Attendance session expired. Scan again on the scan page.'
-              : (data.message || 'Failed to load attendance'),
-          )
+          setError(response.status === 401 || response.status === 403
+            ? 'Attendance session expired. Scan again on the scan page.'
+            : (data.message || 'Failed to load attendance'))
         }
       } catch {
-        setError('Failed to load attendance')
+        if (!cancelled) setError('Failed to load attendance')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
-
     fetchData()
+    return () => { cancelled = true }
   }, [currentMatch?.employeeId, currentMatch?.employeeViewSession, currentMatch?.personId, currentMonth, currentYear])
 
   const handleGenerateDtr = useCallback(async () => {
     if (!currentMatch?.personId && !currentMatch?.employeeId) return
     setError(null)
     setDownloading(true)
-
     try {
       const params = new URLSearchParams({
         employeeId: currentMatch.employeeId || '',
@@ -192,22 +112,18 @@ export default function AttendanceTableView({
         year: String(currentYear),
         range: selectedRange,
       })
-
       if (selectedRange === 'custom') {
         params.set('customStartDay', String(customStartDay))
         params.set('customEndDay', String(customEndDay))
       }
-
       const response = await fetch(`/api/attendance/dtr?${params}`, {
         headers: buildEmployeeViewHeaders(currentMatch),
         cache: 'no-store',
       })
-
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         throw new Error(data.message || 'Failed to generate DTR Excel workbook.')
       }
-
       await downloadResponseBlob(response, 'DTR.xlsx')
     } catch (downloadError) {
       console.error('DTR download failed:', downloadError)
@@ -217,199 +133,107 @@ export default function AttendanceTableView({
     }
   }, [currentMatch, currentMonth, currentYear, selectedRange, customStartDay, customEndDay])
 
+  const mobileRecords = visibleDays.map((day) => ({
+    id: day.dateKey || day.date,
+    fields: [
+      { label: 'Date', value: day.date },
+      { label: 'AM in', value: display(day.amIn) },
+      { label: 'AM out', value: display(day.amOut) },
+      { label: 'PM in', value: display(day.pmIn) },
+      { label: 'PM out', value: display(day.pmOut) },
+      { label: 'Status', value: display(day.status) },
+      { label: 'Mode', value: display(day.attendanceMode || day.mode) },
+      { label: 'Undertime', value: day.undertimeDisplay || formatUndertime(day.undertime) },
+    ],
+  }))
+
   return (
-    <div className="absolute inset-0 z-[6] flex flex-col overflow-hidden bg-white">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key="table-view"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -16 }}
-          className="flex h-full flex-col"
-        >
-          <div className="shrink-0 border-b border-black/10 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
-            <div className="flex items-start justify-between gap-2 sm:items-center sm:gap-3">
-              <button
-                onClick={onBack}
-                className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-muted hover:bg-black/5 sm:text-sm"
-              >
-                <ChevronLeftIcon className="h-4 w-4" />
-                <span className="hidden xs:inline">Back</span>
-              </button>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-canvas p-3 sm:p-4">
+      <PageHeader
+        actions={(
+          <>
+            <Button onClick={onBack} variant="quiet"><Icon name="arrow-left" />Back</Button>
+            <Button disabled={loading || downloading} onClick={handleGenerateDtr} variant="secondary">
+              <Icon name={downloading ? 'loading' : 'download'} className={downloading ? 'animate-spin' : ''} />
+              {downloading ? 'Downloading…' : 'Generate DTR'}
+            </Button>
+          </>
+        )}
+        description={currentMatch.employeeId || 'Employee ID not provided'}
+        title={currentMatch.name || 'Attendance records'}
+      />
 
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-center text-sm font-semibold text-ink sm:text-lg">{currentMatch.name}</h2>
-                <div className="mt-0.5 flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted sm:text-xs">
-                  <span>{currentMatch.employeeId || 'Employee ID not provided'}</span>
-                </div>
-              </div>
+      <FilterBar className="mt-4">
+        <Field htmlFor="attendance-month" label="Month">
+          <Select id="attendance-month" onChange={(event) => setCurrentMonth(Number.parseInt(event.target.value, 10))} value={currentMonth}>
+            {DTR_MONTH_NAMES.map((monthName, index) => <option key={monthName} value={index + 1}>{monthName}</option>)}
+          </Select>
+        </Field>
+        <Field htmlFor="attendance-year" label="Year">
+          <Select id="attendance-year" onChange={(event) => setCurrentYear(Number.parseInt(event.target.value, 10))} value={currentYear}>
+            {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+          </Select>
+        </Field>
+        <Field htmlFor="attendance-range" label="Date range">
+          <Select id="attendance-range" onChange={(event) => setSelectedRange(event.target.value)} value={selectedRange}>
+            {DTR_RANGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Select>
+        </Field>
+        {selectedRange === 'custom' ? (
+          <>
+            <Field htmlFor="attendance-start-day" label="Start day">
+              <Select id="attendance-start-day" onChange={(event) => setCustomStartDay(Number.parseInt(event.target.value, 10))} value={customStartDay}>
+                {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{day}</option>)}
+              </Select>
+            </Field>
+            <Field htmlFor="attendance-end-day" label="End day">
+              <Select id="attendance-end-day" onChange={(event) => setCustomEndDay(Number.parseInt(event.target.value, 10))} value={customEndDay}>
+                {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{day}</option>)}
+              </Select>
+            </Field>
+          </>
+        ) : null}
+      </FilterBar>
 
-              <button
-                onClick={handleGenerateDtr}
-                disabled={loading || downloading}
-                className="rounded-xl bg-navy px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-navy-dark disabled:opacity-50 sm:px-3 sm:py-2 sm:text-xs"
-              >
-                {downloading ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-white border-t-transparent" />
-                    <span className="hidden sm:inline">Downloading...</span>
-                    <span className="sm:hidden">...</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1">
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="16" y1="13" x2="8" y2="13" />
-                      <line x1="16" y1="17" x2="8" y2="17" />
-                      <polyline points="10 9 9 9 8 9" />
-                    </svg>
-                    <span className="hidden sm:inline">Generate DTR</span>
-                    <span className="sm:hidden">DTR</span>
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
+      <p className="my-3 text-xs text-secondary">
+        {DTR_MONTH_NAMES[currentMonth - 1]} {currentYear} · {visibleDays.length} record{visibleDays.length === 1 ? '' : 's'}
+        {totalUndertime > 0 ? ` · ${formatUndertime(totalUndertime)} undertime` : ''}
+      </p>
 
-          <div className="shrink-0 border-b border-black/5 bg-stone-50 px-3 py-3 sm:px-4">
-            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
-              <FilterField label="Month">
-                <select
-                  value={currentMonth}
-                  onChange={(event) => setCurrentMonth(Number.parseInt(event.target.value, 10))}
-                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
-                >
-                  {DTR_MONTH_NAMES.map((monthName, index) => (
-                    <option key={monthName} value={index + 1}>{monthName}</option>
-                  ))}
-                </select>
-              </FilterField>
-
-              <FilterField label="Year">
-                <select
-                  value={currentYear}
-                  onChange={(event) => setCurrentYear(Number.parseInt(event.target.value, 10))}
-                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
-                >
-                  {yearOptions.map((year) => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-              </FilterField>
-
-              <FilterField label="Date Range">
-                <select
-                  value={selectedRange}
-                  onChange={(event) => setSelectedRange(event.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
-                >
-                  {DTR_RANGE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </FilterField>
-
-              {selectedRange === 'custom' ? (
-                <>
-                  <FilterField label="Start Day">
-                    <select
-                      value={customStartDay}
-                      onChange={(event) => setCustomStartDay(Number.parseInt(event.target.value, 10))}
-                      className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
-                    >
-                      {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => (
-                        <option key={day} value={day}>{day}</option>
-                      ))}
-                    </select>
-                  </FilterField>
-
-                  <FilterField label="End Day">
-                    <select
-                      value={customEndDay}
-                      onChange={(event) => setCustomEndDay(Number.parseInt(event.target.value, 10))}
-                      className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[13px] outline-none transition focus:border-navy sm:text-sm"
-                    >
-                      {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => (
-                        <option key={day} value={day}>{day}</option>
-                      ))}
-                    </select>
-                  </FilterField>
-                </>
-              ) : (
-                <div className="col-span-2 flex items-end lg:col-span-2">
-                  <div className="w-full rounded-xl border border-black/5 bg-white px-3 py-2.5 text-xs text-muted">
-                    Range: <span className="font-semibold text-ink">{rangeSpec.startDay} - {rangeSpec.endDay}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-2 text-[11px] text-muted sm:text-xs">
-              {DTR_MONTH_NAMES[currentMonth - 1]} {currentYear} • {totalDays} record{totalDays === 1 ? '' : 's'}
-              {totalUndertime > 0 ? ` • ${formatUndertime(totalUndertime)} undertime` : ''}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-auto">
-            {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-              </div>
-            ) : error ? (
-              <StateMessage
-                title="Attendance view unavailable"
-                message={error}
-                onAction={onBack}
-              />
-            ) : visibleDays.length === 0 ? (
-              <StateMessage
-                title="No attendance records"
-                message="No attendance records were found for the selected range."
-                actionLabel="Back to scan"
-                onAction={onBack}
-              />
-            ) : (
-              <>
-                <div className="flex flex-col gap-2 p-3 sm:hidden">
-                  {visibleDays.map((day) => (
-                    <DayCard key={day.dateKey} day={day} />
-                  ))}
-                </div>
-
-                <div className="hidden sm:block">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-stone-100 text-[10px] font-semibold uppercase text-muted sm:text-xs">
-                      <tr>
-                        <th className="px-3 py-2.5 text-left">Date</th>
-                        <th className="px-3 py-2.5 text-center">AM In</th>
-                        <th className="px-3 py-2.5 text-center">AM Out</th>
-                        <th className="px-3 py-2.5 text-center">PM In</th>
-                        <th className="px-3 py-2.5 text-center">PM Out</th>
-                        <th className="px-3 py-2.5 text-right">Undertime</th>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {loading ? <LoadingState className="justify-center py-16" label="Loading attendance records…" /> : error ? (
+          <ErrorState description={error} onRetry={onBack} title="Attendance view unavailable" />
+        ) : visibleDays.length === 0 ? (
+          <EmptyState action={<Button onClick={onBack} variant="secondary">Back to scan</Button>} description="No attendance records were found for the selected range." title="No attendance records" />
+        ) : (
+          <>
+            <div className="md:hidden"><ResponsiveRecordList records={mobileRecords} /></div>
+            <div className="hidden md:block">
+              <TableFrame>
+                <table aria-label="Attendance records" className="w-full text-sm">
+                  <thead className="bg-canvas text-xs text-secondary">
+                    <tr><th className="px-3 py-3 text-left">Date</th><th className="px-3 py-3 text-center">AM in</th><th className="px-3 py-3 text-center">AM out</th><th className="px-3 py-3 text-center">PM in</th><th className="px-3 py-3 text-center">PM out</th><th className="px-3 py-3 text-left">Status</th><th className="px-3 py-3 text-left">Mode</th><th className="px-3 py-3 text-right">Undertime</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {visibleDays.map((day) => (
+                      <tr key={day.dateKey || day.date}>
+                        <td className="whitespace-nowrap px-3 py-3 font-medium text-foreground">{day.date}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono tabular-nums">{display(day.amIn)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono tabular-nums">{display(day.amOut)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono tabular-nums">{display(day.pmIn)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-center font-mono tabular-nums">{display(day.pmOut)}</td>
+                        <td className="px-3 py-3">{display(day.status)}</td>
+                        <td className="px-3 py-3">{display(day.attendanceMode || day.mode)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right font-mono tabular-nums">{day.undertimeDisplay || formatUndertime(day.undertime)}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5">
-                      {visibleDays.map((day) => (
-                        <tr key={day.dateKey} className="hover:bg-stone-50">
-                          <td className="whitespace-nowrap px-3 py-2.5 text-left text-sm font-medium text-ink">{day.date}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-sm text-ink">{day.amIn}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-sm text-ink">{day.amOut}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-sm text-ink">{day.pmIn}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-sm text-ink">{day.pmOut}</td>
-                          <td className={`whitespace-nowrap px-3 py-2.5 text-right font-mono text-sm ${day.undertime > 0 ? 'text-amber-700' : 'text-muted'}`}>
-                            {day.undertimeDisplay}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
-        </motion.div>
-      </AnimatePresence>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

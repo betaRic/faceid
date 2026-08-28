@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { strFromU8, unzipSync } from 'fflate'
 
 const projectRootUrl = new URL('../', import.meta.url)
@@ -59,9 +61,11 @@ const verificationCaptureModule = await importLocalModule('../lib/biometrics/ver
 const ovalCaptureModule = await importLocalModule('../lib/biometrics/oval-capture.js')
 const dtrModule = await importLocalModule('../lib/dtr.js')
 const dtrExcelModule = await importLocalModule('../lib/dtr-excel.js')
-const biometricBenchmarkModule = await importLocalModule('../lib/biometric-benchmark.js')
+const workforcePolicyModule = await importLocalModule('../lib/workforce-policy.js')
+const maintenanceEvidenceModule = await importLocalModule('../lib/maintenance/event-evidence.js')
+const systemEvidenceModule = await importLocalModule('../lib/maintenance/system-evidence.js')
 const shadowBenchmarkModule = await importLocalModule('../lib/biometrics/shadow-benchmark.js')
-const biometricIndexModule = await importLocalModule('../lib/biometric-index.js')
+const biometricMathModule = await importLocalModule('../lib/biometric-math.js')
 const personsEnrollmentPolicyModule = await importLocalModule('../lib/persons/enrollment-policy.js')
 const duplicateFaceModule = await importLocalModule('../lib/persons/duplicate-face.js')
 const personsDirectoryListModule = await importLocalModule('../lib/persons/directory.js')
@@ -75,11 +79,11 @@ const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
 const employeeWfhModule = await importLocalModule('../lib/employee-wfh.js')
 const csrfModule = await importLocalModule('../lib/csrf.js')
-const personBiometricsModule = await importLocalModule('../lib/person-biometrics.js')
 const reportWindowModule = await importLocalModule('../lib/report-window.js')
 const employeeAccessCodeExportModule = await importLocalModule('../lib/employee-access-code-export.js')
 const nextConfig = (await import('../next.config.mjs')).default
 const attendanceMatchModule = await importLocalModule('../lib/attendance-match.js')
+const materializerModule = await importLocalModule('../scripts/materialize-next-externals.mjs')
 
 const {
   calculateDistanceMeters,
@@ -137,9 +141,16 @@ const {
   getDtrCalendarDay,
 } = dtrModule
 const { buildDtrWorkbookFromTemplate } = dtrExcelModule
-const { buildBiometricBenchmarkReport } = biometricBenchmarkModule
+const { postgresDateKey } = workforcePolicyModule
+const {
+  buildMaintenanceEvidenceReport,
+  classifyScanEvent,
+  normalizeScanEventIdentity,
+  resolvePersistedScanIdentity,
+} = maintenanceEvidenceModule
+const { buildSystemEvidence } = systemEvidenceModule
 const { buildEngineShadowBenchmark, buildShadowBenchmarkReport } = shadowBenchmarkModule
-const { matchBiometricIndexCandidates, matchBiometricIndexMultiDescriptor } = biometricIndexModule
+const { matchBiometricIndexCandidates, matchBiometricIndexMultiDescriptor } = biometricMathModule
 const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
 const {
   buildDuplicateFaceSnapshot,
@@ -147,7 +158,7 @@ const {
   DUPLICATE_STATUS_HARD_DUPLICATE,
   DUPLICATE_STATUS_REVIEW_REQUIRED,
 } = duplicateFaceModule
-const { mapPersonRecord, parseDirectoryParams } = personsDirectoryListModule
+const { parseDirectoryParams } = personsDirectoryListModule
 const {
   buildMatchSupportSnapshot,
   isStrongUnambiguousSingleSampleSupport,
@@ -173,13 +184,13 @@ const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
 const { isEmployeeWfhDay, normalizeEmployeeWfhDays } = employeeWfhModule
 const { validateOrigin } = csrfModule
-const { syncPersonBiometricsRecord } = personBiometricsModule
 const { resolveReportWindow } = reportWindowModule
 const {
   buildEmployeeAccessCodeWorkbookBytes,
   groupEmployeesByOffice,
 } = employeeAccessCodeExportModule
 const { loadAttendanceMatch, saveAttendanceMatch } = attendanceMatchModule
+const { materializeNextExternalPackages } = materializerModule
 
 function createMinimalFaceMesh({
   leftEye = { x: 100, y: 100 },
@@ -732,29 +743,6 @@ await run('person lifecycle transitions derive compatibility fields and reject n
   )
 })
 
-await run('person biometrics summary wraps descriptor embeddings for local indexing', async () => {
-  const payload = await syncPersonBiometricsRecord(null, 'person-1', {
-    employeeId: 'EMP-001',
-    name: 'Test Employee',
-    officeId: 'office-a',
-    officeName: 'Office A',
-    active: true,
-    approvalStatus: 'approved',
-    biometricModelVersion: 'human-faceres-server-v1',
-    descriptors: [
-      { vector: [1, 0, 0] },
-      { vector: [0, 1, 0] },
-    ],
-  })
-
-  assert.equal(payload.descriptorCount, 2)
-  assert.deepEqual(payload.embeddings, [
-    { vector: [1, 0, 0] },
-    { vector: [0, 1, 0] },
-  ])
-  assert.equal(payload.embeddings.some(Array.isArray), false)
-})
-
 await run('enrollment descriptor batch wraps a single descriptor and validates multiple samples', () => {
   const singleDescriptor = Array.from({ length: 1024 }, (_, index) => index / 1024)
   const normalizedSingle = normalizeEnrollmentDescriptorBatch(singleDescriptor)
@@ -770,41 +758,6 @@ await run('enrollment descriptor batch wraps a single descriptor and validates m
     validateEnrollmentDescriptorBatch([[0.1, 0.2], [0.1]]),
     /1024 dimensions/i,
   )
-})
-
-await run('person directory summary uses sampleCount without requiring descriptors', () => {
-  const record = {
-    id: 'person-1',
-    data: () => ({
-      name: 'JANE DOE',
-      employeeId: 'EMP-001',
-      officeName: 'DILG R12',
-      approvalStatus: 'approved',
-      sampleCount: 4,
-    }),
-  }
-
-  const person = mapPersonRecord(record)
-
-  assert.equal(person.sampleCount, 4)
-  assert.equal(Object.hasOwn(person, 'descriptors'), false)
-})
-
-await run('person directory recognizes review_required duplicate status', () => {
-  const record = {
-    id: 'person-duplicate-review',
-    data: () => ({
-      name: 'SIMILAR FACE',
-      employeeId: 'EMP-DUP',
-      duplicateReviewStatus: 'review_required',
-      sampleCount: 8,
-    }),
-  }
-
-  const person = mapPersonRecord(record)
-
-  assert.equal(person.duplicateReviewRequired, true)
-  assert.equal(person.duplicateReviewStatus, 'review_required')
 })
 
 await run('guided enrollment sample frames normalize and validate required pose coverage', () => {
@@ -1153,6 +1106,17 @@ await run('DTR range spec normalizes custom and preset ranges', () => {
   )
 })
 
+await run('PostgreSQL date keys preserve the local calendar date', () => {
+  assert.equal(typeof postgresDateKey, 'function')
+  const localDate = new Date('2026-08-18T16:00:00.000Z')
+  localDate.getFullYear = () => 2026
+  localDate.getMonth = () => 7
+  localDate.getDate = () => 19
+  assert.equal(localDate.toISOString().slice(0, 10), '2026-08-18')
+  assert.equal(postgresDateKey(localDate), '2026-08-19')
+  assert.equal(postgresDateKey('2026-08-20'), '2026-08-20')
+})
+
 await run('filterAttendanceDaysByRange keeps only selected rows', () => {
   const rangeSpec = buildDtrRangeSpec({ month: 4, year: 2026, range: '16-end' })
   const days = [
@@ -1490,62 +1454,6 @@ await run('buildDtrDocument emits empty signatory when no office is supplied', (
   assert.equal(dtr.signatory.position, '')
 })
 
-await run('biometric benchmark report exposes operational gate and honest reality flags', () => {
-  const now = new Date('2026-04-16T10:00:00+08:00').getTime()
-  const baseEvent = {
-    status: 'accepted',
-    challengeUsed: true,
-    decisionCode: 'accepted_onsite',
-    matchDebug: { bestDistance: 0.52, threshold: 0.78 },
-    scanDiagnostics: { deviceClass: 'mobile', bestFaceAreaRatio: 0.54, serverMatchMode: 'single_frame_fast', serverEmbeddingAverageMs: 720 },
-    captureContext: { userAgent: 'Mozilla/5.0 Chrome/124.0', burstQualityScore: 4.1, mobile: true },
-    performance: { totalMeasuredMs: 1600, serverEmbeddingMs: 820, matchingMs: 90, databaseReadMs: 120, databaseWriteMs: 180 },
-  }
-
-  const events = [
-    ...Array.from({ length: 120 }, (_, index) => ({
-      ...baseEvent,
-      timestamp: now - (index * 1000),
-    })),
-    ...Array.from({ length: 80 }, (_, index) => ({
-      ...baseEvent,
-      timestamp: now - (index * 1000),
-      scanDiagnostics: { deviceClass: 'desktop', bestFaceAreaRatio: 0.55, serverMatchMode: 'two_frame_fallback', serverEmbeddingAverageMs: 950 },
-      captureContext: { userAgent: 'Mozilla/5.0 Safari/605.1.15', burstQualityScore: 4.0, mobile: false },
-      performance: { totalMeasuredMs: 2600, serverEmbeddingMs: 1900, matchingMs: 110, databaseReadMs: 150, databaseWriteMs: 220 },
-    })),
-  ]
-
-  const report = buildBiometricBenchmarkReport(events, { days: 14, now })
-
-  assert.equal(report.reality.serverAuthoritativeBiometrics, true)
-  assert.equal(report.reality.challengeProtectedTransport, true)
-  assert.equal(report.sampleSize, 200)
-  assert.equal(report.byDevice.mobile.total, 120)
-  assert.equal(report.byDevice.desktop.total, 80)
-  assert.equal(report.operationalGate.status, 'pass')
-  assert.equal(report.summary.serverTimingCoverageRate, 1)
-  assert.equal(report.summary.twoFrameFallbackRate, 0.4)
-  assert.equal(report.summary.identityResolvedRate, 1)
-  assert.equal(report.deploymentHealth.p95ServerEmbeddingMs, 1900)
-})
-
-await run('biometric benchmark separates identity resolution from attendance writes', () => {
-  const events = [
-    { status: 'accepted', decisionCode: 'accepted_onsite', challengeUsed: true },
-    { status: 'blocked', decisionCode: 'blocked_recent_duplicate', challengeUsed: true },
-    { status: 'blocked', decisionCode: 'blocked_geofence', challengeUsed: true },
-    { status: 'blocked', decisionCode: 'blocked_no_reliable_match', challengeUsed: true },
-  ]
-
-  const report = buildBiometricBenchmarkReport(events, { days: 1, now: Date.now() })
-
-  assert.equal(report.deploymentHealth.successRate, 0.25)
-  assert.equal(report.deploymentHealth.identityResolvedRate, 0.75)
-  assert.equal(report.deploymentHealth.postMatchOperationalBlockRate, 0.5)
-  assert.equal(report.deploymentHealth.hardBiometricBlockRate, 0.25)
-})
-
 await run('report windows resolve exact Manila calendar dates and months', () => {
   const todayWindow = resolveReportWindow(new URLSearchParams({ date: '2026-05-20' }), {
     now: new Date('2026-05-20T09:00:00+08:00').getTime(),
@@ -1566,24 +1474,317 @@ await run('report windows resolve exact Manila calendar dates and months', () =>
   assert.equal(monthWindow.endDateExclusive, '2026-06-01')
 })
 
-await run('biometric benchmark reports current pilot context separately from scan attempts', () => {
-  const report = buildBiometricBenchmarkReport([
-    { status: 'accepted', decisionCode: 'accepted_onsite', employeeId: 'EMP-1', challengeUsed: true },
-    { status: 'accepted', decisionCode: 'accepted_wfh', employeeId: 'OLD-1', challengeUsed: true },
-    { status: 'blocked', decisionCode: 'blocked_no_reliable_match', challengeUsed: true },
-  ], {
-    days: 1,
-    now: Date.now(),
-    currentEmployeeIds: ['EMP-1', 'EMP-2'],
+await run('maintenance evidence treats claimed identity mismatch as biometric failure', () => {
+  const event = {
+    status: 'blocked',
+    decisionCode: 'blocked_claimed_employee_mismatch',
+    employeeId: '1234',
+    matchDebug: {
+      resolvedPersonId: 'person-1',
+      resolvedEmployeeId: 'EMP-1',
+      bestDistance: 0.82,
+      threshold: 0.8,
+    },
+  }
+
+  assert.equal(classifyScanEvent(event), 'claimed_identity_mismatch')
+  assert.deepEqual(normalizeScanEventIdentity(event), {
+    personId: 'person-1',
+    employeeId: 'EMP-1',
+    officeId: '',
+  })
+})
+
+await run('scan telemetry persists resolved 1:1 identity before claimed access code', () => {
+  assert.deepEqual(resolvePersistedScanIdentity({
+    entry: { employeeId: '1234' },
+    debug: {
+      resolvedPersonId: 'person-1',
+      resolvedEmployeeId: 'EMP-1',
+      officeId: 'office-1',
+    },
+  }), {
+    personId: 'person-1',
+    employeeId: 'EMP-1',
+    officeId: 'office-1',
+  })
+})
+
+await run('scan telemetry trusts resolved and server office identity before client office input', () => {
+  assert.deepEqual(resolvePersistedScanIdentity({
+    entry: { employeeId: '1234', officeId: 'client-office' },
+    debug: {
+      resolvedPersonId: 'person-1',
+      resolvedEmployeeId: 'EMP-1',
+    },
+    requestMeta: { officeId: 'server-office' },
+  }), {
+    personId: 'person-1',
+    employeeId: 'EMP-1',
+    officeId: 'server-office',
   })
 
-  assert.equal(report.pilot.currentApprovedActiveEmployees, 2)
-  assert.equal(report.pilot.uniqueAcceptedEmployeeIds, 2)
-  assert.equal(report.pilot.uniqueCurrentAcceptedEmployeeIds, 1)
-  assert.equal(report.pilot.acceptedCurrentEmployeeEvents, 1)
-  assert.equal(report.pilot.acceptedStaleEmployeeEvents, 1)
-  assert.equal(report.pilot.unresolvedEvents, 1)
-  assert.deepEqual(report.pilot.staleResolvedEmployeeIds, ['OLD-1'])
+  assert.equal(normalizeScanEventIdentity({
+    officeId: 'claimed-office',
+    matchDebug: { officeId: 'resolved-office' },
+  }).officeId, 'resolved-office')
+})
+
+await run('pre-comparison account blocks do not count as successful face verification', () => {
+  const events = [
+    {
+      status: 'blocked',
+      decisionCode: 'blocked_pending_approval',
+      personId: 'pending-person',
+      matchDebug: { resolvedPersonId: 'pending-person', resolvedEmployeeId: 'PENDING' },
+    },
+    {
+      status: 'blocked',
+      decisionCode: 'blocked_inactive',
+      personId: 'inactive-person',
+      matchDebug: { resolvedPersonId: 'inactive-person', resolvedEmployeeId: 'INACTIVE' },
+    },
+  ]
+  const report = buildMaintenanceEvidenceReport(events, {
+    totalWindowEvents: events.length,
+    currentEmployees: [
+      { personId: 'pending-person', employeeId: 'PENDING' },
+      { personId: 'inactive-person', employeeId: 'INACTIVE' },
+    ],
+  })
+
+  assert.equal(report.verification1to1.denominator, 0)
+  assert.equal(report.verification1to1.verifiedIdentityCount, 0)
+  assert.equal(report.population.representedCurrentEmployees, 0)
+})
+
+await run('population coverage does not merge employees that share an Employee ID', () => {
+  const currentEmployees = [
+    { personId: 'person-1', employeeId: 'DUPLICATE' },
+    { personId: 'person-2', employeeId: 'DUPLICATE' },
+  ]
+  const attributed = buildMaintenanceEvidenceReport([
+    { status: 'accepted', personId: 'person-1', employeeId: 'DUPLICATE' },
+  ], { totalWindowEvents: 1, currentEmployees })
+  const unattributed = buildMaintenanceEvidenceReport([
+    { status: 'accepted', employeeId: 'DUPLICATE' },
+  ], { totalWindowEvents: 1, currentEmployees })
+
+  assert.equal(attributed.population.representedCurrentEmployees, 1)
+  assert.equal(unattributed.population.representedCurrentEmployees, 0)
+})
+
+await run('maintenance evidence cannot report stable verification from high mismatch evidence', () => {
+  const events = [
+    ...Array.from({ length: 20 }, () => ({
+      status: 'accepted',
+      decisionCode: 'accepted_onsite',
+      personId: 'person-1',
+      employeeId: 'EMP-1',
+      matchDebug: { bestDistance: 0.61, threshold: 0.8 },
+      scanDiagnostics: { serverMatchMode: 'two_frame_required' },
+    })),
+    ...Array.from({ length: 10 }, () => ({
+      status: 'blocked',
+      decisionCode: 'blocked_claimed_employee_mismatch',
+      matchDebug: {
+        resolvedPersonId: 'person-1',
+        resolvedEmployeeId: 'EMP-1',
+        bestDistance: 0.84,
+        threshold: 0.8,
+      },
+      scanDiagnostics: { serverMatchMode: 'two_frame_required' },
+    })),
+  ]
+
+  const report = buildMaintenanceEvidenceReport(events, {
+    totalWindowEvents: 30,
+    currentEmployees: [{ personId: 'person-1', employeeId: 'EMP-1' }],
+  })
+
+  assert.equal(report.version, 2)
+  assert.equal(report.verification1to1.denominator, 30)
+  assert.equal(report.verification1to1.claimedMismatchCount, 10)
+  assert.equal(report.statuses.verification1to1.status, 'failing')
+  assert.equal(report.calibration.status, 'unavailable')
+  assert.equal(report.calibration.thresholdRecommendation, null)
+  assert.deepEqual(report.breakdowns.matchModes, [{ key: 'two_frame_required', count: 30, rate: 1 }])
+})
+
+await run('maintenance evidence marks truncated and unknown evidence unsafe', () => {
+  const report = buildMaintenanceEvidenceReport([
+    { status: 'blocked', decisionCode: 'legacy_unknown' },
+  ], {
+    totalWindowEvents: 5,
+    currentEmployees: [],
+  })
+
+  assert.equal(report.evidence.truncated, true)
+  assert.equal(report.evidence.unknownOutcomeCount, 1)
+  assert.notEqual(report.statuses.telemetry.status, 'sufficient')
+  assert.notEqual(report.statuses.verification1to1.status, 'stable')
+  assert.equal(
+    report.breakdowns.categories.reduce((sum, item) => sum + item.count, 0),
+    report.evidence.loadedEvents,
+  )
+})
+
+await run('system evidence is read-only, complete, and secret-free', async () => {
+  const queries = []
+  const query = async (sql, params = []) => {
+    queries.push({ sql: String(sql), params })
+    if (/SHOW server_version/i.test(sql)) return { rows: [{ server_version: '18.1' }] }
+    if (/FROM schema_migrations/i.test(sql)) return { rows: [{ version: '0001_local_core.sql' }] }
+    if (/FULL OUTER JOIN/i.test(sql)) {
+      return { rows: [{
+        raw_person_count: 2,
+        summary_person_count: 2,
+        missing_summary_count: 0,
+        unexpected_summary_count: 0,
+        stale_summary_count: 0,
+        newest_summary_at: '2026-08-27T18:00:00.000Z',
+      }] }
+    }
+    return { rows: [{ offices: 6, persons: 73, pending_persons: 4, biometric_index: 31, attendance: 500, attendance_daily: 100, scan_events: 504, audit_logs: 20, admin_users: 2, hr_users: 6 }] }
+  }
+  const report = await buildSystemEvidence({
+    query,
+    now: new Date('2026-08-28T10:00:00+08:00').getTime(),
+    env: {
+      NODE_ENV: 'production',
+      LOCAL_FILE_STORAGE_DIR: 'D:/private/storage',
+      OPENVINO_MODEL_DIR: 'D:/private/models',
+      ADMIN_SESSION_SECRET: 'do-not-return-admin',
+      HR_SESSION_SECRET: 'do-not-return-hr',
+      HR_PIN_SALT: 'do-not-return-salt',
+      CRON_SECRET: 'do-not-return-cron',
+    },
+    cwd: 'D:/projects/faceid',
+    access: async () => undefined,
+    readdir: async directory => String(directory).endsWith('migrations')
+      ? ['0001_local_core.sql']
+      : [],
+    readFile: async file => String(file).endsWith('BUILD_ID') ? 'build-123\n' : '',
+    uptime: () => 120,
+    nodeVersion: 'v22.18.0',
+  })
+
+  assert.equal(report.database.connected, true)
+  assert.equal(Number.isFinite(report.database.latencyMs), true)
+  assert.deepEqual(report.migrations.pending, [])
+  assert.equal(report.storage.configured, true)
+  assert.equal(report.storage.directoryExists, true)
+  assert.equal('root' in report.storage, false)
+  assert.equal(report.dailySummary.rawPersonCount, 2)
+  assert.equal(report.dailySummary.summaryPersonCount, 2)
+  assert.equal(report.runtime.buildId, 'build-123')
+  assert.equal(queries.every(entry => /^\s*(SHOW|SELECT|WITH)/i.test(entry.sql)), true)
+  assert.equal(JSON.stringify(report).includes('do-not-return'), false)
+  assert.equal(JSON.stringify(report).includes('D:/private'), false)
+})
+
+await run('system evidence does not echo dependency failure details', async () => {
+  const report = await buildSystemEvidence({
+    query: async () => { throw new Error('postgres://private-user:private-password@private-host/database') },
+    env: { LOCAL_FILE_STORAGE_DIR: 'D:/private/storage' },
+    cwd: 'D:/private/project',
+    access: async () => { throw new Error('D:/private/storage access denied') },
+    readdir: async () => { throw new Error('D:/private/migrations missing') },
+    readFile: async () => { throw new Error('D:/private/BUILD_ID missing') },
+  })
+
+  assert.doesNotMatch(JSON.stringify(report), /private|postgres:\/\//i)
+})
+
+await run('system evidence requires every Human model used by verification and server enrollment', async () => {
+  const report = await buildSystemEvidence({
+    query: async sql => {
+      if (/SHOW server_version/i.test(sql)) return { rows: [{ server_version: '18.1' }] }
+      if (/FROM schema_migrations/i.test(sql)) return { rows: [] }
+      if (/FULL OUTER JOIN/i.test(sql)) {
+        return { rows: [{
+          raw_person_count: 0,
+          summary_person_count: 0,
+          missing_summary_count: 0,
+          unexpected_summary_count: 0,
+          stale_summary_count: 0,
+          newest_summary_at: null,
+        }] }
+      }
+      return { rows: [{}] }
+    },
+    cwd: 'D:/projects/faceid',
+    access: async target => {
+      if (String(target).endsWith('liveness.bin')) throw new Error('missing')
+    },
+    readdir: async () => [],
+    readFile: async () => 'build-123',
+  })
+
+  assert.equal(report.models.human.requiredFileCount, 12)
+  assert.equal(report.models.human.status, 'failing')
+  assert.deepEqual(report.models.human.missing, ['liveness.bin'])
+  assert.ok(report.actions.some(action => action.id === 'human-models'))
+})
+
+await run('daily-summary evidence detects equal-count identity and freshness mismatches', async () => {
+  const report = await buildSystemEvidence({
+    query: async sql => {
+      if (/SHOW server_version/i.test(sql)) return { rows: [{ server_version: '18.1' }] }
+      if (/FROM schema_migrations/i.test(sql)) return { rows: [] }
+      if (/FULL OUTER JOIN/i.test(sql)) {
+        return { rows: [{
+          raw_person_count: 2,
+          summary_person_count: 2,
+          missing_summary_count: 1,
+          unexpected_summary_count: 1,
+          stale_summary_count: 1,
+          newest_summary_at: '2026-08-27T18:00:00.000Z',
+        }] }
+      }
+      if (/FROM attendance\s+WHERE date_key/i.test(sql)) return { rows: [{ count: 2 }] }
+      if (/FROM attendance_daily\s+WHERE date_key/i.test(sql)) return { rows: [{ count: 2, newest: '2026-08-27T18:00:00.000Z' }] }
+      return { rows: [{}] }
+    },
+    now: new Date('2026-08-28T10:00:00+08:00').getTime(),
+    cwd: 'D:/projects/faceid',
+    access: async () => undefined,
+    readdir: async () => [],
+    readFile: async () => 'build-123',
+  })
+
+  assert.equal(report.dailySummary.status, 'stale')
+  assert.equal(report.dailySummary.missingSummaryCount, 1)
+  assert.equal(report.dailySummary.unexpectedSummaryCount, 1)
+  assert.equal(report.dailySummary.staleSummaryCount, 1)
+  assert.ok(report.actions.some(action => action.id === 'daily-summary'))
+})
+
+await run('system evidence surfaces migration uncertainty as an action', async () => {
+  const report = await buildSystemEvidence({
+    query: async sql => {
+      if (/SHOW server_version/i.test(sql)) return { rows: [{ server_version: '18.1' }] }
+      if (/FROM schema_migrations/i.test(sql)) throw new Error('migration table unavailable')
+      if (/FULL OUTER JOIN/i.test(sql)) {
+        return { rows: [{
+          raw_person_count: 0,
+          summary_person_count: 0,
+          missing_summary_count: 0,
+          unexpected_summary_count: 0,
+          stale_summary_count: 0,
+          newest_summary_at: null,
+        }] }
+      }
+      return { rows: [{}] }
+    },
+    cwd: 'D:/projects/faceid',
+    access: async () => undefined,
+    readdir: async () => ['0001_local_core.sql'],
+    readFile: async () => 'build-123',
+  })
+
+  assert.equal(report.migrations.status, 'unknown')
+  assert.ok(report.actions.some(action => action.id === 'migrations'))
 })
 
 await run('shadow benchmark ranks 1:N candidates without storing descriptor vectors in report', () => {
@@ -2612,6 +2813,70 @@ await run('employee access-code export creates a valid Excel workbook with offic
   assert.match(sheet, /Access Code/)
   assert.match(sheet, /0007/)
   assert.match(sheet, /Ana Santos/)
+})
+
+await run('materializeNextExternalPackages replaces a Junction and copies its dependency closure', async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'faceattend-next-alias-'))
+  try {
+    const sourceNodeModules = path.join(fixtureRoot, 'node_modules')
+    const mainPackage = path.join(sourceNodeModules, 'pkg-main')
+    const dependencyPackage = path.join(sourceNodeModules, 'pkg-dependency')
+    const outputNodeModules = path.join(fixtureRoot, '.next', 'node_modules')
+    const aliasPath = path.join(outputNodeModules, 'pkg-main-hash')
+
+    await mkdir(mainPackage, { recursive: true })
+    await mkdir(dependencyPackage, { recursive: true })
+    await mkdir(outputNodeModules, { recursive: true })
+    await writeFile(path.join(mainPackage, 'package.json'), JSON.stringify({ name: 'pkg-main', main: 'index.js', dependencies: { 'pkg-dependency': '1.0.0', string_decoder: '1.0.0' }, peerDependencies: { 'react-native-b4a': '*' }, peerDependenciesMeta: { 'react-native-b4a': { optional: true } } }))
+    await writeFile(path.join(mainPackage, 'index.js'), 'module.exports = {}')
+    await writeFile(path.join(mainPackage, 'marker.txt'), 'main')
+    await writeFile(path.join(dependencyPackage, 'package.json'), JSON.stringify({ name: 'pkg-dependency', main: 'index.js' }))
+    await writeFile(path.join(dependencyPackage, 'index.js'), 'module.exports = {}')
+    await writeFile(path.join(dependencyPackage, 'marker.txt'), 'dependency')
+    await symlink(mainPackage, aliasPath, 'junction')
+
+    const result = await materializeNextExternalPackages({ projectRoot: fixtureRoot })
+
+    assert.deepEqual(result.aliases, ['pkg-main-hash'])
+    assert.equal((await lstat(aliasPath)).isSymbolicLink(), false)
+    assert.equal(await readFile(path.join(aliasPath, 'marker.txt'), 'utf8'), 'main')
+    assert.equal(await readFile(path.join(outputNodeModules, 'pkg-dependency', 'marker.txt'), 'utf8'), 'dependency')
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true })
+  }
+})
+
+function extractPostgresQueryParams(source, queryMarker) {
+  const queryStart = source.indexOf(queryMarker)
+  assert.notEqual(queryStart, -1, `Could not find PostgreSQL query: ${queryMarker}`)
+
+  const paramsStart = source.indexOf('      [', queryStart)
+  const paramsEndOffset = source.slice(paramsStart).search(/\r?\n\s{6}\],\r?\n\s{4}\)/)
+  const paramsEnd = paramsEndOffset === -1 ? -1 : paramsStart + paramsEndOffset
+  assert.notEqual(paramsStart, -1, `Could not find bind parameters for: ${queryMarker}`)
+  assert.notEqual(paramsEnd, -1, `Could not end bind parameters for: ${queryMarker}`)
+
+  return source.slice(paramsStart, paramsEnd)
+}
+
+await run('PostgreSQL public enrollment binds lifecycle status before active and approval status', async () => {
+  const source = await readFile(new URL('../lib/postgres/person-store.js', import.meta.url), 'utf8')
+  const params = extractPostgresQueryParams(source, 'INSERT INTO persons (')
+
+  assert.match(
+    params,
+    /nextPerson\.lifecycleStatus,\s*nextPerson\.active,\s*nextPerson\.approvalStatus,/,
+  )
+})
+
+await run('PostgreSQL employee lifecycle transition binds the authoritative lifecycle status', async () => {
+  const source = await readFile(new URL('../lib/postgres/person-store.js', import.meta.url), 'utf8')
+  const params = extractPostgresQueryParams(source, 'SET lifecycle_status = $2,')
+
+  assert.match(
+    params,
+    /existing\.id,\s*transition\.lifecycleStatus,\s*approvedAt,\s*now,/,
+  )
 })
 
 if (process.exitCode && process.exitCode !== 0) {

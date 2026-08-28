@@ -2,30 +2,10 @@ import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSe
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { postgresEnabled } from '@/lib/postgres/client'
 import { getLocalPersonById } from '@/lib/postgres/person-store'
 
-function serializePerson(doc) {
-  const data = doc.data()
-  const obj = { id: doc.id }
-  for (const [key, value] of Object.entries(data)) {
-    if (value && typeof value === 'object' && '_seconds' in value) {
-      obj[key] = new Date(value._seconds * 1000).toISOString()
-    } else {
-      obj[key] = value
-    }
-  }
-  return obj
-}
-
 async function getPersonData(personId) {
-  if (postgresEnabled()) {
-    return getLocalPersonById(personId)
-  }
-  const db = null
-  const doc = await db.collection('persons').doc(personId).get()
-  if (!doc.exists) return null
-  return serializePerson(doc)
+  return getLocalPersonById(personId)
 }
 
 export default async function ReenrollPage({ params, searchParams }) {

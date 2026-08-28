@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Field } from "@/components/shared/ui";
+import { Button, EmptyState, Field, Input, LoadingState, PageHeader, Select, Status, Textarea } from "@/components/ui";
 import { useOffices } from "@/lib/admin/hooks/useOffices";
 import WorkforceRecordModal from "@/components/admin/WorkforceRecordModal";
-import DilgLoadingIndicator from "@/components/shared/DilgLoadingIndicator";
 
 const TABS = [
   ["holiday", "Holidays"],
@@ -264,53 +263,43 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
     if (data.ok) load();
   };
   return (
-    <section className="flex h-full min-h-0 flex-col gap-2 bg-white p-3 sm:p-4">
-      <header className="flex flex-wrap items-center justify-end gap-2 border-b border-black/5 pb-2">
-        <div className="flex gap-2">
-          <button
-            className="rounded-xl border border-black/10 px-3 py-2 text-sm font-semibold"
-            onClick={beginCreate}
-            type="button"
-          >
-            Add {ADD_LABELS[tab]}
-          </button>
+    <section className="flex h-full min-h-0 flex-col gap-4">
+      <PageHeader
+        actions={(
+          <>
+            <Button onClick={beginCreate}>Add {ADD_LABELS[tab]}</Button>
           {tab === "holiday" && allowNationalHolidays ? (
-            <button
-              className="rounded-xl bg-navy px-3 py-2 text-sm font-semibold text-white"
-              onClick={seed}
-              type="button"
-            >
+            <Button onClick={seed} variant="secondary">
               Seed {year}
-            </button>
+            </Button>
           ) : null}
-        </div>
-      </header>
-      <div className="flex gap-2 overflow-x-auto">
+          </>
+        )}
+        description="Manage holidays, leave periods, and official orders used by attendance and DTR calculations."
+        title="Workforce records"
+      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <nav aria-label="Workforce record type" className="flex gap-2 overflow-x-auto">
         {TABS.map(([id, label]) => (
-          <button
+          <Button
+            aria-current={tab === id ? "page" : undefined}
             key={id}
-            className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold ${tab === id ? "bg-navy text-white" : "border border-black/10 bg-white text-ink"}`}
+            className="whitespace-nowrap"
             onClick={() => setTab(id)}
-            type="button"
+            variant={tab === id ? "primary" : "secondary"}
           >
             {label}
-          </button>
+          </Button>
         ))}
+        </nav>
         {tab === "holiday" ? (
-          <input
-            aria-label="Holiday year"
-            className="w-24 rounded-xl border border-black/10 px-3 py-2 text-sm"
-            min="2000"
-            onChange={(event) => setYear(Number(event.target.value))}
-            type="number"
-            value={year}
-          />
+          <Field className="w-32" label="Holiday year">
+            <Input min="2000" onChange={(event) => setYear(Number(event.target.value))} type="number" value={year} />
+          </Field>
         ) : null}
       </div>
       {notice ? (
-        <div className="rounded-xl border border-navy/10 bg-navy/[0.04] px-3 py-2 text-sm text-navy-dark">
-          {notice}
-        </div>
+        <Status>{notice}</Status>
       ) : null}
       <div className={`grid min-h-0 flex-1 gap-2 ${tab === "holiday" ? "lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]" : "lg:grid-cols-1"}`}>
         <div className="min-h-0 overflow-auto rounded-2xl border border-black/5">
@@ -326,7 +315,7 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
               {loading ? (
                 <tr>
                   <td className="px-4 py-8 text-muted" colSpan="3">
-                    <DilgLoadingIndicator label="Loading attendance records…" />
+                    <LoadingState label="Loading workforce records…" />
                   </td>
                 </tr>
               ) : records.length ? (
@@ -356,20 +345,18 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button
-                          className="font-semibold text-navy"
+                        <Button
                           onClick={() => beginEdit(record)}
-                          type="button"
+                          variant="quiet"
                         >
                           Edit
-                        </button>
-                        <button
-                          className="font-semibold text-red-700"
+                        </Button>
+                        <Button
                           onClick={() => remove(record.id)}
-                          type="button"
+                          variant="quiet"
                         >
                           Remove
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -377,7 +364,7 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
               ) : (
                 <tr>
                   <td className="px-4 py-8 text-muted" colSpan="3">
-                    No records yet.
+                    <EmptyState description="Add a record for the selected category." title="No workforce records" />
                   </td>
                 </tr>
               )}
@@ -397,8 +384,7 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
               {tab === "holiday" ? (
                 <>
                   <Field label="Date">
-                    <input
-                      className="w-full rounded-xl border border-black/10 px-3 py-2"
+                    <Input
                       onChange={(e) => update("date", e.target.value)}
                       required
                       type="date"
@@ -406,63 +392,60 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
                     />
                   </Field>
                   <Field label="Name">
-                    <input
-                      className="w-full rounded-xl border border-black/10 px-3 py-2"
+                    <Input
                       onChange={(e) => update("name", e.target.value)}
                       required
                       value={form.name || ""}
                     />
                   </Field>
                   <Field label="Scope">
-                    <select className="w-full rounded-xl border border-black/10 px-3 py-2" onChange={(e) => update("scopeType", e.target.value)} value={form.scopeType || "national"}>
+                    <Select onChange={(e) => update("scopeType", e.target.value)} value={form.scopeType || "national"}>
                       {allowNationalHolidays ? <option value="national">National (Regional Admin or HR)</option> : null}
                       <option value="office">Office</option>
                       <option value="division">Division</option>
-                    </select>
+                    </Select>
                   </Field>
                   {form.scopeType === "office" || form.scopeType === "division" ? (
                     <Field label="Office">
-                      <select className="w-full rounded-xl border border-black/10 px-3 py-2" onChange={(e) => update("officeId", e.target.value)} required value={form.officeId || ""}>
+                      <Select onChange={(e) => update("officeId", e.target.value)} required value={form.officeId || ""}>
                         <option value="">Choose office</option>
                         {visibleOffices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}
-                      </select>
+                      </Select>
                     </Field>
                   ) : null}
                   {form.scopeType === "division" ? (
                     <Field label="Division">
-                      <select className="w-full rounded-xl border border-black/10 px-3 py-2" onChange={(e) => update("divisionId", e.target.value)} required value={form.divisionId || ""}>
+                      <Select onChange={(e) => update("divisionId", e.target.value)} required value={form.divisionId || ""}>
                         <option value="">Choose division</option>
                         {divisions.filter((division) => !form.officeId || division.officeId === form.officeId).map((division) => <option key={division.id} value={division.id}>{division.name}</option>)}
-                      </select>
+                      </Select>
                     </Field>
                   ) : null}
                 </>
               ) : null}
               <Field label="Remarks">
-                <textarea
-                  className="min-h-20 w-full rounded-xl border border-black/10 px-3 py-2"
+                <Textarea
+                  className="min-h-20"
                   onChange={(e) => update("remarks", e.target.value)}
                   value={form.remarks || ""}
                 />
               </Field>
               <div className="flex gap-2">
-                <button
-                  className="inline-flex items-center gap-2 rounded-xl bg-navy px-4 py-2 font-semibold text-white disabled:opacity-50"
+                <Button
                   disabled={saving}
                   type="submit"
                 >
                   {saving ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving…</> : "Save"}
-                </button>
-                <button
-                  className="rounded-xl border border-black/10 px-4 py-2 font-semibold"
+                </Button>
+                <Button
                   onClick={() => {
                     setEditing(null);
                     setForm({});
                   }}
-                  type="button"
+                  variant="secondary"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           ) : (

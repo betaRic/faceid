@@ -1,9 +1,11 @@
 'use client'
 
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useId, useState } from 'react'
 import { useThresholds } from '@/lib/admin/hooks/useThresholds'
+import { Button, ErrorState, LoadingState, PageHeader, Status, Surface } from '@/components/ui'
 
 function SliderField({ fieldKey, meta, value, onChange }) {
+  const inputId = useId()
   const isChanged = value !== meta.default
   const numVal = Number(value)
   const pct = ((numVal - meta.min) / (meta.max - meta.min)) * 100
@@ -12,14 +14,14 @@ function SliderField({ fieldKey, meta, value, onChange }) {
   return (
     <div className="group">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className={`text-sm font-medium ${isChanged ? 'text-amber-700' : 'text-ink'}`}>
+        <label htmlFor={inputId} className={`text-sm font-medium ${isChanged ? 'text-amber-700' : 'text-ink'}`}>
           {meta.label}
           {isChanged && (
-            <span className="ml-2 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+            <span className="ml-2 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">
               changed
             </span>
           )}
-        </span>
+        </label>
         <span className="text-sm font-mono font-semibold text-navy">{display}</span>
       </div>
       <div className="relative flex items-center gap-3">
@@ -31,7 +33,9 @@ function SliderField({ fieldKey, meta, value, onChange }) {
             style={{ width: `${pct}%` }}
           />
           <input
+            id={inputId}
             type="range"
+            aria-valuetext={String(display)}
             className="relative z-10 h-1.5 w-full cursor-pointer appearance-none bg-transparent"
             min={meta.min}
             max={meta.max}
@@ -72,15 +76,18 @@ function RegionalPinAccess() {
 
   if (state.loading) return null
   return (
-    <div className="rounded-2xl border border-black/10 bg-stone-50 p-5">
+    <Surface className="p-5">
       <h3 className="font-semibold text-ink">Regional Bootstrap PIN</h3>
       <p className="mt-1 text-sm text-muted">Controls whether the <code>ADMIN_REGIONAL_PIN</code> environment PIN can sign in. Managed admin PINs continue to work.</p>
-      {!state.configured ? <p className="mt-3 text-sm text-amber-700">No ADMIN_REGIONAL_PIN is configured on the server.</p> : null}
-      {state.error ? <p className="mt-3 text-sm text-red-600">{state.error}</p> : null}
-      <button type="button" disabled={!state.configured || state.saving} onClick={() => setEnabled(!state.enabled)} className="mt-4 rounded-xl bg-navy px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Status tone={state.enabled ? 'success' : 'neutral'}>{state.enabled ? 'Enabled' : 'Disabled'}</Status>
+        {!state.configured ? <Status tone="warning">Not configured</Status> : null}
+      </div>
+      {state.error ? <ErrorState className="mt-3" description={state.error} title="Regional PIN status unavailable" /> : null}
+      <Button type="button" disabled={!state.configured || state.saving} onClick={() => setEnabled(!state.enabled)} className="mt-4">
         {state.saving ? 'Saving…' : state.enabled ? 'Disable Regional PIN' : 'Enable Regional PIN'}
-      </button>
-    </div>
+      </Button>
+    </Surface>
   )
 }
 
@@ -110,20 +117,21 @@ function SectionCard({ sectionKey, section, onFieldChange, onSave, onReset, savi
   }
 
   return (
-    <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
+    <Surface className="p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="font-display text-base font-bold text-ink">{section.label}</h3>
           <p className="mt-0.5 text-xs leading-relaxed text-muted">{section.description}</p>
         </div>
         {hasChanged && (
-          <button
+          <Button
+            variant="quiet"
             onClick={handleReset}
             disabled={saving}
-            className="shrink-0 rounded-full border border-stone-200 px-3 py-1 text-[11px] font-semibold text-muted transition hover:border-stone-300 hover:text-stone-600 disabled:cursor-not-allowed"
+            className="shrink-0"
           >
             Reset section
-          </button>
+          </Button>
         )}
       </div>
 
@@ -141,10 +149,9 @@ function SectionCard({ sectionKey, section, onFieldChange, onSave, onReset, savi
 
       {canSave && (
         <div className="mt-4 flex justify-end">
-          <button
+          <Button
             onClick={handleSave}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-full bg-navy px-5 py-2 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? (
               <>
@@ -154,10 +161,10 @@ function SectionCard({ sectionKey, section, onFieldChange, onSave, onReset, savi
             ) : (
               <>Save changes</>
             )}
-          </button>
+          </Button>
         </div>
       )}
-    </div>
+    </Surface>
   )
 }
 
@@ -196,7 +203,7 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
   }
 
   return (
-    <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
+    <Surface className="p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="font-display text-base font-bold text-ink">{section.label}</h3>
@@ -204,17 +211,9 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <div className={`rounded-xl px-4 py-3 text-center ${effectiveDist <= 0.75 ? 'bg-emerald-50' : effectiveDist <= 0.85 ? 'bg-blue-50' : 'bg-amber-50'}`}>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Match distance</div>
-          <div className="mt-1 font-display text-xl font-bold text-ink">{effectiveDist?.toFixed(2)}</div>
-          <div className="mt-0.5 text-[10px] text-muted">{distNote}</div>
-        </div>
-        <div className={`rounded-xl px-4 py-3 text-center ${effectiveMargin < 0.04 ? 'bg-red-50' : effectiveMargin < 0.06 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Ambiguity margin</div>
-          <div className="mt-1 font-display text-xl font-bold text-ink">{effectiveMargin?.toFixed(2)}</div>
-          <div className="mt-0.5 text-[10px] text-muted">{marginNote}</div>
-        </div>
+      <div className="mb-5 grid gap-2 text-sm text-secondary sm:grid-cols-2">
+        <p><strong className="text-foreground">Match {effectiveDist?.toFixed(2)}:</strong> {distNote}</p>
+        <p><strong className="text-foreground">Margin {effectiveMargin?.toFixed(2)}:</strong> {marginNote}</p>
       </div>
 
       <div className="flex flex-col gap-5">
@@ -231,28 +230,27 @@ function BiometricSection({ section, onFieldChange, onSave, onReset, saving }) {
 
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         {hasChanges && (
-          <button
+          <Button
+            variant="secondary"
             onClick={() => {
               setDraft(Object.fromEntries(Object.entries(section.fields).map(([k, f]) => [k, f.default])))
               onReset('biometric')
             }}
             disabled={saving}
-            className="rounded-full border border-stone-200 px-4 py-2 text-sm font-semibold text-muted transition hover:border-stone-300 hover:text-stone-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Reset
-          </button>
+          </Button>
         )}
         {hasChanges && (
-          <button
+          <Button
             onClick={handleSave}
             disabled={saving}
-            className="rounded-full bg-navy px-5 py-2 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? 'Saving...' : 'Save changes'}
-          </button>
+          </Button>
         )}
       </div>
-    </div>
+    </Surface>
   )
 }
 
@@ -277,20 +275,13 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
 
   if (loading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-          <span className="text-sm text-muted">Loading settings...</span>
-        </div>
-      </div>
+      <LoadingState className="min-h-64 justify-center">Loading settings…</LoadingState>
     )
   }
 
   if (error || !sections) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-red-500">{error || 'Failed to load settings.'}</p>
-      </div>
+      <ErrorState className="my-6" description={error || 'Failed to load settings.'} title="Settings unavailable" />
     )
   }
 
@@ -298,13 +289,11 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
 
   return (
     <section className="flex min-h-0 flex-col gap-4 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
-      <div className="flex shrink-0 justify-end">
-        {hasAnyPending ? (
-          <div className="flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
-            Unsaved changes pending
-          </div>
-        ) : null}
-      </div>
+      <PageHeader
+        title="System settings"
+        description="Manage biometric thresholds and controlled administrator access."
+        actions={hasAnyPending ? <Status tone="warning">Unsaved changes</Status> : null}
+      />
 
       <div className="md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
         <div className="grid gap-5">

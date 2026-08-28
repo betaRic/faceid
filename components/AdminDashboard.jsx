@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import AdminShell from './admin/AdminShell'
@@ -9,12 +8,11 @@ import { useAdminStore } from '@/lib/admin/store'
 import { useOffices } from '@/lib/admin/hooks/useOffices'
 import { usePendingApprovals } from '@/lib/admin/hooks/usePendingApprovals'
 import { ToastContainer } from '@/components/shared/ui'
-import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
+import { Button, Icon, LoadingState } from '@/components/ui'
 import { DashboardPanel } from './admin/DashboardPanel'
 import { EmployeesPanel } from './admin/EmployeesPanel'
 import { SummaryPanel } from './admin/SummaryPanel'
 import { AdminsPanel } from './admin/AdminsPanel'
-import { HrUsersPanel } from './admin/HrUsersPanel'
 import OfficePanel from './admin/OfficePanel'
 import EmployeeEditorModal from './admin/EmployeeEditorModal'
 import EmployeeDeleteModal from '@/components/admin/EmployeeDeleteModal'
@@ -23,13 +21,7 @@ import HrOfficeSettingsPanel from './admin/HrOfficeSettingsPanel'
 import { ThresholdSettings } from './admin/ThresholdSettings'
 import WorkforcePanel from './admin/WorkforcePanel'
 
-function HeaderActionIcon({ name }) {
-  const props = { className: 'h-4 w-4', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', 'aria-hidden': true }
-  if (name === 'scan') return <svg {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M4 8V5a1 1 0 0 1 1-1h3m8 0h3a1 1 0 0 1 1 1v3M4 16v3a1 1 0 0 0 1 1h3m8 0h3a1 1 0 0 0 1-1v-3M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z" /></svg>
-  return <svg {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" d="M10 7V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2m4-5H3m0 0 3-3m-3 3 3 3" /></svg>
-}
-
-export default function AdminDashboard({ initialRoleScope = 'regional', initialOfficeId = '', permissions = [] }) {
+export default function AdminDashboard({ initialRole = 'admin', initialRoleScope = 'regional', initialOfficeId = '', permissions = [] }) {
   const router = useRouter()
   const {
     roleScope,
@@ -55,7 +47,7 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
     setSelectedOfficeId: state.setSelectedOfficeId,
   })))
 
-  const isHr = !permissions.includes('dashboard') && !permissions.includes('office')
+  const isHr = initialRole === 'hr'
 
   // Live pending approval count — polled every 60s
   const { pendingCount } = usePendingApprovals(60_000)
@@ -114,8 +106,8 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
 
   if (!officesLoaded) {
     return (
-      <div className="flex h-[100dvh] items-center justify-center bg-[linear-gradient(180deg,#f6f8fc_0%,#edf2f8_100%)] px-4">
-        <div className="flex h-64 items-center justify-center rounded-[1.6rem] border border-black/5 bg-white px-8 shadow-sm"><DilgLoadingIndicator label="Loading workspace…" /></div>
+      <div className="flex h-[100dvh] items-center justify-center bg-canvas px-4">
+        <LoadingState label="Loading workspace…" />
       </div>
     )
   }
@@ -125,21 +117,14 @@ export default function AdminDashboard({ initialRoleScope = 'regional', initialO
       activePanel={activePanel}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-            href="/scan"
-          >
-            <HeaderActionIcon name="scan" />
+          <Button onClick={() => router.push('/scan')} variant="secondary">
+            <Icon name="scan" />
             Scan
-          </Link>
-          <button
-            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-stone-50"
-            onClick={handleLogout}
-            type="button"
-          >
-            <HeaderActionIcon name="logout" />
+          </Button>
+          <Button onClick={handleLogout} variant="quiet">
+            <Icon name="logout" />
             Logout
-          </button>
+          </Button>
         </div>
       }
       navItems={navItems}

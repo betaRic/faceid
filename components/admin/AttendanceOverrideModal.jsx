@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
 import { useAdminStore } from '@/lib/admin/store'
+import { Button, Dialog, EmptyState, Field, Input, LoadingState, Select, Status, Surface } from '@/components/ui'
 
 const ACTION_OPTIONS = [
   { value: 'am_in', action: 'checkin', label: 'AM In' },
@@ -10,6 +10,9 @@ const ACTION_OPTIONS = [
   { value: 'pm_in', action: 'checkin', label: 'PM In' },
   { value: 'pm_out', action: 'checkout', label: 'PM Out' },
 ]
+
+const SLOT_FIELDS = { am_in: 'amIn', am_out: 'amOut', pm_in: 'pmIn', pm_out: 'pmOut' }
+const SLOT_DEFAULTS = { am_in: '08:00', am_out: '12:00', pm_in: '13:00', pm_out: '17:00' }
 
 function formatTimestamp(ts) {
   if (!ts) return '—'
@@ -44,6 +47,11 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
   useEffect(() => {
     if (row) fetchLogs()
   }, [row])
+
+  useEffect(() => {
+    const current = row?.[SLOT_FIELDS[action]]
+    setTimeValue(/^\d{2}:\d{2}$/.test(String(current || '')) ? current : SLOT_DEFAULTS[action])
+  }, [action, row])
 
   async function fetchLogs() {
     setLoading(true)
@@ -138,161 +146,82 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
   if (!row) return null
 
   const sorted = [...logs].sort((a, b) => a.timestamp - b.timestamp)
+  const originalValue = row[SLOT_FIELDS[action]] || 'No entry'
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-black/5 bg-white shadow-2xl"
-      >
-        <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-ink">Attendance Override</h2>
-            <p className="mt-0.5 text-sm text-muted">
-              {row.name} &middot; {row.employeeId} &middot; {row.dateKey}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            type="button"
-            className="shrink-0 rounded-full border border-black/10 px-4 py-2 text-sm font-semibold text-ink hover:bg-stone-50"
-          >
-            Close
-          </button>
-        </div>
+    <Dialog
+      footer={(
+        <>
+          <Button disabled={busy} onClick={onClose} variant="secondary">Cancel</Button>
+          <Button disabled={busy || !reason.trim()} onClick={handleAdd}>{busy ? 'Saving…' : 'Save correction'}</Button>
+        </>
+      )}
+      onClose={onClose}
+      open
+      title="Attendance correction"
+    >
+      <div className="grid gap-5">
+        <Surface className="px-4 py-3">
+          <p className="font-semibold text-foreground">{row.name}</p>
+          <p className="mt-1 text-sm text-secondary">{row.employeeId || 'No employee ID'} · {row.dateKey} · {row.officeName}</p>
+        </Surface>
 
-        {/* Existing log timeline */}
-        <div className="mt-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted">Recorded entries</p>
+        <section aria-labelledby="recorded-entries-heading">
+          <h3 className="text-sm font-semibold text-foreground" id="recorded-entries-heading">Recorded entries</h3>
           {loading ? (
-            <div className="flex justify-center py-6">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-navy border-t-transparent" />
-            </div>
+            <LoadingState className="py-5" label="Loading recorded entries…" />
           ) : sorted.length === 0 ? (
-            <p className="py-4 text-sm text-muted">No entries recorded for this date.</p>
+            <EmptyState className="mt-2" description="A manual correction will create the first entry for this date." title="No entries recorded" />
           ) : (
-            <div className="mt-2 max-h-52 space-y-2 overflow-y-auto">
+            <div className="mt-2 grid gap-2">
               {sorted.map(log => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between rounded-xl border border-black/5 bg-stone-50 px-4 py-2.5"
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${
-                        log.action === 'checkin'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}
-                    >
-                      {log.action === 'checkin' ? 'In' : 'Out'}
-                    </span>
-                    <span className="text-sm font-medium text-ink">{log.time || formatTimestamp(log.timestamp)}</span>
-                    {log.source === 'manual_override' && (
-                      <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                        MANUAL
-                      </span>
-                    )}
-                    {log.overrideReason && (
-                      <span className="min-w-0 truncate text-xs italic text-muted">
-                        &ldquo;{log.overrideReason}&rdquo;
-                      </span>
-                    )}
-                    {log.fieldDutyStatus && (
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        log.fieldDutyStatus === 'approved' ? 'bg-emerald-100 text-emerald-700' : log.fieldDutyStatus === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        FIELD DUTY · {log.fieldDutyStatus.toUpperCase()}
-                      </span>
-                    )}
+                <Surface className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between" key={log.id}>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Status tone={log.action === 'checkin' ? 'active' : 'pending'}>{log.action === 'checkin' ? 'In' : 'Out'}</Status>
+                      <span className="text-sm font-semibold text-foreground">{log.time || formatTimestamp(log.timestamp)}</span>
+                      {log.source === 'manual_override' ? <Status>Manual</Status> : null}
+                      {log.fieldDutyStatus ? <Status tone={log.fieldDutyStatus === 'approved' ? 'active' : log.fieldDutyStatus === 'rejected' ? 'rejected' : 'pending'}>Field duty · {log.fieldDutyStatus}</Status> : null}
+                    </div>
+                    {log.overrideReason ? <p className="mt-2 text-xs text-secondary">Reason: {log.overrideReason}</p> : null}
                   </div>
-                  <div className="ml-3 flex shrink-0 gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {log.fieldDutyStatus === 'pending' ? (
                       <>
-                        <button className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40" disabled={busy} onClick={() => handleFieldDutyReview(log, 'approved')} type="button">Approve</button>
-                        <button className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 disabled:opacity-40" disabled={busy} onClick={() => handleFieldDutyReview(log, 'rejected')} type="button">Reject</button>
+                        <Button disabled={busy} onClick={() => handleFieldDutyReview(log, 'approved')} variant="secondary">Approve</Button>
+                        <Button disabled={busy} onClick={() => handleFieldDutyReview(log, 'rejected')} variant="secondary">Reject</Button>
                       </>
                     ) : null}
-                    <button
-                      className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-40"
-                      disabled={busy}
-                      onClick={() => handleDelete(log)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
+                    <Button disabled={busy} onClick={() => handleDelete(log)} variant="quiet">Delete</Button>
                   </div>
-                </div>
+                </Surface>
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Add manual entry form */}
-        <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-blue-800">
-            Add manual entry
-          </p>
+        <Surface className="grid gap-4 p-4">
+          <h3 className="text-sm font-semibold text-foreground">Propose correction</h3>
           <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-muted">
-                Action
-              </label>
-              <select
-                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-                value={action}
-                onChange={e => setAction(e.target.value)}
-              >
-                {ACTION_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+            <Field label="Attendance slot">
+              <Select onChange={event => setAction(event.target.value)} value={action}>
+                {ACTION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </Select>
+            </Field>
+            <div className="grid gap-2">
+              <span className="text-sm font-medium text-foreground">Original</span>
+              <div className="flex min-h-11 items-center rounded-control border border-line bg-canvas px-3 py-2 text-sm text-secondary">{originalValue}</div>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-muted">
-                Time (Manila)
-              </label>
-              <input
-                type="time"
-                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-                value={timeValue}
-                onChange={e => setTimeValue(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-muted">
-                Reason <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-                placeholder="e.g. scanner failure"
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              />
-            </div>
+            <Field label="Proposed">
+              <Input onChange={event => setTimeValue(event.target.value)} type="time" value={timeValue} />
+            </Field>
           </div>
-          <button
-            className="mt-3 rounded-xl bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-dark disabled:opacity-40"
-            disabled={busy || !reason.trim()}
-            onClick={handleAdd}
-            type="button"
-          >
-            {busy ? 'Saving…' : 'Add Entry'}
-          </button>
-        </div>
-
-        <p className="mt-3 text-xs text-muted">
-          Every manual addition and deletion is recorded in the audit log with your admin identity.
-        </p>
-        </div>
-      </motion.div>
-    </div>
+          <Field label="Reason" required>
+            <Input onChange={event => setReason(event.target.value)} onKeyDown={event => event.key === 'Enter' && handleAdd()} placeholder="Example: scanner failure" value={reason} />
+          </Field>
+          <p className="text-xs leading-5 text-secondary">The signed-in staff account, original records, proposed value, reason, and resulting change are retained in the audit trail.</p>
+        </Surface>
+      </div>
+    </Dialog>
   )
 }
