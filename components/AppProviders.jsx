@@ -1,12 +1,15 @@
 'use client'
 
 import { BiometricRuntimeProvider } from './BiometricRuntimeProvider'
+import ThemeProvider from './ThemeProvider'
 
 export default function AppProviders({ children }) {
   return (
-    <BiometricRuntimeProvider>
-      {children}
-    </BiometricRuntimeProvider>
+    <ThemeProvider>
+      <BiometricRuntimeProvider>
+        {children}
+      </BiometricRuntimeProvider>
+    </ThemeProvider>
   )
 }
 
