@@ -54,4 +54,19 @@ describe('ThemeSelector', () => {
     await userEvent.click(document.body)
     expect(screen.queryByRole('menu', { name: 'Appearance' })).not.toBeInTheDocument()
   })
+
+  it('moves focus through choices with standard menu keys', async () => {
+    renderSelector()
+    await userEvent.click(screen.getByRole('button', { name: 'Theme: System' }))
+
+    expect(screen.getByRole('menuitemradio', { name: 'System' })).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitemradio', { name: 'Light' })).toHaveFocus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(screen.getByRole('menuitemradio', { name: 'System' })).toHaveFocus()
+    await userEvent.keyboard('{Home}')
+    expect(screen.getByRole('menuitemradio', { name: 'Light' })).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    expect(screen.getByRole('menuitemradio', { name: 'System' })).toHaveFocus()
+  })
 })
