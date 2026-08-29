@@ -16,7 +16,9 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html data-theme="light" data-theme-preference="system" lang="en" suppressHydrationWarning>
-      <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body className="font-sans antialiased">
         <AppProviders>{children}</AppProviders>
       </body>
