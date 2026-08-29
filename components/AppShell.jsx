@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useId, useRef, useState } from 'react'
 import BrandMark from './BrandMark'
+import ThemeSelector from './ThemeSelector'
 import { usePortalDestination } from './usePortalDestination'
 import { Icon, IconButton, Surface, cx } from './ui'
 
@@ -109,20 +110,23 @@ export default function AppShell({
 
           <div className="ml-auto flex items-center gap-2">
             {actions}
-            <Link
-              aria-label={`${staffLabel} staff access`}
-              className={cx(
-                'inline-flex min-h-11 items-center gap-2 rounded-control border px-3 text-sm font-semibold transition-colors',
-                pathname?.startsWith('/admin') || pathname === '/login'
-                  ? 'border-primary bg-primary text-white'
-                  : 'border-line bg-surface text-primary hover:bg-canvas',
-              )}
-              href={portal.href}
-              onClick={() => handleNavigate(portal.href)}
-            >
-              <Icon name="security" />
-              <span className="hidden sm:inline">{staffLabel}</span>
-            </Link>
+            <ThemeSelector />
+            {pathname !== '/' ? (
+              <Link
+                aria-label={`${staffLabel} staff access`}
+                className={cx(
+                  'inline-flex min-h-11 items-center gap-2 rounded-control border px-3 text-sm font-semibold transition-colors',
+                  pathname?.startsWith('/admin') || pathname === '/login'
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-line bg-surface text-primary hover:bg-canvas',
+                )}
+                href={portal.href}
+                onClick={() => handleNavigate(portal.href)}
+              >
+                <Icon name="security" />
+                <span className="hidden sm:inline">{staffLabel}</span>
+              </Link>
+            ) : null}
 
             {canRenderNavigation ? (
               <IconButton

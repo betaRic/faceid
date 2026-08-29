@@ -6,12 +6,13 @@ import AdminLogin from '@/components/AdminLogin'
 import BiometricWorkspaceGate from '@/components/BiometricWorkspaceGate'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import DilgLoadingIndicator from '@/components/shared/DilgLoadingIndicator'
+import ThemeProvider from '@/components/ThemeProvider'
 
 afterEach(() => vi.restoreAllMocks())
 
 describe('public entry experience', () => {
   it('keeps only essential public entry actions', () => {
-    render(<PlatformNavigator />)
+    render(<ThemeProvider><PlatformNavigator /></ThemeProvider>)
 
     expect(screen.getByRole('link', { name: /scan attendance/i })).toBeVisible()
     expect(screen.getByRole('link', { name: /register employee/i })).toBeVisible()
@@ -22,7 +23,7 @@ describe('public entry experience', () => {
   })
 
   it('keeps PIN authentication and accessible error feedback', async () => {
-    render(<AdminLogin />)
+    render(<ThemeProvider><AdminLogin /></ThemeProvider>)
 
     expect(screen.getByLabelText('PIN')).toHaveAttribute('type', 'password')
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
