@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from 'react'
 import { Icon, IconButton, Surface, cx } from '@/components/ui'
+import ThemeSelector from '@/components/ThemeSelector'
 
 const SIDEBAR_PREFERENCE_KEY = 'faceattend:admin-sidebar-collapsed:v2'
 
@@ -36,7 +37,7 @@ function NavButton({ item, active, onClick, compact = false, collapsed = false }
       {item.badge && !collapsed ? (
         <span
           aria-label={`${item.badge > 99 ? '99 or more' : item.badge} pending approvals`}
-          className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-bold text-primary-strong"
+          className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-bold text-accent-contrast"
         >
           {item.badge > 99 ? '99+' : item.badge}
         </span>
@@ -109,13 +110,14 @@ export default function AdminShell({
         <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-center gap-3 px-3 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <img alt="" className="h-8 w-8 shrink-0 object-contain" src="/brand/dilg-logo.svg" />
-            <div className="min-w-0">
+            <div className="hidden min-w-0 sm:block">
               <div className="truncate text-sm font-semibold text-primary">VeriFace administration</div>
               <div className="truncate text-xs text-secondary">{workspaceLabel}</div>
             </div>
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <ThemeSelector />
             {actions}
             {navItems.length > 0 ? (
               <IconButton

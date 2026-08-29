@@ -2,15 +2,15 @@ import { cx } from './cx'
 
 const tones = {
   neutral: 'border-line bg-canvas text-secondary before:bg-secondary',
-  active: 'border-emerald-200 bg-emerald-50 text-emerald-800 before:bg-emerald-600',
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-800 before:bg-emerald-600',
-  pending: 'border-amber-200 bg-amber-50 text-amber-900 before:bg-amber-500',
-  review: 'border-amber-200 bg-amber-50 text-amber-900 before:bg-amber-500',
-  warning: 'border-amber-200 bg-amber-50 text-amber-900 before:bg-amber-500',
-  blocked: 'border-red-200 bg-red-50 text-red-800 before:bg-red-600',
-  rejected: 'border-red-200 bg-red-50 text-red-800 before:bg-red-600',
-  error: 'border-red-200 bg-red-50 text-red-800 before:bg-red-600',
-  danger: 'border-red-200 bg-red-50 text-red-800 before:bg-red-600',
+  active: 'border-success-line bg-success-surface text-success before:bg-success',
+  success: 'border-success-line bg-success-surface text-success before:bg-success',
+  pending: 'border-warning-line bg-warning-surface text-warning before:bg-warning',
+  review: 'border-warning-line bg-warning-surface text-warning before:bg-warning',
+  warning: 'border-warning-line bg-warning-surface text-warning before:bg-warning',
+  blocked: 'border-destructive-line bg-destructive-surface text-destructive before:bg-destructive',
+  rejected: 'border-destructive-line bg-destructive-surface text-destructive before:bg-destructive',
+  error: 'border-destructive-line bg-destructive-surface text-destructive before:bg-destructive',
+  danger: 'border-destructive-line bg-destructive-surface text-destructive before:bg-destructive',
 }
 
 export function Status({ tone = 'neutral', className = '', children }) {

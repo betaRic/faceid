@@ -43,9 +43,9 @@ export default function EmployeeDeleteModal({ person, onCancel }) {
       open
       title="Deactivate employee"
     >
-      <div className="rounded-control border border-red-200 bg-red-50 p-4">
-        <div className="font-semibold text-red-950">{person.name}</div>
-        <div className="mt-1 text-sm text-red-800">{person.employeeId || 'No employee ID'} · {person.officeName || 'Unassigned office'}</div>
+      <div className="rounded-control border border-destructive-line bg-destructive-surface p-4">
+        <div className="font-semibold text-destructive">{person.name}</div>
+        <div className="mt-1 text-sm text-destructive">{person.employeeId || 'No employee ID'} · {person.officeName || 'Unassigned office'}</div>
       </div>
       <p className="mt-4 text-sm leading-6 text-secondary">This blocks future attendance while preserving the employee record, biometrics, enrollment photo, attendance, DTR, and audit history. The employee can be reactivated later.</p>
     </Dialog>

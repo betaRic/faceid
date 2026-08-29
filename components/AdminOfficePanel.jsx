@@ -46,7 +46,7 @@ function TimeInput({ label, value, onChange }) {
   return (
     <Field label={label}>
       <input
-        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+        className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
         onChange={e => onChange(e.target.value)}
         type="time"
         value={value || ''}
@@ -84,9 +84,9 @@ function DayToggle({ label, activeValues = [], onToggle, accent = false }) {
               className={`min-h-11 rounded-control border px-3 py-2 text-sm font-semibold transition ${
                 active
                   ? accent
-                    ? 'border-amber/40 bg-amber/15 text-amber-dark'
-                    : 'border-navy/30 bg-navy/10 text-navy-dark'
-                  : 'border-black/10 bg-white text-muted hover:bg-stone-100'
+                    ? 'border-warning-line bg-warning-surface text-warning'
+                    : 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-line bg-surface text-secondary hover:bg-canvas'
               }`}
               onClick={() => onToggle(day.value)}
               type="button"
@@ -120,7 +120,7 @@ export default function AdminOfficePanel({
 }) {
   if (!activeOffice) {
     return (
-      <div className="flex h-40 items-center justify-center rounded-2xl border border-dashed border-black/10 bg-stone-50 text-sm text-muted">
+      <div className="flex h-40 items-center justify-center rounded-2xl border border-dashed border-line bg-subdued text-sm text-secondary">
         Select an office from the list above to edit its settings.
       </div>
     )
@@ -136,28 +136,28 @@ export default function AdminOfficePanel({
       <div className="grid gap-3 rounded-surface border border-line bg-canvas p-4 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="Office name">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
             onChange={e => updateDraft('name', e.target.value)}
             value={activeOffice.name || ''}
           />
         </Field>
         <Field label="Code">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
             onChange={e => updateDraft('code', e.target.value)}
             value={activeOffice.code || ''}
           />
         </Field>
         <Field label="Short name">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
             onChange={e => updateDraft('shortName', e.target.value)}
             value={activeOffice.shortName || ''}
           />
         </Field>
         <Field label="Office type">
           <select
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
             onChange={e => updateDraft('officeType', e.target.value)}
             value={activeOffice.officeType || ''}
           >
@@ -166,20 +166,20 @@ export default function AdminOfficePanel({
         </Field>
       </div>
       {officeDraftWarning ? (
-        <p className="-mt-2 px-1 text-xs text-amber-600">{officeDraftWarning}</p>
+        <p className="-mt-2 px-1 text-xs text-warning">{officeDraftWarning}</p>
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Province / city">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
             onChange={e => updateDraft('provinceOrCity', e.target.value)}
             value={activeOffice.provinceOrCity || ''}
           />
         </Field>
         <Field label="Location label">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
             onChange={e => updateDraft('location', e.target.value)}
             value={activeOffice.location || ''}
           />
@@ -199,7 +199,7 @@ export default function AdminOfficePanel({
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Head name">
             <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy uppercase"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary uppercase"
               onChange={e => updateDraft('headName', e.target.value.toUpperCase())}
               placeholder="MARIA THERESA D. BAUTISTA"
               value={activeOffice.headName || ''}
@@ -207,7 +207,7 @@ export default function AdminOfficePanel({
           </Field>
           <Field label="Head position">
             <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
               onChange={e => updateDraft('headPosition', e.target.value)}
               placeholder="City Director/LGOO VII"
               value={activeOffice.headPosition || ''}
@@ -247,28 +247,28 @@ export default function AdminOfficePanel({
                 >
                   <input
                     aria-label={`Division ${index + 1} short name`}
-                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy uppercase"
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-foreground outline-none transition focus:border-primary uppercase"
                     onChange={e => updateDivision(index, 'shortName', e.target.value.toUpperCase())}
                     placeholder="LGCDD"
                     value={division.shortName || ''}
                   />
                   <input
                     aria-label={`Division ${index + 1} full name`}
-                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy"
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-foreground outline-none transition focus:border-primary"
                     onChange={e => updateDivision(index, 'name', e.target.value)}
                     placeholder="Local Government Capability and Development Division"
                     value={division.name || ''}
                   />
                   <input
                     aria-label={`Division ${index + 1} head name`}
-                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy uppercase"
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-foreground outline-none transition focus:border-primary uppercase"
                     onChange={e => updateDivision(index, 'headName', e.target.value.toUpperCase())}
                     placeholder="MARY ANN T. TRASPE"
                     value={division.headName || ''}
                   />
                   <input
                     aria-label={`Division ${index + 1} head position`}
-                    className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-sm text-ink outline-none transition focus:border-navy"
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-foreground outline-none transition focus:border-primary"
                     onChange={e => updateDivision(index, 'headPosition', e.target.value)}
                     placeholder="Division Chief / LGOO VII"
                     value={division.headPosition || ''}
@@ -319,7 +319,7 @@ export default function AdminOfficePanel({
               <Icon name="location" />{locationLoading ? 'Getting location…' : 'Use my location'}
             </Button>
             {locationNotice && (
-              <span className="self-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
+              <span className="self-center rounded-full border border-success-line bg-success-surface px-3 py-1.5 text-xs text-success">
                 {locationNotice}
               </span>
             )}
@@ -346,7 +346,7 @@ export default function AdminOfficePanel({
             <p className="mb-2 text-xs text-muted">Comma-separated. Leave blank to skip WiFi check.</p>
             <input
               aria-label="WiFi SSIDs"
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
               onChange={e => updateDraft('wifiSsid', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
               placeholder="DILG-Main, DILG-Guest"
               value={Array.isArray(activeOffice.wifiSsid) ? activeOffice.wifiSsid.join(', ') : (activeOffice.wifiSsid || '')}
@@ -361,7 +361,7 @@ export default function AdminOfficePanel({
           {/* Schedule label */}
           <Field label="Schedule label">
             <input
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-navy"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
               onChange={e => updateDraft('workPolicy.schedule', e.target.value)}
               placeholder="Mon-Fri, 8:00 AM to 5:00 PM"
               value={wp.schedule || ''}

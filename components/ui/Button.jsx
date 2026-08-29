@@ -2,10 +2,10 @@ import { forwardRef } from 'react'
 import { cx } from './cx'
 
 const variants = {
-  primary: 'border-primary bg-primary text-white hover:bg-primary-strong',
+  primary: 'border-primary bg-primary text-primary-contrast hover:bg-primary-strong',
   secondary: 'border-line bg-surface text-primary hover:bg-canvas',
   quiet: 'border-transparent bg-transparent text-primary hover:bg-primary/5',
-  destructive: 'border-destructive bg-destructive text-white hover:bg-red-800',
+  destructive: 'border-destructive bg-destructive text-primary-contrast hover:brightness-110',
 }
 
 export const Button = forwardRef(function Button(

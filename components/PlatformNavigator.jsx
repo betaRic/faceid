@@ -12,16 +12,16 @@ function EntryAction({ href, icon, title, description, primary = false, ariaLabe
       aria-label={ariaLabel || title}
       className={cx(
         'group flex min-h-16 items-center gap-4 rounded-control border px-4 py-3 transition-colors',
-        primary ? 'border-primary bg-primary text-white hover:bg-primary-strong' : 'border-line bg-surface text-foreground hover:bg-canvas',
+        primary ? 'border-primary bg-primary text-primary-contrast hover:bg-primary-strong' : 'border-line bg-surface text-foreground hover:bg-canvas',
       )}
       href={href}
     >
-      <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-control', primary ? 'bg-white/12' : 'bg-primary/8 text-primary')}>
+      <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-control', primary ? 'bg-primary-contrast/10' : 'bg-primary/8 text-primary')}>
         <Icon name={icon} size={20} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold">{title}</span>
-        <span className={cx('mt-0.5 block text-xs leading-5', primary ? 'text-white/75' : 'text-secondary')}>{description}</span>
+        <span className={cx('mt-0.5 block text-xs leading-5', primary ? 'text-primary-contrast/75' : 'text-secondary')}>{description}</span>
       </span>
       <Icon className="shrink-0 transition-transform group-hover:translate-x-0.5" name="arrow-right" />
     </Link>

@@ -27,12 +27,12 @@ export default function CompleteStep({ lastSavedSummary, onAddAnotherSample, onE
         </dl>
 
         {pending ? (
-          <div className="mt-5 rounded-control border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+          <div className="mt-5 rounded-control border border-warning-line bg-warning-surface px-4 py-3 text-sm leading-6 text-warning">
             Attendance access remains inactive until an administrator reviews and approves this registration.
           </div>
         ) : null}
         {lastSavedSummary?.duplicateReviewRequired ? (
-          <div className="mt-4 rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-900" role="alert">
+          <div className="mt-4 rounded-control border border-destructive-line bg-destructive-surface px-4 py-3 text-sm leading-6 text-destructive" role="alert">
             {lastSavedSummary?.message || 'A similar employee profile was found. Explicit duplicate review is required before activation.'}
           </div>
         ) : null}

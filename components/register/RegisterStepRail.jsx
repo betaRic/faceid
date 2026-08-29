@@ -14,7 +14,7 @@ export default function RegisterStepRail({ steps, activeStep, stepIndex }) {
           const active = item.id === activeStep
           return (
             <li aria-current={active ? 'step' : undefined} className="min-w-0 text-center" key={item.id}>
-              <span className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold ${complete || active ? 'border-primary bg-primary text-white' : 'border-line bg-surface text-secondary'}`}>
+              <span className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold ${complete || active ? 'border-primary bg-primary text-primary-contrast' : 'border-line bg-surface text-secondary'}`}>
                 {complete ? <Icon name="check" size={15} /> : item.number}
               </span>
               <span className={`mt-2 block text-xs font-medium sm:text-sm ${active ? 'text-primary' : 'text-secondary'}`}>{item.title}</span>

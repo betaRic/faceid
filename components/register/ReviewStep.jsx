@@ -33,8 +33,8 @@ export default function ReviewStep({
             <p className="mt-3 text-sm leading-6 text-secondary">{burstSummary.keptCount} support samples kept across {burstSummary.phasesCompleted} guided poses.</p>
           </Surface>
         ) : null}
-        {captureFeedback?.tone === 'warn' ? <div className="rounded-control border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{captureFeedback.title}: {captureFeedback.text}</div> : null}
-        {duplicateReviewHint?.status === 'required' ? <div className="rounded-control border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="alert">{duplicateReviewHint.message || 'A similar existing profile requires administrator review before approval.'}</div> : null}
+        {captureFeedback?.tone === 'warn' ? <div className="rounded-control border border-warning-line bg-warning-surface p-4 text-sm text-warning">{captureFeedback.title}: {captureFeedback.text}</div> : null}
+        {duplicateReviewHint?.status === 'required' ? <div className="rounded-control border border-warning-line bg-warning-surface p-4 text-sm text-warning" role="alert">{duplicateReviewHint.message || 'A similar existing profile requires administrator review before approval.'}</div> : null}
       </div>
     </div>
   )

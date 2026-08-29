@@ -139,7 +139,7 @@ function EmployeesPanelInner() {
                     {employees.map((person) => (
                       <tr key={person.id}>
                         <td className="px-4 py-3"><Checkbox aria-label={`Select ${person.name}`} checked={selectedEmployeeIdSet.has(person.id)} onChange={() => toggleSelectedEmployee(person.id)} /></td>
-                        <td className="px-4 py-3"><div className="font-medium">{person.name}</div><div className="text-xs text-secondary">{person.employeeId || 'No employee ID'}{person.accessCode ? ` · Access code ${person.accessCode}` : ''}</div>{person.duplicateReviewRequired ? <div className="mt-1 text-xs font-medium text-amber-800">Duplicate review required</div> : null}</td>
+                        <td className="px-4 py-3"><div className="font-medium">{person.name}</div><div className="text-xs text-secondary">{person.employeeId || 'No employee ID'}{person.accessCode ? ` · Access code ${person.accessCode}` : ''}</div>{person.duplicateReviewRequired ? <div className="mt-1 text-xs font-medium text-warning">Duplicate review required</div> : null}</td>
                         <td className="px-4 py-3 text-secondary">{person.officeName}<div className="text-xs">{person.divisionName}</div></td>
                         <td className="px-4 py-3 tabular-nums">{person.sampleCount ?? 0}</td>
                         <td className="px-4 py-3"><EmployeeLifecycleStatus status={person.lifecycleStatus} /></td>

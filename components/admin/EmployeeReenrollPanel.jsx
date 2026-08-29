@@ -12,7 +12,7 @@ const OVAL_FRAME_STYLE = { borderRadius: '44% / 34%' }
 
 function InfoCard({ title, text, tone = 'default' }) {
   return (
-    <Surface className={`p-4 ${tone === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-900' : ''}`}>
+    <Surface className={`p-4 ${tone === 'warn' ? 'border-warning-line bg-warning-surface text-warning' : ''}`}>
       <h3 className="text-sm font-semibold">{title}</h3>
       <p className="mt-2 text-sm leading-6">{text}</p>
     </Surface>
@@ -251,7 +251,7 @@ export default function EmployeeReenrollPanel({ person, onBack, onComplete }) {
           )}
 
           {saveError && (
-            <div className="rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+            <div className="rounded-control border border-destructive-line bg-destructive-surface px-4 py-3 text-sm text-destructive" role="alert">
               {saveError}
             </div>
           )}

@@ -53,7 +53,7 @@ export default function BiometricWorkspaceGate({
         <div className="mt-6 border-t border-line pt-5">
           <LoadingState label={loadingLabel || runtimeStatus || 'Loading biometric runtime…'} />
           {bootStage === 'location' && locationState?.error ? (
-            <div className="mt-4 rounded-control border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+            <div className="mt-4 rounded-control border border-warning-line bg-warning-surface px-4 py-3 text-sm text-warning" role="alert">
               {locationState.error}
             </div>
           ) : null}

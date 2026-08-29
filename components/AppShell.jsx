@@ -117,7 +117,7 @@ export default function AppShell({
                 className={cx(
                   'inline-flex min-h-11 items-center gap-2 rounded-control border px-3 text-sm font-semibold transition-colors',
                   pathname?.startsWith('/admin') || pathname === '/login'
-                    ? 'border-primary bg-primary text-white'
+                    ? 'border-primary bg-primary text-primary-contrast'
                     : 'border-line bg-surface text-primary hover:bg-canvas',
                 )}
                 href={portal.href}

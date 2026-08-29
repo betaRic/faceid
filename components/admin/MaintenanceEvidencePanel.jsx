@@ -218,7 +218,7 @@ export function MaintenanceEvidencePanel() {
       </div>
 
       {error ? (
-        <div className="mt-4 rounded-control border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900" role="status">
+        <div className="mt-4 rounded-control border border-warning-line bg-warning-surface px-3 py-3 text-sm text-warning" role="status">
           {error}
         </div>
       ) : null}

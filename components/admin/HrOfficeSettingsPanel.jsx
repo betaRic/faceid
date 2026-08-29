@@ -24,7 +24,7 @@ function DayToggle({ label, values, onChange, accent = false }) {
           <Button
             aria-pressed={values.includes(day.value)}
             key={day.value}
-            className={accent && values.includes(day.value) ? 'border-amber bg-amber text-primary-strong' : ''}
+            className={accent && values.includes(day.value) ? 'border-accent bg-accent text-accent-contrast' : ''}
             onClick={() => toggle(day.value)}
             variant={values.includes(day.value) ? 'primary' : 'secondary'}
           >

@@ -38,7 +38,7 @@ export default function DtrSelectionView({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between border-b border-black/5 px-6 py-4">
+      <div className="flex items-center justify-between border-b border-line px-6 py-4">
         <div>
           <h3 className="text-lg font-semibold text-foreground">
             Generate DTR
@@ -56,10 +56,10 @@ export default function DtrSelectionView({
         </Button>
       </div>
 
-      <div className="grid gap-3 border-b border-black/5 px-4 py-4 sm:grid-cols-3 sm:px-6">
+      <div className="grid gap-3 border-b border-line px-4 py-4 sm:grid-cols-3 sm:px-6">
         <Field label="Month">
           <select
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground"
             disabled={dtrLoading}
             onChange={event => onSetDtrMonth(parseInt(event.target.value, 10))}
             value={dtrMonth}
@@ -71,7 +71,7 @@ export default function DtrSelectionView({
         </Field>
         <Field label="Year">
           <select
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground"
             disabled={dtrLoading}
             onChange={event => onSetDtrYear(parseInt(event.target.value, 10))}
             value={dtrYear}
@@ -83,7 +83,7 @@ export default function DtrSelectionView({
         </Field>
         <Field label="Range">
           <select
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground"
             disabled={dtrLoading}
             onChange={event => onSetDtrRange(event.target.value)}
             value={dtrRange}
@@ -94,17 +94,17 @@ export default function DtrSelectionView({
           </select>
         </Field>
         <Field label="Division">
-          <select className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm" disabled={dtrLoading} onChange={event => onSetDivisionId(event.target.value)} value={divisionId}>
+          <select className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground" disabled={dtrLoading} onChange={event => onSetDivisionId(event.target.value)} value={divisionId}>
             <option value="all">All divisions</option>
             {divisions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
         </Field>
       </div>
 
-      <div className="grid gap-3 border-b border-black/5 px-4 py-3 sm:grid-cols-2 sm:px-6">
+      <div className="grid gap-3 border-b border-line px-4 py-3 sm:grid-cols-2 sm:px-6">
         <Field label="Override signatory name (optional)">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground"
             disabled={dtrLoading}
             onChange={event => onSetSignatoryName(event.target.value)}
             placeholder="Leave blank to use the office head"
@@ -114,7 +114,7 @@ export default function DtrSelectionView({
         </Field>
         <Field label="Override signatory position (optional)">
           <input
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground"
             disabled={dtrLoading}
             onChange={event => onSetSignatoryPosition(event.target.value)}
             placeholder="e.g. OIC-City Director"
@@ -125,10 +125,10 @@ export default function DtrSelectionView({
       </div>
 
       {dtrRange === 'custom' ? (
-        <div className="grid gap-3 border-b border-black/5 px-4 py-4 sm:grid-cols-2 sm:px-6">
+        <div className="grid gap-3 border-b border-line px-4 py-4 sm:grid-cols-2 sm:px-6">
           <Field label="Start Day">
             <select
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground"
               disabled={dtrLoading}
               onChange={event => onSetCustomStartDay(parseInt(event.target.value, 10))}
               value={customStartDay}
@@ -140,7 +140,7 @@ export default function DtrSelectionView({
           </Field>
           <Field label="End Day">
             <select
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-foreground"
               disabled={dtrLoading}
               onChange={event => onSetCustomEndDay(parseInt(event.target.value, 10))}
               value={customEndDay}
@@ -176,7 +176,7 @@ export default function DtrSelectionView({
           filteredEmployees.map(employee => (
             <label
               key={employee.id}
-              className="flex cursor-pointer items-center gap-3 border-b border-black/5 px-4 py-3 transition hover:bg-stone-50 sm:px-6"
+              className="flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3 transition hover:bg-subdued sm:px-6"
             >
               <Checkbox
                 checked={selectedIds.has(employee.id)}
@@ -192,18 +192,18 @@ export default function DtrSelectionView({
         )}
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-black/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="flex flex-col gap-3 border-t border-line px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         {dtrLoading ? (
           <div className="flex flex-1 items-center gap-3">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-navy border-t-transparent" />
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <div className="flex-1">
               <div className="mb-1 flex items-center justify-between text-xs text-muted">
                 <span>Generating DTR Excel...</span>
                 <span>{dtrProgress.current}/{dtrProgress.total}</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
+              <div className="h-1.5 overflow-hidden rounded-full bg-line">
                 <div
-                  className="h-full rounded-full bg-navy transition-all duration-300"
+                  className="h-full rounded-full bg-primary transition-all duration-300"
                   style={{ width: `${dtrProgress.total ? (dtrProgress.current / dtrProgress.total) * 100 : 0}%` }}
                 />
               </div>

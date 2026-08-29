@@ -127,7 +127,7 @@ export default function WorkforceRecordModal({
                   onClick={() => toggleEmployee(person.id)}
                   type="button"
                 >
-                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center border ${isOrder ? 'rounded' : 'rounded-full'} ${selected ? 'border-primary bg-primary text-white' : 'border-line bg-surface'}`}>
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center border ${isOrder ? 'rounded' : 'rounded-full'} ${selected ? 'border-primary bg-primary text-primary-contrast' : 'border-line bg-surface'}`}>
                     {selected ? <Icon name="check" size={14} /> : null}
                   </span>
                   <span className="min-w-0">

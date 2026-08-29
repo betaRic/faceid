@@ -117,13 +117,13 @@ export default function AdminDashboard({ initialRole = 'admin', initialRoleScope
       activePanel={activePanel}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => router.push('/scan')} variant="secondary">
+          <Button aria-label="Scan" onClick={() => router.push('/scan')} variant="secondary">
             <Icon name="scan" />
-            Scan
+            <span className="hidden sm:inline">Scan</span>
           </Button>
-          <Button onClick={handleLogout} variant="quiet">
+          <Button aria-label="Logout" onClick={handleLogout} variant="quiet">
             <Icon name="logout" />
-            Logout
+            <span className="hidden sm:inline">Logout</span>
           </Button>
         </div>
       }

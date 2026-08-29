@@ -85,7 +85,7 @@ export default function DetailsStep({
           />
         </div>
         {isRegional && divisions.length === 0 ? (
-          <div className="rounded-control border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+          <div className="rounded-control border border-warning-line bg-warning-surface px-4 py-3 text-sm text-warning" role="alert">
             This regional office has no divisions configured. Ask an administrator to add divisions before enrolling.
           </div>
         ) : null}
@@ -101,7 +101,7 @@ export default function DetailsStep({
           </label>
         </Surface>
 
-        <div className="rounded-control border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
+        <div className="rounded-control border border-warning-line bg-warning-surface px-4 py-3 text-sm font-medium text-warning">
           Already registered? Do not enroll again. Contact HR if your details need correction.
         </div>
 

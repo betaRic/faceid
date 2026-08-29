@@ -12,7 +12,7 @@ export default function BrandMark({ compact = false, className = '', inverted = 
           width={192}
         />
       </div>
-      <div className="min-w-0">
+      <div className={`${compact ? 'hidden sm:block' : 'min-w-0'}`}>
         <div className={`text-xs font-medium leading-tight ${inverted ? 'text-white/75' : 'text-secondary'}`}>
           DILG Region XII
         </div>

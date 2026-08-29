@@ -31,10 +31,10 @@ export default function KioskSuccessScreen({
   }, [onBack, currentMatch?.employeeId, currentMatch?.personId, currentMatch?.timestamp])
 
   return (
-    <div className="absolute inset-0 z-[6] grid place-items-center bg-white px-5 py-6">
+    <div className="absolute inset-0 z-[6] grid place-items-center bg-surface px-5 py-6">
       <div className="grid w-full max-w-md justify-items-center text-center">
         <div
-          className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full ${alreadyRecorded ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}
+          className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full ${alreadyRecorded ? 'bg-warning-surface text-warning' : 'bg-success-surface text-success'}`}
           data-tone={resultTone}
         >
           <Icon name={alreadyRecorded ? 'clock' : 'check'} size={36} strokeWidth={2.5} />
@@ -44,7 +44,7 @@ export default function KioskSuccessScreen({
         <div className="font-display text-[clamp(3.5rem,13vw,7rem)] font-bold leading-none text-ink">
           {recordedTime}
         </div>
-        <div className="mt-5 max-w-full break-words font-display text-[clamp(1.6rem,6vw,3rem)] font-semibold leading-tight text-navy">
+        <div className="mt-5 max-w-full break-words font-display text-[clamp(1.6rem,6vw,3rem)] font-semibold leading-tight text-primary">
           {employeeName}
         </div>
 

@@ -302,9 +302,9 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
         <Status>{notice}</Status>
       ) : null}
       <div className={`grid min-h-0 flex-1 gap-2 ${tab === "holiday" ? "lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]" : "lg:grid-cols-1"}`}>
-        <div className="min-h-0 overflow-auto rounded-2xl border border-black/5">
+        <div className="min-h-0 overflow-auto rounded-2xl border border-line">
           <table className="w-full text-left text-sm">
-            <thead className="sticky top-0 bg-stone-100 text-xs uppercase text-muted">
+            <thead className="sticky top-0 bg-subdued text-xs uppercase text-secondary">
               <tr>
                 <th className="px-4 py-3">Record</th>
                 <th className="px-4 py-3">Dates / scope</th>
@@ -320,7 +320,7 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
                 </tr>
               ) : records.length ? (
                 records.map((record) => (
-                  <tr className="border-t border-black/5" key={record.id}>
+                  <tr className="border-t border-line" key={record.id}>
                     <td className="px-4 py-3 font-medium">
                       {tab === "holiday"
                         ? record.name
@@ -372,7 +372,7 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
           </table>
         </div>
         <form
-          className={`min-h-0 overflow-auto rounded-2xl border border-black/5 bg-stone-50 p-4 ${tab === "holiday" ? "" : "hidden"}`}
+          className={`min-h-0 overflow-auto rounded-2xl border border-line bg-subdued p-4 ${tab === "holiday" ? "" : "hidden"}`}
           onSubmit={save}
         >
           {editing ? (
@@ -435,7 +435,7 @@ export default function WorkforcePanel({ allowNationalHolidays = false }) {
                   disabled={saving}
                   type="submit"
                 >
-                  {saving ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Saving…</> : "Save"}
+                  {saving ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-contrast border-t-transparent" />Saving…</> : "Save"}
                 </Button>
                 <Button
                   onClick={() => {

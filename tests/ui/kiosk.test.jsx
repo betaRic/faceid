@@ -6,6 +6,7 @@ import KioskScanningOverlay from '@/components/kiosk/KioskScanningOverlay'
 import KioskSuccessScreen from '@/components/kiosk/KioskSuccessScreen'
 import KioskAlert from '@/components/kiosk/KioskAlert'
 import EmployeeReenrollPage from '@/app/admin/employee/[personId]/reenroll/EmployeeReenrollPage'
+import ThemeProvider from '@/components/ThemeProvider'
 
 const kioskState = {
   kioskState: 'idle', setKioskState: vi.fn(), currentMatch: null, setCurrentMatch: vi.fn(),
@@ -29,11 +30,22 @@ const camera = {
   clearOverlay: vi.fn(), start: vi.fn(), stop: vi.fn(),
 }
 
-afterEach(() => window.sessionStorage.clear())
+afterEach(() => {
+  window.localStorage.clear()
+  window.sessionStorage.clear()
+})
 
 describe('kiosk presentation', () => {
+  function renderKiosk() {
+    return render(
+      <ThemeProvider>
+        <KioskView camera={camera} modelsReady workspaceReady locationState={{ ready: true }} onLogAttendance={vi.fn()} />
+      </ThemeProvider>,
+    )
+  }
+
   it('rejects an incomplete access code before scanning', async () => {
-    render(<KioskView camera={camera} modelsReady workspaceReady locationState={{ ready: true }} onLogAttendance={vi.fn()} />)
+    renderKiosk()
     await userEvent.type(screen.getByLabelText(/four-digit access code/i), '12')
     await userEvent.click(screen.getByRole('button', { name: /continue to scan/i }))
     expect(screen.getByRole('alert')).toHaveTextContent('Enter exactly four digits.')
@@ -75,7 +87,7 @@ describe('kiosk presentation', () => {
   })
 
   it('uses a labeled field-duty dialog and preserves the GPS review notice', async () => {
-    render(<KioskView camera={camera} modelsReady workspaceReady locationState={{ ready: true }} onLogAttendance={vi.fn()} />)
+    renderKiosk()
     await userEvent.type(screen.getByLabelText(/four-digit access code/i), '1234')
     await userEvent.click(screen.getByRole('button', { name: /continue to scan/i }))
     await userEvent.click(screen.getByRole('button', { name: /offsite.*field duty/i }))

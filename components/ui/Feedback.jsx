@@ -25,7 +25,7 @@ export function EmptyState({ title = 'Nothing here yet', description = '', actio
 export function ErrorState({ title = 'Something went wrong', description = '', onRetry, className = '', headingLevel = 3 }) {
   const Heading = `h${headingLevel}`
   return (
-    <section className={cx('rounded-surface border border-red-200 bg-red-50 px-5 py-4 text-red-900', className)} role="alert">
+    <section className={cx('rounded-surface border border-destructive-line bg-destructive-surface px-5 py-4 text-destructive', className)} role="alert">
       <Heading className="font-semibold">{title}</Heading>
       {description ? <p className="mt-1 text-sm leading-6">{description}</p> : null}
       {onRetry ? <Button className="mt-3" onClick={onRetry} variant="secondary">Try again</Button> : null}
@@ -36,8 +36,8 @@ export function ErrorState({ title = 'Something went wrong', description = '', o
 export function Toast({ children, onDismiss, tone = 'neutral', className = '' }) {
   const tones = {
     neutral: 'border-line bg-surface text-foreground',
-    success: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-    error: 'border-red-200 bg-red-50 text-red-900',
+    success: 'border-success-line bg-success-surface text-success',
+    error: 'border-destructive-line bg-destructive-surface text-destructive',
   }
 
   return (

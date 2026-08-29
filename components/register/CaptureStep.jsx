@@ -122,7 +122,7 @@ export default function CaptureStep({
         ) : null}
 
         {errorMessage ? (
-          <div className="absolute inset-x-3 bottom-24 z-[5] rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2" role="alert">
+          <div className="absolute inset-x-3 bottom-24 z-[5] rounded-control border border-destructive-line bg-destructive-surface px-4 py-3 text-sm text-destructive sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2" role="alert">
             {errorMessage}
           </div>
         ) : null}

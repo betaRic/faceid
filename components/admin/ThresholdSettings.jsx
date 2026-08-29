@@ -14,22 +14,22 @@ function SliderField({ fieldKey, meta, value, onChange }) {
   return (
     <div className="group">
       <div className="mb-1.5 flex items-center justify-between">
-        <label htmlFor={inputId} className={`text-sm font-medium ${isChanged ? 'text-amber-700' : 'text-ink'}`}>
+        <label htmlFor={inputId} className={`text-sm font-medium ${isChanged ? 'text-warning' : 'text-foreground'}`}>
           {meta.label}
           {isChanged && (
-            <span className="ml-2 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">
+            <span className="ml-2 inline-block rounded bg-warning-surface px-1.5 py-0.5 text-xs font-semibold text-warning">
               changed
             </span>
           )}
         </label>
-        <span className="text-sm font-mono font-semibold text-navy">{display}</span>
+        <span className="text-sm font-mono font-semibold text-primary">{display}</span>
       </div>
       <div className="relative flex items-center gap-3">
         <span className="w-10 text-right text-[11px] tabular-nums text-muted">{meta.format ? meta.format(meta.min) : meta.min}</span>
         <div className="relative flex-1">
-          <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-stone-100" />
+          <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-subdued" />
           <div
-            className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-navy transition-all"
+            className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-primary transition-all"
             style={{ width: `${pct}%` }}
           />
           <input
@@ -47,7 +47,7 @@ function SliderField({ fieldKey, meta, value, onChange }) {
         <span className="w-10 text-[11px] tabular-nums text-muted">{meta.format ? meta.format(meta.max) : meta.max}</span>
       </div>
       {meta.zeroNote && numVal === 0 && (
-        <p className="mt-1 text-xs text-amber-600">{meta.zeroNote}</p>
+        <p className="mt-1 text-xs text-warning">{meta.zeroNote}</p>
       )}
     </div>
   )
@@ -155,7 +155,7 @@ function SectionCard({ sectionKey, section, onFieldChange, onSave, onReset, savi
           >
             {saving ? (
               <>
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-contrast border-t-transparent" />
                 Saving...
               </>
             ) : (
@@ -288,7 +288,7 @@ export const ThresholdSettings = memo(function ThresholdSettings() {
   const hasAnyPending = Object.keys(pending).length > 0
 
   return (
-    <section className="flex min-h-0 flex-col gap-4 bg-white p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
+    <section className="flex min-h-0 flex-col gap-4 bg-surface p-3 sm:gap-5 sm:p-6 md:h-full md:overflow-hidden">
       <PageHeader
         title="System settings"
         description="Manage biometric thresholds and controlled administrator access."

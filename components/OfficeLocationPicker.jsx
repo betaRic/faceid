@@ -150,7 +150,7 @@ export default function OfficeLocationPicker({
       <div className="relative">
         <div
           ref={containerRef}
-          className="bg-stone-100"
+          className="bg-subdued"
           style={{
             height: 340,
             width: '100%',
@@ -159,7 +159,7 @@ export default function OfficeLocationPicker({
 
         {/* Loading skeleton shown until Leaflet boots */}
         {!mapReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-stone-100">
+          <div className="absolute inset-0 flex items-center justify-center bg-subdued">
             <LoadingState label="Loading map…" />
           </div>
         )}
@@ -173,7 +173,7 @@ export default function OfficeLocationPicker({
       </div>
 
       {/* Coordinate readout strip */}
-      <div className="border-t border-black/5 bg-stone-50 px-4 py-2.5">
+      <div className="border-t border-line bg-subdued px-4 py-2.5">
         {hasLocation ? (
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
             <span className="text-muted">

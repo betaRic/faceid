@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import RegisterView from '@/components/RegisterView'
 import CompleteStep from '@/components/register/CompleteStep'
+import ThemeProvider from '@/components/ThemeProvider'
 
 vi.mock('@/components/usePortalDestination', () => ({
   usePortalDestination: () => ({ href: '/login', label: 'Login', role: null }),
@@ -40,8 +41,16 @@ const camera = {
 }
 
 describe('employee registration presentation contracts', () => {
+  function renderRegistration() {
+    return render(
+      <ThemeProvider>
+        <RegisterView camera={camera} modelsReady offices={offices} onBack={vi.fn()} onEnrollPerson={vi.fn()} workspaceReady />
+      </ThemeProvider>,
+    )
+  }
+
   it('keeps four stages and guides existing employees away from re-enrollment', () => {
-    render(<RegisterView camera={camera} modelsReady offices={offices} onBack={vi.fn()} onEnrollPerson={vi.fn()} workspaceReady />)
+    renderRegistration()
 
     expect(screen.getAllByRole('listitem')).toHaveLength(4)
     expect(document.querySelector('[aria-current="step"]')).toHaveTextContent('Employee details')
@@ -49,7 +58,7 @@ describe('employee registration presentation contracts', () => {
   })
 
   it('keeps Employee ID optional and digits-only', async () => {
-    render(<RegisterView camera={camera} modelsReady offices={offices} onBack={vi.fn()} onEnrollPerson={vi.fn()} workspaceReady />)
+    renderRegistration()
     const employeeId = screen.getByLabelText('Employee ID (optional)')
 
     await userEvent.type(employeeId, 'A12B')
@@ -58,7 +67,7 @@ describe('employee registration presentation contracts', () => {
   })
 
   it('requires privacy consent and Regional Office division', async () => {
-    render(<RegisterView camera={camera} modelsReady offices={offices} onBack={vi.fn()} onEnrollPerson={vi.fn()} workspaceReady />)
+    renderRegistration()
     const continueButton = screen.getByRole('button', { name: 'Continue to face capture' })
 
     await userEvent.type(screen.getByLabelText(/^Last name/), 'Santos')

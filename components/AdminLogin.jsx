@@ -68,7 +68,7 @@ export default function AdminLogin() {
             </Button>
           </form>
 
-          {status ? <div className="mt-4 rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">{status}</div> : null}
+          {status ? <div className="mt-4 rounded-control border border-destructive-line bg-destructive-surface px-4 py-3 text-sm text-destructive" role="alert">{status}</div> : null}
 
           <Link className="mt-6 inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline" href="/">
             Back to home

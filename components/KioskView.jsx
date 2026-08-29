@@ -12,7 +12,7 @@ import KioskScanningOverlay from './kiosk/KioskScanningOverlay'
 import KioskAlert from './kiosk/KioskAlert'
 import KioskSuccessScreen from './kiosk/KioskSuccessScreen'
 import { clearAttendanceMatch, saveAttendanceMatch } from '@/lib/attendance-match'
-import { Button, Dialog, Field, Input, Select, Surface, Textarea } from '@/components/ui'
+import { Button, Dialog, Field, Icon, Input, Select, Surface, Textarea } from '@/components/ui'
 
 const FIELD_DUTY_REASONS = ['Official Meeting', 'Field Work', 'Training / Seminar', 'Official Travel', 'Emergency / Other']
 
@@ -270,14 +270,16 @@ export default function KioskView({
     <AppShell
       actions={(
         <div className="flex items-center gap-2">
-          <span className="hidden max-w-[8rem] truncate rounded-full border border-navy/10 bg-white px-3 py-1.5 text-xs font-semibold text-navy sm:inline">
+          <span className="hidden max-w-[8rem] truncate rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-primary sm:inline">
             {claimedEmployeeId}
           </span>
-          <Button onClick={handleChangeEmployeeId} variant="quiet">
-            Change code
+          <Button aria-label="Change access code" className="px-2 sm:px-4" onClick={handleChangeEmployeeId} variant="quiet">
+            <Icon name="edit" />
+            <span className="hidden md:inline">Change code</span>
           </Button>
-          <Button onClick={() => setFieldDutyOpen(true)} variant={fieldDutyReason && fieldDutyRemarks.trim() ? 'primary' : 'secondary'}>
-            {fieldDutyReason ? 'Field Duty set' : 'Offsite / Field Duty'}
+          <Button aria-label={fieldDutyReason ? 'Field Duty set' : 'Offsite or Field Duty'} className="px-2 sm:px-4" onClick={() => setFieldDutyOpen(true)} variant={fieldDutyReason && fieldDutyRemarks.trim() ? 'primary' : 'secondary'}>
+            <Icon name="location" />
+            <span className="hidden md:inline">{fieldDutyReason ? 'Field Duty set' : 'Offsite / Field Duty'}</span>
           </Button>
         </div>
       )}
@@ -287,7 +289,7 @@ export default function KioskView({
       showFooter={false}
     >
       <div className="page-frame h-full min-h-0">
-        <section className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-surface border border-line ${showResultScreen ? 'bg-white' : 'bg-black'}`}>
+        <section className={`relative min-h-0 w-full flex-1 overflow-hidden rounded-surface border border-line ${showResultScreen ? 'bg-surface' : 'bg-black'}`}>
           {showResultScreen ? (
             <KioskSuccessScreen
               currentMatch={currentMatch}
@@ -311,7 +313,7 @@ export default function KioskView({
           )}
           <KioskAlert alertState={alertState} />
           {errorMessage ? (
-            <div className="absolute inset-x-3 bottom-3 z-[4] rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-destructive sm:inset-x-5 sm:bottom-5" role="alert">
+            <div className="absolute inset-x-3 bottom-3 z-[4] rounded-control border border-destructive-line bg-destructive-surface px-4 py-3 text-sm text-destructive sm:inset-x-5 sm:bottom-5" role="alert">
               {errorMessage}
             </div>
           ) : null}

@@ -43,7 +43,7 @@ export default function EmployeeAttendancePage() {
     <AppShell fitViewport contentClassName="min-h-0 p-0">
       <div className="flex h-full min-h-0 flex-col">
         {scanMatch.blocked ? (
-          <div className="mx-3 mt-3 rounded-control border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:mx-4" role="status">
+          <div className="mx-3 mt-3 rounded-control border border-warning-line bg-warning-surface px-4 py-3 text-sm text-warning sm:mx-4" role="status">
             <strong>Attendance already recorded.</strong> {scanMatch.blockReason || 'Full-day attendance is complete. You can still review your history.'}
           </div>
         ) : null}
