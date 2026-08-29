@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react'
+import { renderToString } from 'react-dom/server'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ThemeProvider, { useTheme } from '@/components/ThemeProvider'
+import ThemeSelector from '@/components/ThemeSelector'
 import {
   THEME_MEDIA_QUERY,
   THEME_STORAGE_KEY,
@@ -106,5 +108,18 @@ describe('ThemeProvider', () => {
 
     expect(screen.getByTestId('preference')).toHaveTextContent('system')
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+  })
+
+  it('keeps the first browser render identical to server markup when a saved theme exists', () => {
+    const browserWindow = globalThis.window
+    delete globalThis.window
+    const serverMarkup = renderToString(<ThemeProvider><ThemeSelector /></ThemeProvider>)
+    globalThis.window = browserWindow
+
+    localStorage.setItem(THEME_STORAGE_KEY, 'dark')
+    const firstBrowserMarkup = renderToString(<ThemeProvider><ThemeSelector /></ThemeProvider>)
+
+    expect(firstBrowserMarkup).toBe(serverMarkup)
+    expect(serverMarkup).toContain('Theme: System')
   })
 })

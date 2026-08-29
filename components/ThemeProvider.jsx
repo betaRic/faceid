@@ -26,22 +26,29 @@ function readSavedPreference() {
 }
 
 export default function ThemeProvider({ children }) {
-  const [preference, setPreferenceState] = useState(readSavedPreference)
-  const [resolvedTheme, setResolvedTheme] = useState(() => resolveTheme(readSavedPreference(), getMediaQuery()))
+  const [preference, setPreferenceState] = useState('system')
+  const [resolvedTheme, setResolvedTheme] = useState('light')
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
     const mediaQuery = getMediaQuery()
+    const effectivePreference = hydrated ? preference : readSavedPreference()
+
+    if (!hydrated) {
+      setPreferenceState(effectivePreference)
+      setHydrated(true)
+    }
 
     function synchronizeTheme() {
-      setResolvedTheme(applyResolvedTheme(document.documentElement, preference, mediaQuery))
+      setResolvedTheme(applyResolvedTheme(document.documentElement, effectivePreference, mediaQuery))
     }
 
     synchronizeTheme()
-    if (preference !== 'system' || !mediaQuery) return undefined
+    if (effectivePreference !== 'system' || !mediaQuery) return undefined
 
     mediaQuery.addEventListener?.('change', synchronizeTheme)
     return () => mediaQuery.removeEventListener?.('change', synchronizeTheme)
-  }, [preference])
+  }, [hydrated, preference])
 
   const setPreference = useCallback((nextPreference) => {
     const normalized = normalizeThemePreference(nextPreference)
