@@ -49,6 +49,7 @@ async function run(name, fn) {
 }
 
 const officesModule = await importLocalModule('../lib/offices.js')
+const hrScopeModule = await importLocalModule('../lib/hr-scope.js')
 const attendanceContextModule = await importLocalModule('../lib/attendance/context.js')
 const dailyAttendanceModule = await importLocalModule('../lib/daily-attendance.js')
 const attendanceTimeModule = await importLocalModule('../lib/attendance-time.js')
@@ -91,6 +92,7 @@ const {
   resolveOfficeSignatory,
   normalizeDivisionList,
 } = officesModule
+const { hrScopeAllowsOffice, validateHrOfficeAssignment } = hrScopeModule
 const { checkAttendanceLocation } = attendanceContextModule
 const { deriveDailyAttendanceRecord, getNextAttendanceAction } = dailyAttendanceModule
 const {
@@ -231,6 +233,30 @@ await run('isOfficeWfhDay respects configured work-from-home days', () => {
 
   assert.equal(isOfficeWfhDay(office, wednesday), true)
   assert.equal(isOfficeWfhDay(office, thursday), false)
+})
+
+await run('Office HR can access only the assigned field office', () => {
+  const session = { role: 'hr', scope: 'office', officeId: 'gensan' }
+
+  assert.equal(hrScopeAllowsOffice(session, 'gensan'), true)
+  assert.equal(hrScopeAllowsOffice(session, 'cotabato'), false)
+})
+
+await run('Regional HR can access only the assigned Regional Office', () => {
+  assert.equal(hrScopeAllowsOffice({ role: 'hr', scope: 'regional', officeId: 'regional-12' }, 'regional-12'), true)
+  assert.equal(hrScopeAllowsOffice({ role: 'hr', scope: 'regional', officeId: 'regional-12' }, 'gensan'), false)
+  assert.equal(hrScopeAllowsOffice({ role: 'hr', scope: 'regional', officeId: '' }, 'regional-12'), false)
+})
+
+await run('HR office assignment scope must match the assigned office type', () => {
+  const regionalOffice = { id: 'regional-12', officeType: 'Regional Office' }
+  const fieldOffice = { id: 'gensan', officeType: 'City Office' }
+
+  assert.equal(validateHrOfficeAssignment('regional', regionalOffice), null)
+  assert.match(validateHrOfficeAssignment('regional', fieldOffice), /Regional Office/)
+  assert.equal(validateHrOfficeAssignment('office', fieldOffice), null)
+  assert.match(validateHrOfficeAssignment('office', regionalOffice), /Regional Office/)
+  assert.match(validateHrOfficeAssignment('regional', null), /office/i)
 })
 
 await run('individual employee WFH days are weekly and unique', () => {

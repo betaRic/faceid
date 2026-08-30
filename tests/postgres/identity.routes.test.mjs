@@ -27,7 +27,9 @@ import {
 import {
   createHrSessionCookieValue,
   getHrSessionCookieName,
+  hrSessionAllowsOffice,
   parseHrSessionCookieValue,
+  resolveHrSession,
 } from '../../lib/hr-auth.js'
 import { hashLocalPin } from '../../lib/postgres/user-store.js'
 import { POST as login } from '../../app/api/login/route.js'
@@ -86,6 +88,15 @@ const otherOffice = {
   officeType: 'Field Office',
   divisions: [],
 }
+const regionalOffice = {
+  id: 'regional-office-route-test',
+  name: 'Route Test Regional Office',
+  officeType: 'Regional Office',
+  divisions: [
+    { id: 'finance-division', shortName: 'FD', name: 'Finance Division' },
+    { id: 'operations-division', shortName: 'OD', name: 'Operations Division' },
+  ],
+}
 let registrationSequence = 0
 
 before(async () => {
@@ -113,6 +124,19 @@ before(async () => {
     JSON.stringify({ ...otherOffice, location: 'Secret other location', wifiSsid: ['SECRET-OTHER-WIFI'] }),
   ])
   await queryPostgres(`
+    INSERT INTO offices (
+      id, name, name_lower, office_type, latitude, longitude, radius_meters, divisions, data
+    )
+    VALUES ($1, $2, $3, $4, 6.1, 125.1, 500, $5::jsonb, $6::jsonb)
+  `, [
+    regionalOffice.id,
+    regionalOffice.name,
+    regionalOffice.name.toLowerCase(),
+    regionalOffice.officeType,
+    JSON.stringify(regionalOffice.divisions),
+    JSON.stringify(regionalOffice),
+  ])
+  await queryPostgres(`
     INSERT INTO admin_users (
       id, email, email_lower, name, role, scope, office_id, active, data
     ) VALUES ($1, $2, $2, $3, 'admin', 'regional', '', true, $4::jsonb)
@@ -137,9 +161,10 @@ before(async () => {
     INSERT INTO hr_users (
       id, email, email_lower, name, display_name, scope, office_id, active, data
     ) VALUES
-      ('route-test-office-hr', 'route-test-office-hr@example.test', 'route-test-office-hr@example.test', 'Route Test Office HR', 'Route Test Office HR', 'office', $1, true, $2::jsonb),
-      ('route-test-regional-hr', 'route-test-regional-hr@example.test', 'route-test-regional-hr@example.test', 'Route Test Regional HR', 'Route Test Regional HR', 'regional', '', true, $2::jsonb)
-  `, [office.id, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] })])
+      ('route-test-office-hr', 'route-test-office-hr@example.test', 'route-test-office-hr@example.test', 'Route Test Office HR', 'Route Test Office HR', 'office', $1, true, $3::jsonb),
+      ('route-test-regional-hr', 'route-test-regional-hr@example.test', 'route-test-regional-hr@example.test', 'Route Test Regional HR', 'Route Test Regional HR', 'regional', $2, true, $3::jsonb),
+      ('route-test-unassigned-regional-hr', 'route-test-unassigned-regional-hr@example.test', 'route-test-unassigned-regional-hr@example.test', 'Route Test Unassigned Regional HR', 'Route Test Unassigned Regional HR', 'regional', '', true, $3::jsonb)
+  `, [office.id, regionalOffice.id, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] })])
   await queryPostgres(
     'UPDATE admin_users SET pin_hash = $1 WHERE id = $2',
     [hashLocalPin('7351'), 'route-test-admin'],
@@ -565,6 +590,39 @@ test('Office HR PIN creates a named office-scoped HR session', async () => {
   assert.equal(session.hrUserId, 'route-test-office-hr')
   assert.equal(session.officeId, office.id)
   assert.equal(session.authMethod, 'named_pin')
+})
+
+test('Regional HR cookie and resolved session retain one assigned Regional Office', async () => {
+  const cookie = createHrSessionCookieValue({
+    email: 'route-test-regional-hr@example.test',
+    uid: 'route-test-regional-hr',
+    hrUserId: 'route-test-regional-hr',
+    scope: 'regional',
+    officeId: `  ${regionalOffice.id}  `,
+  })
+  const parsed = parseHrSessionCookieValue(cookie)
+
+  assert.equal(parsed.officeId, regionalOffice.id)
+
+  const resolved = await resolveHrSession(null, parsed)
+  assert.equal(resolved.officeId, regionalOffice.id)
+  assert.equal(resolved.scope, 'regional')
+  assert.equal(hrSessionAllowsOffice(resolved, regionalOffice.id), true)
+  assert.equal(hrSessionAllowsOffice(resolved, office.id), false)
+  assert.equal(hrSessionAllowsOffice(resolved, otherOffice.id), false)
+})
+
+test('Regional HR without an assigned office cannot resolve a session', async () => {
+  const resolved = await resolveHrSession(null, {
+    role: 'hr',
+    scope: 'regional',
+    officeId: '',
+    email: 'route-test-unassigned-regional-hr@example.test',
+    uid: 'route-test-unassigned-regional-hr',
+    hrUserId: 'route-test-unassigned-regional-hr',
+  })
+
+  assert.equal(resolved, null)
 })
 
 test('disabled shared Regional PIN does not disable named Admin PIN', async () => {
