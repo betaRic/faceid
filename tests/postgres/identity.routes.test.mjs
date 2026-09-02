@@ -632,6 +632,147 @@ test('cross-office employee mutations, photo access, and access-code regeneratio
   }
 })
 
+for (const actorIndex of [0, 1]) {
+  test(`division holiday membership rejects outside and unknown divisions for ${actorIndex === 0 ? 'Regional' : 'Office'} HR`, async () => {
+    const actor = assignedOfficeActors()[actorIndex]
+    const ownDivisionId = actorIndex === 0 ? 'finance-division' : 'field-only-division'
+    const outsideDivisionId = actorIndex === 0 ? 'field-only-division' : 'finance-division'
+    const fieldDivisions = [{ id: 'field-only-division', name: 'Field Division' }]
+    await queryPostgres('UPDATE offices SET divisions = $2::jsonb WHERE id = $1', [office.id, JSON.stringify(fieldDivisions)])
+    try {
+      const body = { type: 'holiday', date: '2040-06-01', name: `${actor.name} division holiday`, scopeType: 'division', officeId: actor.officeId, divisionId: ownDivisionId }
+      const created = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+        method: 'POST', cookie: actor.cookie, body,
+      })), 200, `${actor.name} own division`)
+      await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+        method: 'PATCH', cookie: actor.cookie,
+        body: { ...body, id: created.id, scopeType: 'national', officeId: otherOffice.id, divisionId: outsideDivisionId },
+      })), 200, 'PATCH keeps original scope')
+      const persisted = (await queryPostgres('SELECT scope_type, office_id, division_id FROM holidays WHERE id = $1', [created.id])).rows[0]
+      assert.deepEqual(persisted, { scope_type: 'division', office_id: actor.officeId, division_id: ownDivisionId })
+      for (const divisionId of [outsideDivisionId, 'unknown-division']) {
+        const deniedBody = { ...body, date: divisionId === outsideDivisionId ? '2040-06-02' : '2040-06-03', divisionId }
+        await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+          method: 'POST', cookie: actor.cookie, body: deniedBody,
+        })), 403, `${actor.name} ${divisionId}`)
+        assert.equal((await queryPostgres('SELECT id FROM holidays WHERE office_id = $1 AND division_id = $2 AND holiday_date = $3', [actor.officeId, divisionId, deniedBody.date])).rowCount, 0)
+      }
+      const admin = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+        method: 'POST', cookie: adminCookie(), body: { ...body, date: '2040-06-04' },
+      })), 200, 'Regional Admin valid division holiday')
+      assert.ok(admin.id)
+    } finally {
+      await queryPostgres('UPDATE offices SET divisions = $2::jsonb WHERE id = $1', [office.id, JSON.stringify(office.divisions)])
+    }
+  })
+}
+
+let workforceSqlFixtures
+async function createWorkforceSqlFixtures() {
+  if (workforceSqlFixtures) return workforceSqlFixtures
+  const { active } = await assignedOfficeReads()
+  const records = { holiday: [], policy: [], leave: [], order: [] }
+  for (const [index, assignedOffice] of [regionalOffice, office, otherOffice].entries()) {
+    for (const scopeType of ['office', 'division']) {
+      const id = `scope-sql-holiday-${index}-${scopeType}`
+      await queryPostgres('INSERT INTO holidays (id, holiday_date, name, scope_type, office_id, division_id) VALUES ($1,$2,$1,$3,$4,$5)',
+        [id, scopeType === 'office' ? '2041-06-10' : '2041-06-11', scopeType, assignedOffice.id, scopeType === 'division' ? 'finance-division' : ''])
+      records.holiday.push({ id, offices: [assignedOffice.id] })
+    }
+    const id = `scope-sql-policy-${index}`
+    await queryPostgres("INSERT INTO workforce_policies (id, scope_type, scope_id) VALUES ($1,'office',$2)", [id, assignedOffice.id])
+    records.policy.push({ id, offices: [assignedOffice.id] })
+  }
+  // Scope type is authoritative even when a legacy row carries a misleading office key.
+  await queryPostgres("INSERT INTO holidays (id, holiday_date, name, scope_type, office_id) VALUES ('scope-sql-national','2041-06-12','National','national',$1), ('scope-sql-other-year','2042-06-10','Other year','office',$1)", [office.id])
+  records.holiday.push({ id: 'scope-sql-national', offices: [] })
+  for (const [scopeType, scopeId] of [['organization', ''], ['division', office.id]]) {
+    const id = `scope-sql-policy-${scopeType}`
+    await queryPostgres('INSERT INTO workforce_policies (id, scope_type, scope_id) VALUES ($1,$2,$3)', [id, scopeType, scopeId])
+    records.policy.push({ id, offices: [] })
+  }
+  for (const [index, person] of active.entries()) {
+    const leaveId = `scope-sql-leave-${index}`
+    await queryPostgres("INSERT INTO employee_leaves (id, person_id, leave_type, start_date, end_date) VALUES ($1,$2,'VL','2041-06-10','2041-06-10')", [leaveId, person.id])
+    records.leave.push({ id: leaveId, offices: [person.officeId] })
+  }
+  const orderCases = [
+    ...active.map(person => ({ people: [person] })),
+    { people: [active[0], active[1]] },
+    { people: [active[0], active[2]] },
+    { people: [active[2], active[0]] },
+    { people: [active[0], { id: 'scope-sql-missing-member', officeId: null }], invalid: true },
+    { people: [{ id: 'scope-sql-missing-root', officeId: null }, active[0]], invalid: true },
+  ]
+  // Only this guarded synthetic-fixture transaction bypasses foreign-key triggers,
+  // to exercise legacy/malformed roots and members. Normal queries retain constraints.
+  const client = await getPostgresPool().connect()
+  try {
+    await client.query('BEGIN')
+    await client.query("SET LOCAL session_replication_role = 'replica'")
+    for (const [index, entry] of orderCases.entries()) {
+      const id = `scope-sql-order-${index}`
+      await client.query("INSERT INTO official_orders (id, person_id, start_date, end_date) VALUES ($1,$2,'2041-06-10','2041-06-10')", [id, entry.people[0].id])
+      // Leave single-person legacy orders without membership rows; root still counts.
+      for (const person of entry.people.slice(1)) {
+        await client.query('INSERT INTO official_order_members (official_order_id, person_id) VALUES ($1,$2)', [id, person.id])
+      }
+      records.order.push({ id, offices: entry.people.map(person => person.officeId), invalid: entry.invalid, personIds: entry.people.map(person => person.id) })
+    }
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+  workforceSqlFixtures = records
+  return records
+}
+
+for (const type of ['holiday', 'policy', 'leave', 'order']) {
+  test(`workforce SQL bounds ${type} rows before application filtering`, async (t) => {
+    const fixtures = await createWorkforceSqlFixtures()
+    const table = { holiday: 'holidays', policy: 'workforce_policies', leave: 'employee_leaves', order: 'official_orders' }[type]
+    const pool = getPostgresPool()
+    const originalQuery = pool.query
+    let observed = []
+    let personLookupCount = 0
+    t.mock.method(pool, 'query', async function (...args) {
+      const result = await originalQuery.apply(this, args)
+      if (/\bFROM\s+persons\b/i.test(String(args[0]))) personLookupCount += 1
+      if (new RegExp(`\\bFROM\\s+${table}\\b`, 'i').test(String(args[0]))) {
+        observed.push({ rows: structuredClone(result.rows) })
+      }
+      return result
+    })
+    const actors = [
+      ...assignedOfficeActors(),
+      { name: 'Office Admin', officeId: office.id, cookie: adminCookie({ uid: 'route-test-office-admin', email: 'route-test-office-admin@example.test', scope: 'office', officeId: office.id }) },
+      { name: 'Regional Admin', global: true, cookie: adminCookie() },
+    ]
+    for (const actor of actors) {
+      observed = []
+      personLookupCount = 0
+      const request = sameOriginRequest(`/api/hr/workforce-records?type=${type}&year=2041&officeId=${otherOffice.id}`, { cookie: actor.cookie })
+      const payload = await assertJsonStatus(await getWorkforceRecords(request), 200, actor.name)
+      assert.ok(observed.length > 0, 'Observe the real workforce base SELECT')
+      const expected = fixtures[type].filter(row => actor.global || (row.offices.length > 0 && row.offices.every(id => id === actor.officeId) && !row.invalid))
+      const fixtureIds = rows => rows.filter(row => row.id.startsWith(`scope-sql-${type === 'holiday' ? '' : `${type}-`}`)).map(row => row.id).sort()
+      assert.deepEqual(fixtureIds(observed[0].rows), expected.map(row => row.id).sort(), `${actor.name}: database returned out-of-scope ${type} rows before filtering`)
+      assert.deepEqual(fixtureIds(payload.records), expected.filter(row => !row.invalid).map(row => row.id).sort(), `${actor.name}: response scope`)
+      if (type === 'order') {
+        assert.equal(observed.length, 1, 'Order listing must not run one order query per result')
+        assert.equal(personLookupCount, 1, 'Order authorization must batch the person lookup')
+        for (const row of payload.records) {
+          const fixture = fixtures.order.find(entry => entry.id === row.id)
+          if (fixture) assert.deepEqual([...row.person_ids].sort(), [...fixture.personIds].sort())
+        }
+      }
+    }
+  })
+}
+
 test('national holiday and organization-wide workforce changes require Regional Admin', async () => {
   const actors = assignedOfficeActors()
   for (const actor of actors) {

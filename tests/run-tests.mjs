@@ -143,7 +143,7 @@ const {
   getDtrCalendarDay,
 } = dtrModule
 const { buildDtrWorkbookFromTemplate } = dtrExcelModule
-const { postgresDateKey } = workforcePolicyModule
+const { postgresDateKey, resolveDtrSpecialDay } = workforcePolicyModule
 const {
   buildMaintenanceEvidenceReport,
   classifyScanEvent,
@@ -1365,6 +1365,15 @@ await run('buildDtrDocument shades inactive half-month rows and preserves active
   assert.equal(day16.isActive, true)
   assert.equal(day16.amIn, '08:01 AM')
   assert.equal(dtr.period.periodLabel, 'APRIL 16-30, 2026')
+})
+
+await run('division holidays require matching office and division before changing a DTR day', () => {
+  const holiday = { holidayDate: '2041-06-01', scopeType: 'division', officeId: 'office-a', divisionId: 'finance', name: 'Local holiday' }
+  const resolve = (person, row = holiday) => resolveDtrSpecialDay({ dateKey: holiday.holidayDate, holidays: [row], person })
+  assert.equal(resolve({ officeId: 'office-a', divisionId: 'finance' })?.code, 'HOLIDAY')
+  assert.equal(resolve({ officeId: 'office-b', divisionId: 'finance' }), null)
+  assert.equal(resolve({ officeId: 'office-a', divisionId: 'operations' }), null)
+  assert.equal(resolve({ officeId: 'office-b', divisionId: 'finance' }, { ...holiday, officeId: '' }), null)
 })
 
 await run('resolveOfficeSignatory returns division head for regional office staff', () => {

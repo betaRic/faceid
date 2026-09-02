@@ -3,9 +3,12 @@ export const dynamic = "force-dynamic";
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import {
+  getSessionOfficeFilter,
   resolveEmployeeManagementSession,
   sessionAllowsOffice,
 } from "@/lib/employee-access";
+import { getLocalOfficeRecord } from "@/lib/postgres/attendance-store";
+import { findOfficeDivision } from "@/lib/offices";
 import { createOriginGuard } from "@/lib/csrf";
 import { queryPostgres, withPostgresTransaction } from "@/lib/postgres/client";
 import { auditActorFromSession, writeAuditLog } from "@/lib/audit-log";
@@ -231,13 +234,47 @@ export async function GET(request) {
       { status: 400 },
     );
   const year = Number(params.get("year"));
-  let sql = `SELECT * FROM ${RECORDS[type].table}`;
+  const globalAccess = session.role === "admin" && session.scope === "regional";
+  const officeId = getSessionOfficeFilter(session);
+  if (!globalAccess && !sessionAllowsOffice(session, officeId))
+    return NextResponse.json({ ok: true, records: [] });
+  let sql = type === "order"
+    ? `SELECT r.*, ARRAY(
+        SELECT DISTINCT person_id FROM (
+          SELECT r.person_id
+          UNION ALL
+          SELECT member.person_id FROM official_order_members member
+          WHERE member.official_order_id = r.id
+        ) people
+      ) AS person_ids FROM official_orders r`
+    : `SELECT r.* FROM ${RECORDS[type].table} r`;
   const values = [];
+  const conditions = [];
+  if (!globalAccess) {
+    values.push(officeId);
+    if (type === "leave" || type === "order") {
+      sql += " JOIN persons owner ON owner.id = r.person_id";
+      conditions.push("owner.office_id = $1");
+      if (type === "order") {
+        conditions.push(`NOT EXISTS (
+          SELECT 1 FROM official_order_members member
+          LEFT JOIN persons member_person ON member_person.id = member.person_id
+          WHERE member.official_order_id = r.id
+            AND member_person.office_id IS DISTINCT FROM $1
+        )`);
+      }
+    } else if (type === "holiday") {
+      conditions.push("r.scope_type IN ('office', 'division') AND r.office_id = $1");
+    } else {
+      conditions.push("r.scope_type = 'office' AND r.scope_id = $1");
+    }
+  }
   if (type === "holiday" && Number.isInteger(year)) {
     values.push(`${year}-01-01`, `${year}-12-31`);
-    sql += " WHERE holiday_date BETWEEN $1::date AND $2::date";
+    conditions.push(`r.holiday_date BETWEEN $${values.length - 1}::date AND $${values.length}::date`);
   }
-  sql += type === "policy" ? " ORDER BY updated_at DESC" : " ORDER BY created_at DESC";
+  if (conditions.length) sql += ` WHERE ${conditions.join(" AND ")}`;
+  sql += type === "policy" ? " ORDER BY r.updated_at DESC" : " ORDER BY r.created_at DESC";
   const result = await queryPostgres(sql, values);
   let rows = result.rows;
   if (type === "leave") {
@@ -255,17 +292,13 @@ export async function GET(request) {
     );
     rows = rows.filter((row) => allowedIds.has(row.person_id));
   } else if (type === "order") {
-    const scopedRows = await Promise.all(rows.map(async (row) => {
-      const personIds = await orderPersonIds(row.id);
-      return {
-        ...row,
-        person_ids: personIds,
-        allowed: personIds.length > 0 && await sessionCanManagePeople(session, personIds),
-      };
-    }));
-    rows = scopedRows
-      .filter((row) => row.allowed)
-      .map(({ allowed, ...row }) => row);
+    const personIds = [...new Set(rows.flatMap((row) => row.person_ids))];
+    const people = await peopleWithOffices(personIds);
+    const allowedIds = new Set(people
+      .filter((person) => sessionAllowsOffice(session, person.office_id))
+      .map((person) => person.id));
+    rows = rows.filter((row) => row.person_ids.length > 0 &&
+      row.person_ids.every((personId) => allowedIds.has(personId)));
   } else if (type === "holiday") {
     rows = rows.filter((row) =>
       canManageRecord(
@@ -361,6 +394,12 @@ export async function POST(request) {
       if (officeId && !sessionAllowsOffice(session, officeId))
         return NextResponse.json(
           { ok: false, message: "This session cannot manage that office." },
+          { status: 403 },
+        );
+      if (scopeType === "division" &&
+          !findOfficeDivision(await getLocalOfficeRecord(officeId), divisionId))
+        return NextResponse.json(
+          { ok: false, message: "This division is not configured for that office." },
           { status: 403 },
         );
       await queryPostgres(
