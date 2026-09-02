@@ -21,6 +21,15 @@ function isValidDateKey(value) {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
 }
 
+function parseCorrectionTimestamp(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  if (!/^\d+$/.test(normalized)) return null
+  const timestamp = Number(normalized)
+  return Number.isSafeInteger(timestamp) ? timestamp : null
+}
+
 // GET /api/admin/attendance?personId=PERSON-ID&date=2026-04-09
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -85,7 +94,7 @@ export async function POST(request) {
   const personId = body.personId.trim()
   const action = body.action.trim()
   const manualSlot = String(body.manualSlot || '').trim()
-  const timestamp = Number(body.timestamp)
+  const timestamp = parseCorrectionTimestamp(body.timestamp)
   const requestedDateKey = body.dateKey.trim()
   const reason = body.reason.trim()
 
@@ -95,7 +104,7 @@ export async function POST(request) {
       { status: 400 },
     )
   }
-  if (!Number.isFinite(timestamp) || timestamp <= 0 || !Number.isFinite(new Date(timestamp).getTime())) {
+  if (timestamp === null || timestamp <= 0 || !Number.isFinite(new Date(timestamp).getTime())) {
     return NextResponse.json({ ok: false, message: 'A valid timestamp is required.' }, { status: 400 })
   }
   if (!['checkin', 'checkout'].includes(action)) {

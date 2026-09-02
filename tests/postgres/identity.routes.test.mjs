@@ -3386,6 +3386,35 @@ test('attendance correction rejects missing people, invalid input, and wrong Man
   assert.equal((await queryPostgres('SELECT id FROM attendance_daily WHERE person_id = $1 AND date_key = $2', [person.id, valid.dateKey])).rowCount, 0)
 })
 
+test('attendance correction rejects coerced boolean object array exponent and hex timestamps without writes', async () => {
+  const person = (await correctionPeople())[2]
+  const dateKey = '1970-01-01'
+  const before = await queryPostgres('SELECT id FROM attendance WHERE person_id = $1 AND date_key = $2 ORDER BY id', [person.id, dateKey])
+  for (const timestamp of [true, {}, [1], '1e3', '0x10', '+1', '1.0']) {
+    await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', {
+      method: 'POST',
+      cookie: hrCookie(),
+      body: { personId: person.id, action: 'checkin', timestamp, dateKey, reason: 'Invalid timestamp coercion' },
+    })), 400, JSON.stringify(timestamp))
+  }
+  assert.deepEqual((await queryPostgres('SELECT id FROM attendance WHERE person_id = $1 AND date_key = $2 ORDER BY id', [person.id, dateKey])).rows, before.rows)
+})
+
+test('attendance correction rejects fractional number and string timestamps without writes', async () => {
+  const person = (await correctionPeople())[2]
+  const dateKey = '2042-06-09'
+  const timestamp = Date.parse(`${dateKey}T09:00:00+08:00`) + 0.5
+  const before = await queryPostgres('SELECT id FROM attendance WHERE person_id = $1 AND date_key = $2 ORDER BY id', [person.id, dateKey])
+  for (const candidate of [timestamp, String(timestamp)]) {
+    await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', {
+      method: 'POST',
+      cookie: hrCookie(),
+      body: { personId: person.id, action: 'checkin', timestamp: candidate, dateKey, reason: 'Invalid fractional timestamp' },
+    })), 400, String(candidate))
+  }
+  assert.deepEqual((await queryPostgres('SELECT id FROM attendance WHERE person_id = $1 AND date_key = $2 ORDER BY id', [person.id, dateKey])).rows, before.rows)
+})
+
 test('attendance correction preserves optional manual slots and numeric-string timestamps', async () => {
   const person = (await correctionPeople())[2]
   const actor = assignedOfficeActors().find(candidate => candidate.officeId === person.officeId)
@@ -3394,7 +3423,7 @@ test('attendance correction preserves optional manual slots and numeric-string t
   const created = await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', {
     method: 'POST',
     cookie: actor.cookie,
-    body: { personId: person.id, action: 'checkin', timestamp: String(timestamp), dateKey, reason: 'Legacy correction client' },
+    body: { personId: person.id, action: 'checkin', timestamp: `  ${timestamp}  `, dateKey, reason: 'Legacy correction client' },
   })), 200)
   const stored = await getLocalAttendanceById(created.attendanceId)
   assert.equal(stored.personId, person.id)
