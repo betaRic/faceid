@@ -250,12 +250,13 @@ await run('Regional HR can access only the assigned Regional Office', () => {
 
 await run('HR office assignment scope must match the assigned office type', () => {
   const regionalOffice = { id: 'regional-12', officeType: 'Regional Office' }
-  const fieldOffice = { id: 'gensan', officeType: 'City Office' }
+  const fieldOffice = { id: 'gensan', officeType: 'HUC Office' }
 
   assert.equal(validateHrOfficeAssignment('regional', regionalOffice), null)
   assert.match(validateHrOfficeAssignment('regional', fieldOffice), /Regional Office/)
   assert.equal(validateHrOfficeAssignment('office', fieldOffice), null)
-  assert.match(validateHrOfficeAssignment('office', regionalOffice), /Regional Office/)
+  assert.match(validateHrOfficeAssignment('office', regionalOffice), /Regional HR/i)
+  assert.match(validateHrOfficeAssignment('office', null), /required/i)
   assert.match(validateHrOfficeAssignment('regional', null), /office/i)
 })
 
