@@ -417,6 +417,12 @@ test('cross-office ordinary person directory permits own-office HR and preserves
 })
 
 test('cross-office paged person directory ignores forged office filters for HR and narrows Regional divisions', async () => {
+  const routeSource = await readFile(new URL('../../app/api/persons/route.js', import.meta.url), 'utf8')
+  assert.match(
+    routeSource,
+    /const visiblePersons = directory\.persons\.filter\(person => sessionAllowsOffice\(resolvedSession, person\.officeId\)\)/,
+    'paged directory must enforce route-level session scope after the PostgreSQL query',
+  )
   const { all } = await assignedOfficeReads()
   for (const actor of assignedOfficeActors()) {
     const rows = []
@@ -638,12 +644,17 @@ test('national holiday and organization-wide workforce changes require Regional 
     method: 'POST', cookie: adminCookie(),
     body: { type: 'policy', scopeType: 'organization', weeklySchedule: {} },
   })), 200, 'Regional Admin organization policy')
+  const division = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'POST', cookie: adminCookie(),
+    body: { type: 'policy', scopeType: 'division', scopeId: 'finance-division', weeklySchedule: {} },
+  })), 200, 'Regional Admin division policy')
 
   for (const actor of actors) {
     const holidayRead = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=holiday&year=2037', { cookie: actor.cookie })), 200)
     assert.equal(holidayRead.records.some(record => record.id === national.id), false)
     const policyRead = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=policy', { cookie: actor.cookie })), 200)
     assert.equal(policyRead.records.some(record => record.id === organization.id), false)
+    assert.equal(policyRead.records.some(record => record.id === division.id), false)
     await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
       method: 'PATCH', cookie: actor.cookie,
       body: { type: 'holiday', id: national.id, date: '2037-01-02', name: 'Forbidden update' },
@@ -658,11 +669,47 @@ test('national holiday and organization-wide workforce changes require Regional 
     await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=policy&id=${organization.id}`, {
       method: 'DELETE', cookie: actor.cookie,
     })), 403, `${actor.name} organization policy delete`)
+    await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'PATCH', cookie: actor.cookie,
+      body: { type: 'policy', id: division.id, weeklySchedule: {} },
+    })), 403, `${actor.name} division policy patch`)
+    await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=policy&id=${division.id}`, {
+      method: 'DELETE', cookie: actor.cookie,
+    })), 403, `${actor.name} division policy delete`)
   }
   const adminHolidays = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=holiday&year=2037', { cookie: adminCookie() })), 200)
   assert.ok(adminHolidays.records.some(record => record.id === national.id))
   const adminPolicies = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=policy', { cookie: adminCookie() })), 200)
   assert.ok(adminPolicies.records.some(record => record.id === organization.id))
+  assert.ok(adminPolicies.records.some(record => record.id === division.id))
+  await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'PATCH', cookie: adminCookie(),
+    body: { type: 'holiday', id: national.id, date: '2037-01-02', name: 'Regional Admin updated holiday' },
+  })), 200, 'Regional Admin national holiday patch')
+  await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'PATCH', cookie: adminCookie(),
+    body: { type: 'policy', id: organization.id, weeklySchedule: {} },
+  })), 200, 'Regional Admin organization policy patch')
+  await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'PATCH', cookie: adminCookie(),
+    body: { type: 'policy', id: division.id, weeklySchedule: {} },
+  })), 200, 'Regional Admin division policy patch')
+  await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=holiday&id=${national.id}`, {
+    method: 'DELETE', cookie: adminCookie(),
+  })), 200, 'Regional Admin national holiday delete')
+  await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=policy&id=${organization.id}`, {
+    method: 'DELETE', cookie: adminCookie(),
+  })), 200, 'Regional Admin organization policy delete')
+  await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=policy&id=${division.id}`, {
+    method: 'DELETE', cookie: adminCookie(),
+  })), 200, 'Regional Admin division policy delete')
+  await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'PATCH', cookie: adminCookie(),
+    body: { type: 'policy', id: 'missing-workforce-policy', weeklySchedule: {} },
+  })), 404, 'Regional Admin missing policy patch')
+  await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest('/api/hr/workforce-records?type=policy&id=missing-workforce-policy', {
+    method: 'DELETE', cookie: adminCookie(),
+  })), 404, 'Regional Admin missing policy delete')
 })
 
 test('cross-office leave and official-order paths accept each assigned office and reject every outside employee', async () => {
@@ -728,6 +775,13 @@ test('cross-office leave and official-order paths accept each assigned office an
       method: 'PATCH', cookie: actor.cookie,
       body: { type: 'leave', id: ownRecord.leaveId, leaveType: 'SL', startDate: ownRecord.date, endDate: ownRecord.date },
     })), 200, `${actor.name} own leave patch`)
+    await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'PATCH', cookie: actor.cookie,
+      body: { type: 'order', id: ownRecord.orderId, personIds: [ownRecord.person.id], startDate: ownRecord.date, endDate: ownRecord.date },
+    })), 200, `${actor.name} own order patch`)
+    await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=leave&id=${ownRecord.leaveId}`, {
+      method: 'DELETE', cookie: actor.cookie,
+    })), 200, `${actor.name} own leave delete`)
     await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=order&id=${ownRecord.orderId}`, {
       method: 'DELETE', cookie: actor.cookie,
     })), 200, `${actor.name} own order delete`)

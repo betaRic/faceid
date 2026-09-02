@@ -61,13 +61,20 @@ export async function GET(request) {
         ...params,
         officeId: effectiveOfficeId,
       })
-      const lastPerson = directory.persons[directory.persons.length - 1]
+      const visiblePersons = directory.persons.filter(person => sessionAllowsOffice(resolvedSession, person.officeId))
+      if (visiblePersons.length !== directory.persons.length) {
+        return NextResponse.json(
+          { ok: false, message: 'Employee directory scope could not be verified.' },
+          { status: 403 },
+        )
+      }
+      const lastPerson = visiblePersons[visiblePersons.length - 1]
       const nextCursor = directory.hasMore && lastPerson
         ? encodePersonDirectoryCursor(lastPerson, params.searchMode)
         : ''
       return NextResponse.json({
         ok: true,
-        persons: directory.persons,
+        persons: visiblePersons,
         page: {
           limit: params.limit,
           hasMore: directory.hasMore,

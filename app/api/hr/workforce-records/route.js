@@ -163,19 +163,20 @@ async function personOffice(personId) {
   return result.rows[0]?.office_id || "";
 }
 
-async function recordOffice(type, id) {
+async function recordOwnership(type, id) {
   if (type === "leave") {
     const result = await queryPostgres(
       "SELECT p.office_id FROM employee_leaves r JOIN persons p ON p.id = r.person_id WHERE r.id = $1",
       [id],
     );
-    return result.rows[0]?.office_id || null;
+    const row = result.rows[0];
+    return { found: Boolean(row), officeId: row?.office_id || "" };
   }
   if (type === "order") {
     const order = await loadOrderRecord(id);
-    if (!order) return null;
+    if (!order) return { found: false, officeId: "" };
     const people = await peopleWithOffices(order.person_ids || []);
-    return people[0]?.office_id || "";
+    return { found: true, officeId: people[0]?.office_id || "" };
   }
   if (type === "holiday") {
     const result = await queryPostgres(
@@ -183,19 +184,25 @@ async function recordOffice(type, id) {
       [id],
     );
     const row = result.rows[0];
-    return row ? (row.scope_type === "national" ? "" : row.office_id) : null;
+    return {
+      found: Boolean(row),
+      officeId: row?.scope_type === "national" ? "" : row?.office_id || "",
+    };
   }
   const result = await queryPostgres(
     "SELECT scope_type, scope_id FROM workforce_policies WHERE id = $1",
     [id],
   );
   const row = result.rows[0];
-  if (!row) return null;
-  return row.scope_type === "office"
-    ? row.scope_id
-    : row.scope_type === "organization"
-      ? ""
-      : null;
+  return {
+    found: Boolean(row),
+    officeId: row?.scope_type === "office" ? row.scope_id || "" : "",
+  };
+}
+
+async function recordOffice(type, id) {
+  const ownership = await recordOwnership(type, id);
+  return ownership.found ? ownership.officeId : null;
 }
 
 function canManageRecord(session, type, officeId) {
@@ -556,12 +563,13 @@ export async function PATCH(request) {
       { ok: false, message: "Record type and id are required." },
       { status: 400 },
     );
-  const officeId = await recordOffice(type, id);
-  if (officeId === null)
+  const ownership = await recordOwnership(type, id);
+  if (!ownership.found)
     return NextResponse.json(
       { ok: false, message: "Workforce record was not found." },
       { status: 404 },
     );
+  const officeId = ownership.officeId;
   if (type === "order" && !(await canManageOrder(session, id)))
     return NextResponse.json(
       { ok: false, message: "This session cannot manage that official order." },
@@ -692,12 +700,13 @@ export async function DELETE(request) {
       { ok: false, message: "Record type and id are required." },
       { status: 400 },
     );
-  const officeId = await recordOffice(type, id);
-  if (officeId === null)
+  const ownership = await recordOwnership(type, id);
+  if (!ownership.found)
     return NextResponse.json(
       { ok: false, message: "Workforce record was not found." },
       { status: 404 },
     );
+  const officeId = ownership.officeId;
   if (type === "order" && !(await canManageOrder(session, id)))
     return NextResponse.json(
       { ok: false, message: "This session cannot manage that official order." },
