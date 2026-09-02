@@ -63,7 +63,7 @@ export default function AdminDashboard({ initialRole = 'admin', initialRoleScope
       { id: 'roles', label: 'Roles' },
     ]
     const permittedItems = allItems
-      .filter(item => permissions.includes(item.id))
+      .filter(item => permissions.includes(item.id) && (!isHr || item.id !== 'office'))
       .map(item => ({
         ...item,
         disabled: item.id === 'roles' && roleScope !== 'regional',
@@ -72,9 +72,13 @@ export default function AdminDashboard({ initialRole = 'admin', initialRoleScope
     if (!isHr && roleScope === 'regional' && !permittedItems.some(item => item.id === 'workforce')) {
       permittedItems.splice(Math.max(0, permittedItems.findIndex(item => item.id === 'settings')), 0, { id: 'workforce', label: 'Workforce' })
     }
-    if (isHr && roleScope === 'office') {
-      permittedItems.push({ id: 'office-settings', label: 'Office Settings' })
-      permittedItems.push({ id: 'workforce', label: 'Workforce' })
+    if (isHr) {
+      if (!permittedItems.some(item => item.id === 'office-settings')) {
+        permittedItems.push({ id: 'office-settings', label: 'Office Settings' })
+      }
+      if (!permittedItems.some(item => item.id === 'workforce')) {
+        permittedItems.push({ id: 'workforce', label: 'Workforce' })
+      }
     }
     return permittedItems
   }, [isHr, pendingCount, permissions, roleScope])
@@ -145,7 +149,7 @@ export default function AdminDashboard({ initialRole = 'admin', initialRoleScope
             {activePanel === 'employees' && <HrEmployeesPanel />}
             {activePanel === 'summary' && <SummaryPanel />}
             {activePanel === 'office-settings' && <HrOfficeSettingsPanel />}
-            {activePanel === 'workforce' && <WorkforcePanel allowNationalHolidays={roleScope === 'regional'} />}
+            {activePanel === 'workforce' && <WorkforcePanel allowNationalHolidays={false} />}
           </>
         ) : (
           <>

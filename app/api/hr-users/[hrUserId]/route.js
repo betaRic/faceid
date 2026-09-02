@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { getOfficeRecord } from '@/lib/office-directory'
+import { validateHrOfficeAssignment } from '@/lib/hr-scope'
 import {
   deleteLocalHrProfile,
   getLocalHrProfileById,
@@ -24,7 +26,7 @@ function normalizeBody(body) {
 
 function validateBody(body) {
   if (!body.displayName) return 'Display name is required.'
-  if (body.scope === 'office' && !body.officeId) return 'Office-scoped HR users require an office.'
+  if (!body.officeId) return 'An assigned office is required for every HR account.'
   if (body.pin && !/^\d{4,8}$/.test(body.pin)) return 'PIN must be 4 to 8 digits.'
   return null
 }
@@ -44,12 +46,6 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ ok: false, message: 'Admin login is required.' }, { status: 401 })
   }
 
-  const body = normalizeBody(await request.json().catch(() => null))
-  const validationError = validateBody(body)
-  if (validationError) {
-    return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
-  }
-
   try {
     const db = null
     const resolvedSession = await resolveAdminSession(db, session)
@@ -63,6 +59,29 @@ export async function PUT(request, { params }) {
     const existing = await getLocalHrProfileById(hrUserId)
     if (!existing) {
       return NextResponse.json({ ok: false, message: 'HR user record was not found.' }, { status: 404 })
+    }
+
+    const supplied = await request.json().catch(() => null)
+    if (!supplied || typeof supplied !== 'object' || Array.isArray(supplied)) {
+      return NextResponse.json({ ok: false, message: 'A valid HR user update is required.' }, { status: 400 })
+    }
+    const body = normalizeBody({
+      ...existing,
+      ...Object.fromEntries(
+        ['email', 'displayName', 'scope', 'officeId', 'pin', 'active']
+          .filter(field => Object.hasOwn(supplied, field))
+          .map(field => [field, supplied[field]]),
+      ),
+    })
+    const validationError = validateBody(body)
+    if (validationError) {
+      return NextResponse.json({ ok: false, message: validationError }, { status: 400 })
+    }
+
+    const office = await getOfficeRecord(null, body.officeId)
+    const assignmentError = validateHrOfficeAssignment(body.scope, office)
+    if (assignmentError) {
+      return NextResponse.json({ ok: false, message: assignmentError }, { status: 400 })
     }
 
     const duplicate = body.email && await localEmailExists('hr_users', body.email, hrUserId)
@@ -79,7 +98,7 @@ export async function PUT(request, { params }) {
       action: 'hr_user_update',
       targetType: 'hr_user',
       targetId: hrUserId,
-      officeId: body.scope === 'office' ? body.officeId : '',
+      officeId: body.officeId,
       summary: `Updated HR user record for ${body.email}`,
       metadata: {
         email: body.email,

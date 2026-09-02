@@ -62,13 +62,13 @@ function validateOfficeHrSettings(payload) {
   }
 }
 
-async function getOfficeForOfficeHr(request) {
+async function getOfficeForHr(request) {
   const session = resolveOfficeHrSession(request)
   if (!session) return { error: NextResponse.json({ ok: false, message: 'HR login is required.' }, { status: 401 }) }
 
   const resolvedSession = await resolveHrSession(null, session)
-  if (!resolvedSession?.active || resolvedSession.scope !== 'office' || !resolvedSession.officeId) {
-    return { error: NextResponse.json({ ok: false, message: 'Office HR access is required.' }, { status: 403 }) }
+  if (!resolvedSession?.active || !resolvedSession.officeId) {
+    return { error: NextResponse.json({ ok: false, message: 'Assigned HR office access is required.' }, { status: 403 }) }
   }
 
   const office = await getOfficeRecord(null, resolvedSession.officeId)
@@ -78,7 +78,7 @@ async function getOfficeForOfficeHr(request) {
 
 export async function GET(request) {
   try {
-    const access = await getOfficeForOfficeHr(request)
+    const access = await getOfficeForHr(request)
     if (access.error) return access.error
     return NextResponse.json({ ok: true, office: toHrOfficeSettings(access.office) })
   } catch (error) {
@@ -92,7 +92,7 @@ export async function PUT(request) {
   if (originError) return originError
 
   try {
-    const access = await getOfficeForOfficeHr(request)
+    const access = await getOfficeForHr(request)
     if (access.error) return access.error
     if (!postgresEnabled()) {
       return NextResponse.json({ ok: false, message: 'Office HR settings are available on the local server runtime only.' }, { status: 503 })

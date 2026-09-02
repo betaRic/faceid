@@ -75,6 +75,10 @@ import {
   GET as getHrOfficeSettings,
   PUT as updateHrOfficeSettings,
 } from '../../app/api/hr/office-settings/route.js'
+import { POST as createHrUser } from '../../app/api/hr-users/route.js'
+import { PUT as updateHrUser } from '../../app/api/hr-users/[hrUserId]/route.js'
+import { GET as getOffices } from '../../app/api/offices/route.js'
+import { GET as getPublicOffices } from '../../app/api/public/offices/route.js'
 
 const office = {
   id: 'office-route-test',
@@ -92,6 +96,9 @@ const regionalOffice = {
   id: 'regional-office-route-test',
   name: 'Route Test Regional Office',
   officeType: 'Regional Office',
+  location: 'Route Test Regional Center',
+  provinceOrCity: 'Koronadal City',
+  wifiSsid: ['ROUTE-TEST-REGIONAL-WIFI'],
   divisions: [
     { id: 'finance-division', shortName: 'FD', name: 'Finance Division' },
     { id: 'operations-division', shortName: 'OD', name: 'Operations Division' },
@@ -623,6 +630,74 @@ test('Regional HR without an assigned office cannot resolve a session', async ()
   })
 
   assert.equal(resolved, null)
+})
+
+test('HR session identity reloads the signed account by id and never reattaches an old cookie by email', async () => {
+  const originalId = 'route-test-session-identity-old'
+  const replacementId = 'route-test-session-identity-new'
+  const email = 'route-test-session-identity@example.test'
+  const pinHash = hashLocalPin('4826')
+
+  await queryPostgres(`
+    INSERT INTO hr_users (
+      id, email, email_lower, name, display_name, scope, office_id, active, pin_hash, data
+    ) VALUES ($1, $2, $2, 'Session Identity HR', 'Session Identity HR', 'office', $3, true, $4, $5::jsonb)
+  `, [originalId, email, office.id, pinHash, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] })])
+
+  try {
+    const parsed = parseHrSessionCookieValue(createHrSessionCookieValue({
+      email,
+      uid: originalId,
+      hrUserId: originalId,
+      scope: 'office',
+      officeId: office.id,
+    }))
+
+    const initial = await resolveHrSession(null, parsed)
+    assert.equal(initial?.hrUserId, originalId)
+    assert.equal(initial?.officeId, office.id)
+
+    await queryPostgres('UPDATE hr_users SET office_id = $2 WHERE id = $1', [originalId, otherOffice.id])
+    const reassigned = await resolveHrSession(null, parsed)
+    assert.equal(reassigned?.hrUserId, originalId)
+    assert.equal(reassigned?.officeId, otherOffice.id)
+
+    await queryPostgres('UPDATE hr_users SET active = false WHERE id = $1', [originalId])
+    assert.equal(await resolveHrSession(null, parsed), null)
+
+    await queryPostgres('DELETE FROM hr_users WHERE id = $1', [originalId])
+    await queryPostgres(`
+      INSERT INTO hr_users (
+        id, email, email_lower, name, display_name, scope, office_id, active, pin_hash, data
+      ) VALUES ($1, $2, $2, 'Replacement HR', 'Replacement HR', 'office', $3, true, $4, $5::jsonb)
+    `, [replacementId, email, office.id, pinHash, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] })])
+
+    assert.equal(await resolveHrSession(null, parsed), null)
+
+    const emailOnlySession = parseHrSessionCookieValue(createHrSessionCookieValue({
+      email,
+      uid: replacementId,
+      scope: 'office',
+      officeId: office.id,
+    }))
+    assert.equal(await resolveHrSession(null, emailOnlySession), null)
+
+    const specialPinSession = await resolveHrSession(null, {
+      ...parsed,
+      email: 'hr-pin-admin@local',
+      uid: 'hr-pin',
+      hrUserId: 'special-pin-session',
+      officeId: `  ${office.id}  `,
+    })
+    assert.equal(specialPinSession?.uid, 'hr-pin')
+    assert.equal(specialPinSession?.displayName, 'HR PIN User')
+    assert.equal(specialPinSession?.officeId, office.id)
+    for (const officeId of [undefined, '', '   ']) {
+      assert.equal(await resolveHrSession(null, { ...specialPinSession, officeId }), null)
+    }
+  } finally {
+    await queryPostgres('DELETE FROM hr_users WHERE id = ANY($1::text[])', [[originalId, replacementId]])
+  }
 })
 
 test('disabled shared Regional PIN does not disable named Admin PIN', async () => {
@@ -1340,7 +1415,176 @@ test('employee deletion deactivates and preserves biometric, photo, and attendan
   }
 })
 
-test('Office HR settings expose and mutate only the assigned office work policy', async () => {
+test('HR account assignment validates office type and repairs a partial Regional HR record without identity drift', async () => {
+  const payloads = [
+    { email: 'route-test-new-regional-blank@example.test', displayName: 'Blank Regional HR', scope: 'regional', officeId: '', pin: '4137' },
+    { email: 'route-test-new-regional-field@example.test', displayName: 'Field Regional HR', scope: 'regional', officeId: office.id, pin: '4138' },
+    { email: 'route-test-new-regional-valid@example.test', displayName: 'Valid Regional HR', scope: 'regional', officeId: regionalOffice.id, pin: '4139' },
+    { email: 'route-test-new-office-regional@example.test', displayName: 'Regional Office HR', scope: 'office', officeId: regionalOffice.id, pin: '4140' },
+  ]
+  const responses = []
+  const createdIds = []
+
+  try {
+    for (const body of payloads) {
+      const response = await createHrUser(sameOriginRequest('/api/hr-users', {
+        method: 'POST',
+        headers: { cookie: adminCookie() },
+        body,
+      }))
+      const responsePayload = await response.json()
+      responses.push({ status: response.status, payload: responsePayload })
+      if (responsePayload.id) createdIds.push(responsePayload.id)
+    }
+
+    assert.equal(responses[0].status, 400, JSON.stringify(responses[0].payload))
+    assert.equal(responses[1].status, 400, JSON.stringify(responses[1].payload))
+    assert.equal(responses[2].status, 200, JSON.stringify(responses[2].payload))
+    assert.equal(responses[3].status, 400, JSON.stringify(responses[3].payload))
+
+    const validCreated = (await queryPostgres(
+      'SELECT scope, office_id FROM hr_users WHERE id = $1',
+      [responses[2].payload.id],
+    )).rows[0]
+    assert.deepEqual(validCreated, { scope: 'regional', office_id: regionalOffice.id })
+    assert.equal((await queryPostgres(
+      "SELECT office_id FROM audit_logs WHERE target_id = $1 AND action = 'hr_user_create'",
+      [responses[2].payload.id],
+    )).rows[0]?.office_id, regionalOffice.id)
+
+    const repairId = 'route-test-repair-regional-hr'
+    const repairPinHash = hashLocalPin('6259')
+    await queryPostgres(`
+      INSERT INTO hr_users (
+        id, email, email_lower, name, display_name, scope, office_id, active, pin_hash, data
+      ) VALUES ($1, $2, $2, $3, $3, 'regional', '', false, $4, $5::jsonb)
+    `, [
+      repairId,
+      'route-test-repair-regional@example.test',
+      'Regional HR Pending Repair',
+      repairPinHash,
+      JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] }),
+    ])
+    createdIds.push(repairId)
+
+    const beforeRepair = (await queryPostgres(
+      'SELECT email, display_name, active, pin_hash FROM hr_users WHERE id = $1',
+      [repairId],
+    )).rows[0]
+    for (const assignment of [
+      { scope: 'regional', officeId: office.id },
+      { scope: 'office', officeId: regionalOffice.id },
+      { scope: 'regional', officeId: '' },
+    ]) {
+      const invalidUpdate = await updateHrUser(
+        sameOriginRequest(`/api/hr-users/${repairId}`, {
+          method: 'PUT',
+          headers: { cookie: adminCookie() },
+          body: { email: beforeRepair.email, displayName: beforeRepair.display_name, active: false, ...assignment },
+        }),
+        { params: Promise.resolve({ hrUserId: repairId }) },
+      )
+      assert.equal(invalidUpdate.status, 400, JSON.stringify(await invalidUpdate.json()))
+    }
+    const repairResponse = await updateHrUser(
+      sameOriginRequest(`/api/hr-users/${repairId}`, {
+        method: 'PUT',
+        headers: { cookie: adminCookie() },
+        body: { scope: 'regional', officeId: regionalOffice.id },
+      }),
+      { params: Promise.resolve({ hrUserId: repairId }) },
+    )
+    const repairPayload = await repairResponse.json()
+    assert.equal(repairResponse.status, 200, JSON.stringify(repairPayload))
+
+    const afterRepair = (await queryPostgres(
+      'SELECT email, display_name, scope, office_id, active, pin_hash FROM hr_users WHERE id = $1',
+      [repairId],
+    )).rows[0]
+    assert.deepEqual(afterRepair, {
+      ...beforeRepair,
+      scope: 'regional',
+      office_id: regionalOffice.id,
+    })
+    assert.equal((await queryPostgres(
+      "SELECT office_id FROM audit_logs WHERE target_id = $1 AND action = 'hr_user_update'",
+      [repairId],
+    )).rows[0]?.office_id, regionalOffice.id)
+    for (const body of [null, [], 'not-json']) {
+      const invalidBody = await updateHrUser(
+        sameOriginRequest(`/api/hr-users/${repairId}`, {
+          method: 'PUT',
+          headers: { cookie: adminCookie() },
+          body,
+        }),
+        { params: Promise.resolve({ hrUserId: repairId }) },
+      )
+      assert.equal(invalidBody.status, 400, JSON.stringify(await invalidBody.json()))
+    }
+
+    const duplicateEmail = await updateHrUser(
+      sameOriginRequest(`/api/hr-users/${repairId}`, {
+        method: 'PUT',
+        headers: { cookie: adminCookie() },
+        body: { email: 'route-test-regional-hr@example.test' },
+      }),
+      { params: Promise.resolve({ hrUserId: repairId }) },
+    )
+    assert.equal(duplicateEmail.status, 409, JSON.stringify(await duplicateEmail.json()))
+  } finally {
+    if (createdIds.length > 0) {
+      await queryPostgres('DELETE FROM hr_users WHERE id = ANY($1::text[])', [createdIds])
+    }
+  }
+})
+
+test('HR office response hides protected location data while admin and public contracts stay intact', async () => {
+  const regionalCookie = hrCookie({
+    email: 'route-test-regional-hr@example.test',
+    uid: 'route-test-regional-hr',
+    hrUserId: 'route-test-regional-hr',
+    scope: 'regional',
+    officeId: regionalOffice.id,
+  })
+  const hrResponse = await getOffices(sameOriginRequest('/api/offices', {
+    headers: { cookie: regionalCookie },
+  }))
+  const hrPayload = await hrResponse.json()
+  assert.equal(hrResponse.status, 200, JSON.stringify(hrPayload))
+  assert.deepEqual(hrPayload.offices.map(item => item.id), [regionalOffice.id])
+  assert.deepEqual(Object.keys(hrPayload.offices[0]).sort(), [
+    'code', 'divisions', 'employees', 'id', 'name', 'officeType', 'shortName', 'status', 'workPolicy',
+  ])
+  for (const division of hrPayload.offices[0].divisions) {
+    assert.deepEqual(Object.keys(division).sort(), ['id', 'name', 'shortName'])
+  }
+  assert.deepEqual(
+    hrPayload.offices[0].divisions.map(division => division.id),
+    ['finance-division', 'operations-division'],
+  )
+  assert.doesNotMatch(JSON.stringify(hrPayload), /latitude|longitude|radius|gps|location|wifi|map/i)
+
+  const adminResponse = await getOffices(sameOriginRequest('/api/offices', {
+    headers: { cookie: adminCookie() },
+  }))
+  const adminPayload = await adminResponse.json()
+  assert.equal(adminResponse.status, 200, JSON.stringify(adminPayload))
+  const adminRegional = adminPayload.offices.find(item => item.id === regionalOffice.id)
+  assert.equal(adminRegional.gps.latitude, 6.1)
+  assert.equal(adminRegional.gps.longitude, 125.1)
+  assert.equal(adminRegional.gps.radiusMeters, 500)
+  assert.equal(adminRegional.location, regionalOffice.location)
+
+  const publicResponse = await getPublicOffices()
+  const publicPayload = await publicResponse.json()
+  assert.equal(publicResponse.status, 200, JSON.stringify(publicPayload))
+  const publicRegional = publicPayload.offices.find(item => item.id === regionalOffice.id)
+  assert.equal(publicRegional.location, regionalOffice.location)
+  assert.equal(publicRegional.provinceOrCity, regionalOffice.provinceOrCity)
+  assert.doesNotMatch(JSON.stringify(publicPayload), /latitude|longitude|radius|gps|wifi|map/i)
+})
+
+test('HR office settings for Office HR expose and mutate only the assigned office work policy', async () => {
   const officeHrCookie = hrCookie()
   const getResponse = await getHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
     headers: { cookie: officeHrCookie },
@@ -1361,18 +1605,6 @@ test('Office HR settings expose and mutate only the assigned office work policy'
     'workingDays',
   ])
   assert.doesNotMatch(JSON.stringify(getPayload.office), /gps|latitude|longitude|radius|location|wifi|division|province/i)
-
-  const regionalCookie = hrCookie({
-    email: 'route-test-regional-hr@example.test',
-    uid: 'route-test-regional-hr',
-    hrUserId: 'route-test-regional-hr',
-    scope: 'regional',
-    officeId: '',
-  })
-  const regionalGet = await getHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
-    headers: { cookie: regionalCookie },
-  }))
-  assert.equal(regionalGet.status, 403, JSON.stringify(await regionalGet.clone().json()))
 
   const forgedOrigin = await updateHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
     method: 'PUT',
@@ -1542,6 +1774,112 @@ test('Office HR settings expose and mutate only the assigned office work policy'
     JSON.stringify(beforeCurrent.work_policy),
     JSON.stringify(beforeCurrent.data),
   ])
+})
+
+test('HR office settings allow Regional HR only its assigned Regional Office and ignore forged protected fields', async () => {
+  const regionalCookie = hrCookie({
+    email: 'route-test-regional-hr@example.test',
+    uid: 'route-test-regional-hr',
+    hrUserId: 'route-test-regional-hr',
+    scope: 'regional',
+    officeId: regionalOffice.id,
+  })
+  const before = (await queryPostgres(`
+    SELECT id, name, latitude, longitude, radius_meters, work_policy, data
+    FROM offices
+    WHERE id = ANY($1::text[])
+    ORDER BY id
+  `, [[regionalOffice.id, otherOffice.id]])).rows
+  const beforeRegional = before.find(row => row.id === regionalOffice.id)
+  const beforeOther = before.find(row => row.id === otherOffice.id)
+  const protectedBefore = JSON.stringify({
+    name: beforeRegional.name,
+    latitude: beforeRegional.latitude,
+    longitude: beforeRegional.longitude,
+    radiusMeters: beforeRegional.radius_meters,
+    data: Object.fromEntries(Object.entries(beforeRegional.data).filter(([key]) => key !== 'workPolicy')),
+  })
+  const desiredPolicy = {
+    schedule: 'Regional HR assigned-office schedule',
+    workingDays: [1, 2, 3, 4, 5],
+    wfhDays: [3],
+    morningIn: '08:00',
+    morningOut: '12:00',
+    afternoonIn: '13:00',
+    afternoonOut: '17:00',
+    gracePeriodMinutes: 12,
+    checkInCooldownMinutes: 25,
+    checkOutCooldownMinutes: 8,
+  }
+
+  const unassignedCookie = hrCookie({
+    email: 'route-test-unassigned-regional-hr@example.test',
+    uid: 'route-test-unassigned-regional-hr',
+    hrUserId: 'route-test-unassigned-regional-hr',
+    scope: 'regional',
+    officeId: '',
+  })
+  for (const [method, handler] of [['GET', getHrOfficeSettings], ['PUT', updateHrOfficeSettings]]) {
+    const denied = await handler(sameOriginRequest('/api/hr/office-settings', {
+      method,
+      headers: { cookie: unassignedCookie },
+      ...(method === 'PUT' ? { body: { workPolicy: desiredPolicy } } : {}),
+    }))
+    assert.equal(denied.status, 403)
+    assert.equal((await denied.json()).message, 'Assigned HR office access is required.')
+  }
+
+  try {
+    const getResponse = await getHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
+      headers: { cookie: regionalCookie },
+    }))
+    const getPayload = await getResponse.json()
+    assert.equal(getResponse.status, 200, JSON.stringify(getPayload))
+    assert.deepEqual(Object.keys(getPayload.office).sort(), ['id', 'name', 'workPolicy'])
+    assert.equal(getPayload.office.id, regionalOffice.id)
+    assert.doesNotMatch(JSON.stringify(getPayload.office), /gps|latitude|longitude|radius|location|wifi|map/i)
+
+    const putResponse = await updateHrOfficeSettings(sameOriginRequest('/api/hr/office-settings', {
+      method: 'PUT',
+      headers: { cookie: regionalCookie },
+      body: {
+        id: otherOffice.id,
+        location: 'Forged Regional HR location',
+        wifiSsid: ['FORGED-REGIONAL-WIFI'],
+        gps: { latitude: 0, longitude: 0, radiusMeters: 999999 },
+        workPolicy: { ...desiredPolicy, radiusMeters: 999999, map: 'forged-map' },
+      },
+    }))
+    const putPayload = await putResponse.json()
+    assert.equal(putResponse.status, 200, JSON.stringify(putPayload))
+    assert.deepEqual(Object.keys(putPayload.office).sort(), ['id', 'name', 'workPolicy'])
+    assert.equal(putPayload.office.id, regionalOffice.id)
+    assert.deepEqual(putPayload.office.workPolicy, desiredPolicy)
+    assert.doesNotMatch(JSON.stringify(putPayload.office), /gps|latitude|longitude|radius|location|wifi|map/i)
+
+    const after = (await queryPostgres(`
+      SELECT id, name, latitude, longitude, radius_meters, work_policy, data
+      FROM offices
+      WHERE id = ANY($1::text[])
+      ORDER BY id
+    `, [[regionalOffice.id, otherOffice.id]])).rows
+    const afterRegional = after.find(row => row.id === regionalOffice.id)
+    const afterOther = after.find(row => row.id === otherOffice.id)
+    assert.equal(JSON.stringify({
+      name: afterRegional.name,
+      latitude: afterRegional.latitude,
+      longitude: afterRegional.longitude,
+      radiusMeters: afterRegional.radius_meters,
+      data: Object.fromEntries(Object.entries(afterRegional.data).filter(([key]) => key !== 'workPolicy')),
+    }), protectedBefore)
+    assert.deepEqual(afterRegional.work_policy, desiredPolicy)
+    assert.deepEqual(afterOther, beforeOther)
+  } finally {
+    await queryPostgres(
+      'UPDATE offices SET work_policy = $2::jsonb, data = $3::jsonb WHERE id = $1',
+      [regionalOffice.id, JSON.stringify(beforeRegional.work_policy), JSON.stringify(beforeRegional.data)],
+    )
+  }
 })
 
 test('hard deletion requires Regional Admin confirmation and rejects protected history', async () => {

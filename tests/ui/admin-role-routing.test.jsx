@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminDashboard from '@/components/AdminDashboard'
 
@@ -31,7 +31,14 @@ vi.mock('@/lib/admin/hooks/usePendingApprovals', () => ({
 }))
 
 vi.mock('@/components/admin/AdminShell', () => ({
-  default: ({ children }) => <main>{children}</main>,
+  default: ({ children, navItems }) => (
+    <main>
+      <nav aria-label="Workspace navigation">
+        {navItems.map(item => <span key={item.id}>{item.label}</span>)}
+      </nav>
+      {children}
+    </main>
+  ),
 }))
 vi.mock('@/components/admin/EmployeesPanel', () => ({ EmployeesPanel: () => <div>Admin employees panel</div> }))
 vi.mock('@/components/admin/HrEmployeesPanel', () => ({ HrEmployeesPanel: () => <div>HR employees panel</div> }))
@@ -41,9 +48,11 @@ vi.mock('@/components/admin/AdminsPanel', () => ({ AdminsPanel: () => null }))
 vi.mock('@/components/admin/OfficePanel', () => ({ default: () => null }))
 vi.mock('@/components/admin/EmployeeEditorModal', () => ({ default: () => null }))
 vi.mock('@/components/admin/EmployeeDeleteModal', () => ({ default: () => null }))
-vi.mock('@/components/admin/HrOfficeSettingsPanel', () => ({ default: () => null }))
+vi.mock('@/components/admin/HrOfficeSettingsPanel', () => ({ default: () => <div>HR office settings panel</div> }))
 vi.mock('@/components/admin/ThresholdSettings', () => ({ ThresholdSettings: () => null }))
-vi.mock('@/components/admin/WorkforcePanel', () => ({ default: () => null }))
+vi.mock('@/components/admin/WorkforcePanel', () => ({
+  default: ({ allowNationalHolidays }) => <div>Workforce national holidays: {String(allowNationalHolidays)}</div>,
+}))
 
 describe('admin dashboard role routing', () => {
   beforeEach(() => {
@@ -76,5 +85,41 @@ describe('admin dashboard role routing', () => {
 
     expect(screen.getByText('HR employees panel')).toBeVisible()
     expect(screen.queryByText('Admin employees panel')).not.toBeInTheDocument()
+  })
+
+  it('gives Regional HR assigned-office settings and workforce without national holiday controls or duplicate nav', () => {
+    storeState.activePanel = 'workforce'
+    storeState.roleScope = 'regional'
+    render(
+      <AdminDashboard
+        initialRole="hr"
+        initialRoleScope="regional"
+        permissions={['office', 'employees', 'summary', 'workforce']}
+      />,
+    )
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
+    expect(within(navigation).getAllByText('Office Settings')).toHaveLength(1)
+    expect(within(navigation).getAllByText('Workforce')).toHaveLength(1)
+    expect(within(navigation).queryByText('Office', { exact: true })).not.toBeInTheDocument()
+    expect(screen.getByText('Workforce national holidays: false')).toBeVisible()
+  })
+
+  it('gives Office HR assigned-office settings and workforce without national holiday controls or duplicate nav', () => {
+    storeState.activePanel = 'workforce'
+    storeState.roleScope = 'office'
+    render(
+      <AdminDashboard
+        initialRole="hr"
+        initialRoleScope="office"
+        permissions={['office', 'employees', 'summary', 'workforce']}
+      />,
+    )
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
+    expect(within(navigation).getAllByText('Office Settings')).toHaveLength(1)
+    expect(within(navigation).getAllByText('Workforce')).toHaveLength(1)
+    expect(within(navigation).queryByText('Office', { exact: true })).not.toBeInTheDocument()
+    expect(screen.getByText('Workforce national holidays: false')).toBeVisible()
   })
 })

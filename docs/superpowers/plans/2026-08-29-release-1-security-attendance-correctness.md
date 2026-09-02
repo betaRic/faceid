@@ -211,6 +211,7 @@ git commit -m "fix: bind regional HR to one office"
 
 **Files:**
 
+- Modify: `lib/hr-auth.js`
 - Modify: `app/api/hr-users/route.js`
 - Modify: `app/api/hr-users/[hrUserId]/route.js`
 - Modify: `components/admin/AddRoleModal.jsx`
@@ -249,9 +250,13 @@ Add a Regional HR office-settings GET and PUT case. It may update work policy fo
 
 Send a forged PUT body containing `gps.latitude`, `gps.longitude`, `gps.radiusMeters`, `location`, and `wifiSsid` along with a valid work-policy change. Assert the work policy changes, every saved location value remains byte-for-byte equal to its pre-request value, and the response contains none of those protected fields.
 
+**Execution corrections identified on 2026-09-02:** the existing account hook sends only changed fields, so the planned office-repair control would fail validation or overwrite omitted account fields. Add a partial repair request `{ scope: 'regional', officeId: regionalOffice.id }` for an inactive, unassigned Regional HR fixture. Assert its saved email, display name, active status, and PIN hash remain unchanged. Also test invalid office-type assignments through PUT, not only POST.
+
+The existing session resolver ignores the signed account ID and reloads by email. Add a same-cookie regression covering reassignment, immediate deactivation, deletion followed by a different account using the same email, and a missing signed account ID. The first change must appear immediately; the other three invalid sessions must resolve to `null`. Preserve a valid special HR PIN session, but reject that special session when its assigned office is blank so subsequent queries cannot interpret a blank office as global access.
+
 - [ ] **Step 2: Run focused route tests and confirm failure**
 
-Run: `npm run test:routes -- --test-name-pattern="HR account assignment|HR office response|HR office settings"`
+Run: `npm run test:routes -- --test-name-pattern="HR account assignment|HR office response|HR office settings|HR session identity"`
 
 Expected: FAIL because Regional HR currently loses `officeId`, HR-user validation accepts blank regional assignment, and `/api/offices` returns full office data.
 
@@ -272,6 +277,26 @@ if (assignmentError) {
 ```
 
 Write `officeId: body.officeId` into audit records for both Office HR and Regional HR.
+
+For PUT, authenticate and load the existing profile before validating. Overlay only supplied account fields before normalization; missing fields must not become empty strings or reactivate an inactive account:
+
+```javascript
+const editableFields = ['email', 'displayName', 'scope', 'officeId', 'pin', 'active']
+const suppliedFields = Object.fromEntries(editableFields
+  .filter(field => Object.hasOwn(input || {}, field))
+  .map(field => [field, input[field]]))
+const body = normalizeBody({ ...existing, ...suppliedFields })
+```
+
+After the unchanged valid special PIN handling, resolve named sessions through the existing `getHrProfileById` helper. Replace the email lookup; do not add an email fallback:
+
+```javascript
+const hrUserId = String(session.hrUserId || '').trim()
+if (!hrUserId) return null
+const profile = await getHrProfileById(db, hrUserId)
+```
+
+Retain the active-profile, assigned-office, and office-type checks from Task 1. In the special PIN branch, trim `session.officeId` and return `null` when it is blank; retain its valid office-scoped permissions and identity.
 
 - [ ] **Step 4: Add Regional HR controls to the account UI**
 

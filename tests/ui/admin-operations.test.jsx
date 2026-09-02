@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EmployeesPanel } from '@/components/admin/EmployeesPanel'
@@ -25,6 +25,11 @@ vi.mock('@/components/AdminOfficePanel', () => ({
 
 const nextPage = vi.fn()
 const previousPage = vi.fn()
+const roleHooks = vi.hoisted(() => ({
+  createHrUser: vi.fn(),
+  updateHrUser: vi.fn(),
+  deleteHrUser: vi.fn(),
+}))
 
 const employees = [
   { id: 'pending', name: 'Pending Person', employeeId: '', officeName: 'Regional Office', divisionName: 'Administrative Division', lifecycleStatus: 'pending', sampleCount: 4 },
@@ -52,8 +57,16 @@ vi.mock('@/lib/admin/hooks', () => ({
     adminsLoaded: true, handleCreateAdmin: vi.fn(), handleUpdateAdmin: vi.fn(), handleDeleteAdmin: vi.fn(), isPending: vi.fn(() => false),
   }),
   useHrUsers: () => ({
-    hrUsers: [{ id: 'hr-1', displayName: 'Office HR', officeId: 'regional', active: true }],
-    hrUsersLoaded: true, createHrUser: vi.fn(), updateHrUser: vi.fn(), deleteHrUser: vi.fn(), isPending: vi.fn(() => false),
+    hrUsers: [
+      { id: 'hr-regional', displayName: 'Regional HR', scope: 'regional', officeId: 'regional', active: true },
+      { id: 'hr-unassigned', displayName: 'Unassigned Office HR', scope: 'office', officeId: '', active: true },
+      { id: 'hr-regional-unassigned', displayName: 'Unassigned Regional HR', scope: 'regional', officeId: '', active: false },
+    ],
+    hrUsersLoaded: true,
+    createHrUser: roleHooks.createHrUser,
+    updateHrUser: roleHooks.updateHrUser,
+    deleteHrUser: roleHooks.deleteHrUser,
+    isPending: vi.fn(() => false),
   }),
 }))
 
@@ -114,7 +127,10 @@ vi.mock('@/lib/admin/hooks/useThresholds', () => ({
 const storeState = {
   roleScope: 'regional',
   admins: [{ id: 'admin-1' }], adminsLoaded: true, setActivePanel: vi.fn(),
-  offices: [{ id: 'regional', name: 'Regional Office XII', officeType: 'Regional Office', divisions: [{ id: 'admin', name: 'Administrative Division' }] }],
+  offices: [
+    { id: 'regional', name: 'Regional Office XII', officeType: 'Regional Office', divisions: [{ id: 'admin', name: 'Administrative Division' }] },
+    { id: 'field-office', name: 'General Santos Field Office', officeType: 'Field Office', divisions: [] },
+  ],
   employeeRefreshKey: 0,
   setEditingEmployee: vi.fn(),
   setDeletingEmployee: vi.fn(),
@@ -125,7 +141,10 @@ const storeState = {
 }
 vi.mock('@/lib/admin/store', () => ({ useAdminStore: (selector) => typeof selector === 'function' ? selector(storeState) : storeState }))
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.clearAllMocks()
+})
 
 describe('admin employee operations', () => {
   it('keeps search first, authoritative office/division filters, pending text, and cursors', async () => {
@@ -146,13 +165,46 @@ describe('admin employee operations', () => {
     expect(screen.getByText('Office HR employees')).toBeVisible()
     expect(screen.queryByText(/latitude|longitude|radius|map|gps|geofence|office location/i)).not.toBeInTheDocument()
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ok: true, office: { id: 'office-12', name: 'Office 12', workPolicy: { workingDays: [], wfhDays: [] } } }),
-    }))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          office: {
+            id: 'office-12',
+            name: 'Office 12',
+            location: 'Hidden office location',
+            gps: { latitude: 6.1, longitude: 125.1, radiusMeters: 500 },
+            wifiSsid: ['HIDDEN-WIFI'],
+            workPolicy: { schedule: 'Current schedule', workingDays: [], wfhDays: [] },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          office: {
+            id: 'office-12',
+            name: 'Office 12',
+            workPolicy: { schedule: 'Updated schedule', workingDays: [], wfhDays: [] },
+          },
+        }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
     render(<HrOfficeSettingsPanel />)
     expect(await screen.findByText('Office settings')).toBeVisible()
-    expect(screen.queryByText(/latitude|longitude|radius|map|gps|geofence|office location/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/latitude|longitude|radius|map|gps|geofence|location|wifi/i)).not.toBeInTheDocument()
+
+    await userEvent.clear(screen.getByLabelText('Schedule label'))
+    await userEvent.type(screen.getByLabelText('Schedule label'), 'Updated schedule')
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const requestBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    expect(requestBody).toEqual({
+      workPolicy: expect.objectContaining({ schedule: 'Updated schedule' }),
+    })
+    expect(JSON.stringify(requestBody)).not.toMatch(/latitude|longitude|radius|map|gps|geofence|location|wifi/i)
   })
 
   it('names the employee and destructive action in deactivation confirmation', () => {
@@ -305,7 +357,7 @@ describe('admin employee operations', () => {
     expect(screen.queryByRole('textbox', { name: /PIN/i })).not.toBeInTheDocument()
   })
 
-  it('creates scoped roles through an accessible dialog without exposing entered PIN text', async () => {
+  it('creates Regional HR through an accessible scoped dialog without exposing entered PIN text', async () => {
     const submit = vi.fn()
     render(<AddRoleModal isOpen onClose={vi.fn()} onSubmit={submit} />)
     expect(screen.getByRole('dialog', { name: 'Add role' })).toBeVisible()
@@ -313,18 +365,81 @@ describe('admin employee operations', () => {
     expect(screen.getByLabelText(/^Office/)).toBeVisible()
     expect(screen.getByLabelText(/^PIN/)).toHaveAttribute('type', 'password')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Office HR' }))
-    expect(screen.getByText(/restricted to this office/i)).toBeVisible()
-    expect(screen.queryByText(/regional hr/i)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'HR' }))
+    const scopeSelect = screen.getByRole('combobox', { name: 'HR scope' })
+    const officeSelect = screen.getByRole('combobox', { name: 'HR office' })
+    expect(within(officeSelect).queryByRole('option', { name: 'Regional Office XII' })).not.toBeInTheDocument()
+    expect(within(officeSelect).getByRole('option', { name: 'General Santos Field Office' })).toBeVisible()
+    await userEvent.selectOptions(officeSelect, 'field-office')
+
+    await userEvent.selectOptions(scopeSelect, 'regional')
+    const regionalOfficeSelect = screen.getByRole('combobox', { name: 'HR office' })
+    expect(regionalOfficeSelect).toHaveValue('')
+    expect(within(regionalOfficeSelect).getByRole('option', { name: 'Regional Office XII' })).toBeVisible()
+    expect(within(regionalOfficeSelect).queryByRole('option', { name: 'General Santos Field Office' })).not.toBeInTheDocument()
+    await userEvent.selectOptions(regionalOfficeSelect, 'regional')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Display name' }), 'New Regional HR')
+    await userEvent.type(screen.getByLabelText(/^PIN/), '4826')
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue('New Regional HR')
+    expect(screen.getByLabelText(/^PIN/)).toHaveValue('4826')
+    await userEvent.click(screen.getByRole('button', { name: 'Create role' }))
+
+    expect(submit).toHaveBeenCalledWith({
+      type: 'hr',
+      displayName: 'New Regional HR',
+      scope: 'regional',
+      officeId: 'regional',
+      pin: '4826',
+    })
   })
 
-  it('keeps account management regional, scoped, and operationally compact', () => {
+  it('keeps HR account management assigned-office scoped and repairable', async () => {
     render(<AdminsPanel />)
     expect(screen.getByRole('heading', { name: 'Roles and access' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Add role' })).toBeVisible()
     expect(screen.getAllByText('Regional Admin').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Office HR').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Regional').length).toBeGreaterThan(0)
+    const regionalRow = screen.getByRole('row', { name: /^Regional HR/ })
+    expect(regionalRow).toHaveTextContent('Regional HR')
+    expect(regionalRow).toHaveTextContent('Regional Office XII')
+    expect(regionalRow).not.toHaveTextContent('All offices')
+    const regionalSelect = within(regionalRow).getByRole('combobox', { name: 'Office for Regional HR' })
+    expect(within(regionalSelect).queryByRole('option', { name: 'General Santos Field Office' })).not.toBeInTheDocument()
+
+    const unassignedRow = screen.getByRole('row', { name: /Unassigned Office HR/ })
+    expect(unassignedRow).toHaveTextContent('Office assignment required')
+    const repairSelect = within(unassignedRow).getByRole('combobox', { name: 'Office for Unassigned Office HR' })
+    expect(within(repairSelect).queryByRole('option', { name: 'Regional Office XII' })).not.toBeInTheDocument()
+    await userEvent.selectOptions(repairSelect, 'field-office')
+    expect(roleHooks.updateHrUser).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'hr-unassigned', scope: 'office' }),
+      { scope: 'office', officeId: 'field-office' },
+    )
+
+    const unassignedRegionalRow = screen.getByRole('row', { name: /^Unassigned Regional HR/ })
+    expect(unassignedRegionalRow).toHaveTextContent('Office assignment required')
+    await userEvent.selectOptions(within(unassignedRegionalRow).getByRole('combobox', { name: 'Office for Unassigned Regional HR' }), 'regional')
+    expect(roleHooks.updateHrUser).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'hr-regional-unassigned', scope: 'regional', active: false }),
+      { scope: 'regional', officeId: 'regional' },
+    )
+  })
+
+  it('passes the selected Regional HR scope through account creation', async () => {
+    render(<AdminsPanel />)
+    await userEvent.click(screen.getByRole('button', { name: 'Add role' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Add role' })).getByRole('button', { name: 'HR' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'HR scope' }), 'regional')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'HR office' }), 'regional')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Display name' }), 'Created Regional HR')
+    await userEvent.type(screen.getByLabelText(/^PIN/), '5937')
+    await userEvent.click(screen.getByRole('button', { name: 'Create role' }))
+
+    await waitFor(() => expect(roleHooks.createHrUser).toHaveBeenCalledWith({
+      displayName: 'Created Regional HR',
+      officeId: 'regional',
+      pin: '5937',
+      scope: 'regional',
+    }))
   })
 
   function maintenancePayload(overrides = {}) {

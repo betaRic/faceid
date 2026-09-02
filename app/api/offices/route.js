@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { getHrSessionCookieName, hrSessionAllowsOffice, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { listOfficeRecords, getOfficeEmployeeCounts } from '@/lib/office-directory'
+import { toHrOfficeSummary } from '@/lib/offices/hr-office-settings'
 
 export async function GET(request) {
   try {
@@ -25,10 +26,9 @@ export async function GET(request) {
     ))
 
     const counts = await getOfficeEmployeeCounts(db, visible.map(office => office.id))
-    const enriched = visible.map(office => ({
-      ...office,
-      employees: Number(counts[office.id] ?? 0),
-    }))
+    const enriched = visible.map(office => resolvedAdmin
+      ? { ...office, employees: Number(counts[office.id] ?? 0) }
+      : toHrOfficeSummary(office, counts[office.id] ?? 0))
 
     return NextResponse.json({ ok: true, offices: enriched })
   } catch (error) {

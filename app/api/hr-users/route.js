@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listHrProfiles } from '@/lib/hr-directory'
+import { getOfficeRecord } from '@/lib/office-directory'
+import { validateHrOfficeAssignment } from '@/lib/hr-scope'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { createLocalHrProfile, localEmailExists } from '@/lib/postgres/user-store'
@@ -20,7 +22,7 @@ function normalizeBody(body) {
 
 function validateBody(body) {
   if (!body.displayName) return 'Display name is required.'
-  if (body.scope === 'office' && !body.officeId) return 'Office-scoped HR users require an office.'
+  if (!body.officeId) return 'An assigned office is required for every HR account.'
   if (!/^\d{4,8}$/.test(body.pin)) return 'PIN must be 4 to 8 digits.'
   return null
 }
@@ -77,6 +79,12 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, message: 'Regional admin access is required.' }, { status: 403 })
     }
 
+    const office = await getOfficeRecord(null, body.officeId)
+    const assignmentError = validateHrOfficeAssignment(body.scope, office)
+    if (assignmentError) {
+      return NextResponse.json({ ok: false, message: assignmentError }, { status: 400 })
+    }
+
     const exists = body.email && await localEmailExists('hr_users', body.email)
     if (exists) {
       return NextResponse.json({ ok: false, message: 'An HR user record already exists for that email.' }, { status: 409 })
@@ -91,7 +99,7 @@ export async function POST(request) {
       action: 'hr_user_create',
       targetType: 'hr_user',
       targetId: recordId,
-      officeId: body.scope === 'office' ? body.officeId : '',
+      officeId: body.officeId,
       summary: `Created HR user record for ${body.email}`,
       metadata: {
         email: body.email,

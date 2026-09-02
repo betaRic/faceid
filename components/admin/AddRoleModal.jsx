@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useAdminStore } from '@/lib/admin/store'
 import { Button, Dialog, Field, Input, Select } from '@/components/ui'
 
@@ -16,9 +16,13 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
   const [adminPin, setAdminPin] = useState('')
 
   const [hrDisplayName, setHrDisplayName] = useState('')
+  const [hrScope, setHrScope] = useState('office')
   const [hrOfficeId, setHrOfficeId] = useState('')
   const [hrPin, setHrPin] = useState('')
   const isPending = roleType === 'admin' ? adminPending : hrPending
+  const hrOffices = useMemo(() => offices.filter(office => (
+    hrScope === 'regional' ? office.officeType === 'Regional Office' : office.officeType !== 'Regional Office'
+  )), [hrScope, offices])
 
   const validation = useMemo(() => {
     if (roleType === 'admin') {
@@ -31,7 +35,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
 
     return {
       hrDisplayName: !hrDisplayName.trim() ? 'Display name is required.' : '',
-      hrOfficeId: !hrOfficeId ? 'Choose an office.' : '',
+      hrOfficeId: !hrOffices.some(office => office.id === hrOfficeId) ? 'Choose an office.' : '',
       hrPin: !/^\d{4,8}$/.test(hrPin)
         ? 'PIN must be 4 to 8 digits.'
         : '',
@@ -44,6 +48,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
     adminScope,
     hrDisplayName,
     hrOfficeId,
+    hrOffices,
     hrPin,
     roleType,
   ])
@@ -69,7 +74,7 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
       onSubmit({
         type: 'hr',
         displayName: hrDisplayName.trim(),
-        scope: 'office',
+        scope: hrScope,
         officeId: hrOfficeId,
         pin: hrPin,
       })
@@ -77,23 +82,24 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
     resetForm()
   }
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setAdminEmail('')
     setAdminDisplayName('')
     setAdminScope('office')
     setAdminOfficeId('')
     setAdminPin('')
     setHrDisplayName('')
+    setHrScope('office')
     setHrOfficeId('')
     setHrPin('')
     setErrors({})
     setRoleType('admin')
-  }
+  }, [])
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     resetForm()
     onClose()
-  }
+  }, [onClose, resetForm])
 
   if (!isOpen) return null
 
@@ -112,13 +118,13 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
       )}
     >
       <form className="grid gap-5" id="add-role-form" onSubmit={handleSubmit}>
-        <p className="text-sm leading-6 text-secondary">Create an administrator or Office HR account. PIN values are accepted here but are never displayed after creation.</p>
+        <p className="text-sm leading-6 text-secondary">Create an administrator or HR account. PIN values are accepted here but are never displayed after creation.</p>
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-foreground">Account type</legend>
           <div className="grid grid-cols-2 gap-2">
             {[
               ['admin', 'Administrator'],
-              ['hr', 'Office HR'],
+              ['hr', 'HR'],
             ].map(([value, label]) => (
               <Button
                 aria-pressed={roleType === value}
@@ -163,10 +169,23 @@ function AddRoleModal({ isOpen, onClose, onSubmit, adminPending = false, hrPendi
             <Field error={errors.hrDisplayName} label="Display name" required>
               <Input value={hrDisplayName} onChange={(e) => { setHrDisplayName(e.target.value); setErrors((current) => ({ ...current, hrDisplayName: '' })) }} />
             </Field>
-            <Field error={errors.hrOfficeId} label="Office" hint="Office HR remains restricted to this office." required>
+            <Field label="HR scope" required>
+              <Select value={hrScope} onChange={(event) => {
+                const nextScope = event.target.value
+                setHrScope(nextScope)
+                if (!offices.some(office => office.id === hrOfficeId && (nextScope === 'regional' ? office.officeType === 'Regional Office' : office.officeType !== 'Regional Office'))) {
+                  setHrOfficeId('')
+                }
+                setErrors(current => ({ ...current, hrOfficeId: '' }))
+              }}>
+                <option value="office">Office HR — assigned field office only</option>
+                <option value="regional">Regional HR — assigned Regional Office only</option>
+              </Select>
+            </Field>
+            <Field error={errors.hrOfficeId} label="HR office" hint="HR remains restricted to this assigned office." required>
               <Select value={hrOfficeId} onChange={(e) => { setHrOfficeId(e.target.value); setErrors((current) => ({ ...current, hrOfficeId: '' })) }}>
                 <option value="">Select office</option>
-                {offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}
+                {hrOffices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}
               </Select>
             </Field>
             <Field error={errors.hrPin} label="PIN" hint="Use 4 to 8 digits." required>

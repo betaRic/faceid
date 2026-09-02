@@ -15,12 +15,12 @@ function AdminsPanelInner() {
   const [filterRole, setFilterRole] = useState('all')
 
   if (roleScope !== 'regional') {
-    return <EmptyState className="my-auto" description="Only Regional administrators can create, disable, or remove administrator and Office HR accounts." title="Regional access required" />
+    return <EmptyState className="my-auto" description="Only Regional administrators can create, disable, or remove administrator and HR accounts." title="Regional access required" />
   }
 
   const allUsers = [
     ...admins.map((user) => ({ ...user, userType: 'admin' })),
-    ...hrUsers.map((user) => ({ ...user, userType: 'hr', role: 'hr', scope: 'office' })),
+    ...hrUsers.map((user) => ({ ...user, userType: 'hr', role: 'hr' })),
   ]
   const filteredUsers = filterRole === 'all'
     ? allUsers
@@ -32,13 +32,30 @@ function AdminsPanelInner() {
     if (data.type === 'admin') {
       await handleCreateAdmin({ email: data.email, displayName: data.displayName, scope: data.scope, officeId: data.officeId, pin: data.pin, role: 'admin' })
     } else {
-      await createHrUser({ displayName: data.displayName, officeId: data.officeId, pin: data.pin, scope: 'office' })
+      await createHrUser({ displayName: data.displayName, officeId: data.officeId, pin: data.pin, scope: data.scope })
     }
     setShowAddModal(false)
   }
 
   const handleUpdate = (user, updates) => user.userType === 'hr' ? updateHrUser(user, updates) : handleUpdateAdmin(user, updates)
   const handleDelete = (user) => user.userType === 'hr' ? deleteHrUser(user) : handleDeleteAdmin(user)
+  const roleName = (user) => user.userType === 'hr' ? (user.scope === 'regional' ? 'Regional HR' : 'Office HR') : 'Administrator'
+  const renderOffice = (user, view) => user.userType === 'hr' ? (
+    <div className="grid gap-1.5">
+      <Select
+        aria-label={`Office for ${user.displayName || user.email}`}
+        aria-describedby={!user.officeId ? `hr-office-warning-${view}-${user.id}` : undefined}
+        className="min-w-40"
+        value={user.officeId || ''}
+        onChange={(event) => handleUpdate(user, { scope: user.scope, officeId: event.target.value })}
+      >
+        <option value="">Select office</option>
+        {offices.filter(office => user.scope === 'regional' ? office.officeType === 'Regional Office' : office.officeType !== 'Regional Office')
+          .map(office => <option key={office.id} value={office.id}>{office.name}</option>)}
+      </Select>
+      {!user.officeId ? <p className="text-xs text-destructive" id={`hr-office-warning-${view}-${user.id}`}>Office assignment required</p> : null}
+    </div>
+  ) : (user.scope === 'regional' ? 'All offices' : officeName(user.officeId))
   const renderActions = (user) => (
     <>
       <Button onClick={() => handleUpdate(user, { active: user.active === false })} variant="secondary">{user.active === false ? 'Enable' : 'Disable'}</Button>
@@ -50,22 +67,22 @@ function AdminsPanelInner() {
     id: `${user.userType}-${user.id}`,
     fields: [
       { label: 'Account', value: <><strong className="block">{user.displayName || user.email}</strong><span className="text-xs text-secondary">{user.email || 'PIN sign-in'}</span></> },
-      { label: 'Role', value: user.userType === 'hr' ? 'Office HR' : 'Administrator' },
+      { label: 'Role', value: roleName(user) },
       { label: 'Scope', value: user.scope === 'regional' ? 'Regional' : 'Office' },
-      { label: 'Office', value: user.scope === 'regional' ? 'All offices' : officeName(user.officeId) },
+      { label: 'Office', value: renderOffice(user, 'mobile') },
       { label: 'Status', value: <Status tone={user.active === false ? 'neutral' : 'success'}>{user.active === false ? 'Disabled' : 'Active'}</Status> },
     ],
   }))
 
   return (
     <section className="flex min-h-0 flex-col gap-4 md:h-full">
-      <PageHeader title="Roles and access" description="Regional control of administrator and Office HR accounts. PIN values are never shown after creation." actions={<Button onClick={() => setShowAddModal(true)}>Add role</Button>} />
+      <PageHeader title="Roles and access" description="Regional control of administrator and HR accounts. PIN values are never shown after creation." actions={<Button onClick={() => setShowAddModal(true)}>Add role</Button>} />
 
       <nav aria-label="Role filters" className="flex flex-wrap gap-2">
         {[
           ['all', 'All'],
           ['admin', 'Administrators'],
-          ['hr', 'Office HR'],
+          ['hr', 'HR'],
         ].map(([value, label]) => (
           <Button aria-pressed={filterRole === value} key={value} onClick={() => setFilterRole(value)} variant={filterRole === value ? 'primary' : 'secondary'}>{label}</Button>
         ))}
@@ -92,16 +109,16 @@ function AdminsPanelInner() {
                 {filteredUsers.map((user) => (
                   <tr key={`${user.userType}-${user.id}`}>
                     <td className="px-4 py-3"><strong className="block text-foreground">{user.displayName || user.email}</strong><span className="text-xs text-secondary">{user.email || 'PIN sign-in'}</span></td>
-                    <td className="px-4 py-3">{user.userType === 'hr' ? 'Office HR' : 'Administrator'}</td>
+                    <td className="px-4 py-3">{roleName(user)}</td>
                     <td className="px-4 py-3">
-                      {user.userType === 'hr' ? 'Office' : (
+                      {user.userType === 'hr' ? (user.scope === 'regional' ? 'Regional' : 'Office') : (
                         <Select aria-label={`Scope for ${user.displayName || user.email}`} className="min-w-32" value={user.scope} onChange={(event) => handleUpdate(user, { scope: event.target.value, officeId: event.target.value === 'office' ? (user.officeId || '') : '' })}>
                           <option value="office">Office</option>
                           <option value="regional">Regional</option>
                         </Select>
                       )}
                     </td>
-                    <td className="px-4 py-3">{user.scope === 'regional' ? 'All offices' : officeName(user.officeId)}</td>
+                    <td className="px-4 py-3">{renderOffice(user, 'desktop')}</td>
                     <td className="px-4 py-3"><Status tone={user.active === false ? 'neutral' : 'success'}>{user.active === false ? 'Disabled' : 'Active'}</Status></td>
                     <td className="px-4 py-3"><div className="flex flex-wrap gap-2">{renderActions(user)}</div></td>
                   </tr>
