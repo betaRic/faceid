@@ -419,6 +419,8 @@ git commit -m "fix: protect HR office boundaries"
 
 - Modify: `lib/employee-access.js`
 - Modify: `lib/postgres/report-store.js`
+- Modify: `lib/routes/persons-route.js`
+- Modify: `lib/workforce-policy.js`
 - Modify: `app/api/persons/route.js`
 - Modify: `app/api/persons/pending-count/route.js`
 - Modify: `app/api/attendance/recent/route.js`
@@ -428,8 +430,9 @@ git commit -m "fix: protect HR office boundaries"
 - Modify: `app/api/hr/dtr/workbook/route.js`
 - Modify: `app/api/hr/workforce-records/route.js`
 - Test: `tests/postgres/identity.routes.test.mjs`
+- Test: `tests/run-tests.mjs`
 
-- [ ] **Step 1: Write failing cross-office route tests**
+- [x] **Step 1: Write failing cross-office route tests**
 
 Create active employees in the Regional Office, Gensan fixture, and Cotabato fixture. Using Regional HR cookie, assert:
 
@@ -446,13 +449,17 @@ Using each Office HR cookie, assert the same routes return only its assigned fie
 
 **Execution correction identified on 2026-09-02:** `/api/persons` GET and `/api/attendance/recent` currently accept only administrator cookies. Replacing their office-filter expressions alone would still reject every HR request. Use `resolveEmployeeManagementSession` and `resolveStaffAttendanceSession`, respectively, with `sessionAllowsOffice` so the tests prove both authorized own-office access and rejection or omission of outside records. Preserve the public persons POST path. Test both normal and `access-codes` modes of `/api/hr/employees`, including a forged requested office, and the paged and ordinary persons directory modes. Existing DTR JSON/workbook paths already authorize the saved person's office; verify them rather than forcing unnecessary edits.
 
-- [ ] **Step 2: Run focused tests and confirm the current global Regional HR behavior fails**
+**Review corrections identified on 2026-09-02:** Workforce list queries must restrict records to the assigned office before returning database rows, not load the whole organization and filter afterward. Include all official-order members when checking ownership, so a mixed-office order cannot become visible to one office's HR. Division holidays must validate that the selected division belongs to the supplied office, and special-day evaluation must match both office and division to prevent old or malformed records from affecting another office. Existing organization/division policies must remain distinguishable from missing records: Regional Administrator updates and deletions succeed, HR receives 403, and absent records receive 404. Paged person-directory defense must be tested through the production handler with an injected outside-office result, not by matching source text alone. The narrow GET factory lives in `lib/routes/persons-route.js`; include it in subsequent error-response work.
+
+New HR access to recent attendance must not expose the raw stored payload. Return an explicit set of HR attendance fields without direct or nested coordinates, map, radius, or Wi-Fi data; preserve administrator responses. Test location-populated records through the actual route. Do not copy raw `geofenceStatus` into the HR response: existing status text can include a Wi-Fi name.
+
+- [x] **Step 2: Run focused tests and confirm the current global Regional HR behavior fails**
 
 Run: `npm run test:routes -- --test-name-pattern="cross-office|assigned Regional Office|national holiday"`
 
 Expected: FAIL because several routes convert `scope === 'regional'` to an empty office filter.
 
-- [ ] **Step 3: Add one shared SQL filter rule**
+- [x] **Step 3: Add one shared SQL filter rule**
 
 Add to `lib/employee-access.js`:
 
@@ -470,7 +477,7 @@ Use this helper instead of every `session.scope === 'office' ? session.officeId 
 
 In `lib/postgres/report-store.js`, change `listLocalDtrEmployees` to apply `session.officeId` whenever `session.role === 'hr'` or `session.scope === 'office'`.
 
-- [ ] **Step 4: Remove direct Regional HR organization-wide grants**
+- [x] **Step 4: Remove direct Regional HR organization-wide grants**
 
 In `app/api/hr/workforce-records/route.js`, national holidays and organization or division-wide policies remain Regional Administrator-only:
 
@@ -482,7 +489,7 @@ if (type === 'holiday' && !officeId) {
 
 Regional HR may manage records tied to `session.officeId`, including employees in any division under that Regional Office. It may not seed the national calendar or change another office.
 
-- [ ] **Step 5: Search for remaining global-HR shortcuts**
+- [x] **Step 5: Search for remaining global-HR shortcuts**
 
 Run:
 
@@ -492,18 +499,20 @@ rg -n -e "scope === 'office'" -e "scope !== 'office'" -e 'scope === "regional"' 
 
 Expected: each remaining scope check is administrator-only, presentation-only, or documented by the plan. No HR data query turns Regional HR into an empty/global office filter.
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run: `npm run test:routes -- --test-name-pattern="cross-office|assigned Regional Office|national holiday"`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/employee-access.js lib/postgres/report-store.js app/api/persons/route.js app/api/persons/pending-count/route.js app/api/attendance/recent/route.js app/api/hr tests/postgres/identity.routes.test.mjs
 git commit -m "fix: scope every HR work path"
 ```
+
+**Accepted on 2026-09-02:** Task 3 implementation and review corrections are committed in `8f94346`, `e2a1704`, `0839057`, `2ff6a84`, and `4baf7cb`. Independent specification and quality reviews passed, including the final HR recent-attendance privacy change. Fresh Node 22.23.2 verification: full guarded PostgreSQL route suite **81/81** at `4baf7cb`; non-route suite at `2ff6a84`: safety **38**, units **118**, contract **1**, UI **79**, all passed. Final privacy diff also passed an independent no-database serializer probe and `git diff --check`. Browser, real-device, and hosting release gates remain pending; these tests do not establish production readiness.
 
 ## Task 4: Make attendance correction trust `personId`
 
@@ -573,6 +582,8 @@ const entry = {
   name: person.name || '',
   officeId: person.officeId || '',
   officeName: person.officeName || '',
+  divisionId: person.divisionId || '',
+  divisionName: person.divisionName || '',
   action,
   attendanceMode: 'manual_override',
   geofenceStatus: 'Admin override',
@@ -643,6 +654,7 @@ git commit -m "fix: use saved identity for corrections"
 
 - Modify: `lib/postgres/attendance-store.js`
 - Modify: `lib/attendance/write.js`
+- Modify: `lib/attendance/index.js`
 - Modify: `lib/scan-events.js`
 - Modify: `lib/attendance/process.js`
 - Modify: `tests/postgres/identity.routes.test.mjs`
@@ -771,6 +783,8 @@ Accepted attendance passes `{ status, decisionCode, reason, debug, requestMeta }
 - [ ] **Step 6: Implement one per-person accepted-attendance transaction**
 
 Replace the current `writeAttendanceAtomically` plus later daily and scan-event calls with a high-level `commitAcceptedAttendance` in `lib/attendance/write.js`. Its input is `{ entry, person, office, policyOverride, scanEventContext }`.
+
+The currently unused `lib/attendance/index.js` still re-exports the old writer names. Keep those exports consistent with the replacement so this change does not leave a module with broken named imports. Do not retain obsolete write implementations solely to support an unused export. Removing the unused barrel itself remains Release 2 work.
 
 Inside `withPostgresTransaction`:
 
@@ -1371,6 +1385,7 @@ git commit -m "feat: add safe server error responses"
 - Modify: `app/api/persons/route.js`
 - Modify: `app/api/persons/pending-count/route.js`
 - Modify: `app/api/persons/check-duplicate/route.js`
+- Modify: `lib/routes/persons-route.js` (persons GET moved here during Task 3)
 - Modify: `app/api/persons/[personId]/access-code/route.js`
 - Modify: `app/api/persons/[personId]/photo/route.js` (server-log key only)
 - Modify: `app/api/persons/[personId]/reenroll/route.js` (server-log key only)
@@ -1409,6 +1424,8 @@ Inject a loader that throws a secret-like connection string. Assert response has
 - [ ] **Step 2: Replace public-route catches with the shared helper**
 
 For every file listed above, import `serverErrorResponse` and replace raw catch responses using this exact mapping:
+
+Apply the `/api/persons` GET row inside `createPersonsGetHandler` in `lib/routes/persons-route.js`; the route file now only instantiates that handler. Do not leave the moved catch outside the error-response sweep.
 
 | Route | Method | Context | Public message |
 |---|---|---|---|
