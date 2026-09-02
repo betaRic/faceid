@@ -53,7 +53,7 @@ This plan implements Release 1 only from `docs/superpowers/specs/2026-08-29-syst
 - Modify: `tests/run-tests.mjs`
 - Modify: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write failing pure scope tests**
+- [x] **Step 1: Write failing pure scope tests**
 
 Add `lib/hr-scope.js` to the `importLocalModule` imports in `tests/run-tests.mjs`, then add these cases:
 
@@ -83,13 +83,13 @@ await run('HR scope must match assigned office type', () => {
 })
 ```
 
-- [ ] **Step 2: Run the unit suite and confirm the new import fails**
+- [x] **Step 2: Run the unit suite and confirm the new import fails**
 
 Run: `node tests/run-tests.mjs`
 
 Expected: FAIL because `lib/hr-scope.js` does not exist.
 
-- [ ] **Step 3: Implement the pure HR rule**
+- [x] **Step 3: Implement the pure HR rule**
 
 Create `lib/hr-scope.js`:
 
@@ -120,7 +120,7 @@ export function validateHrOfficeAssignment(scopeValue, office) {
 }
 ```
 
-- [ ] **Step 4: Preserve `officeId` in every HR session and database profile**
+- [x] **Step 4: Preserve `officeId` in every HR session and database profile**
 
 In `lib/hr-auth.js`:
 
@@ -174,7 +174,7 @@ officeId: String(row.office_id || ''),
 const officeId = String(body.officeId || '').trim()
 ```
 
-- [ ] **Step 5: Add route-level session regression cases**
+- [x] **Step 5: Add route-level session regression cases**
 
 In `tests/postgres/identity.routes.test.mjs`, add a Regional Office fixture with at least two divisions and assign `route-test-regional-hr` to it instead of `''`. Add assertions that a created and parsed Regional HR cookie retains `officeId`, that `resolveHrSession` returns that office, and that `hrSessionAllowsOffice` allows only that office.
 
@@ -190,7 +190,7 @@ assert.equal(hrSessionAllowsOffice(regionalSession, otherOffice.id), false)
 
 Also insert one active Regional HR with blank `office_id` and assert `resolveHrSession` returns `null`.
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run: `node tests/run-tests.mjs`
 
@@ -200,7 +200,7 @@ Run: `npm run test:routes -- --test-name-pattern="HR scope|Regional HR|Office HR
 
 Expected: PASS against the isolated PostgreSQL 18 route-test database.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/hr-scope.js lib/hr-auth.js lib/employee-access.js lib/postgres/user-store.js tests/run-tests.mjs tests/postgres/identity.routes.test.mjs
@@ -225,7 +225,7 @@ git commit -m "fix: bind regional HR to one office"
 - Modify: `tests/ui/admin-role-routing.test.jsx`
 - Modify: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write failing HR account and location-privacy route tests**
+- [x] **Step 1: Write failing HR account and location-privacy route tests**
 
 Add route imports for HR-user create/update and `/api/offices`. Add tests proving:
 
@@ -254,13 +254,13 @@ Send a forged PUT body containing `gps.latitude`, `gps.longitude`, `gps.radiusMe
 
 The existing session resolver ignores the signed account ID and reloads by email. Add a same-cookie regression covering reassignment, immediate deactivation, deletion followed by a different account using the same email, and a missing signed account ID. The first change must appear immediately; the other three invalid sessions must resolve to `null`. Preserve a valid special HR PIN session, but reject that special session when its assigned office is blank so subsequent queries cannot interpret a blank office as global access.
 
-- [ ] **Step 2: Run focused route tests and confirm failure**
+- [x] **Step 2: Run focused route tests and confirm failure**
 
 Run: `npm run test:routes -- --test-name-pattern="HR account assignment|HR office response|HR office settings|HR session identity"`
 
 Expected: FAIL because Regional HR currently loses `officeId`, HR-user validation accepts blank regional assignment, and `/api/offices` returns full office data.
 
-- [ ] **Step 3: Validate HR account office type on create and update**
+- [x] **Step 3: Validate HR account office type on create and update**
 
 In both HR-user routes, require `officeId` for every scope, load the office with `getOfficeRecord`, and call `validateHrOfficeAssignment` before writing:
 
@@ -298,7 +298,7 @@ const profile = await getHrProfileById(db, hrUserId)
 
 Retain the active-profile, assigned-office, and office-type checks from Task 1. In the special PIN branch, trim `session.officeId` and return `null` when it is blank; retain its valid office-scoped permissions and identity.
 
-- [ ] **Step 4: Add Regional HR controls to the account UI**
+- [x] **Step 4: Add Regional HR controls to the account UI**
 
 In `components/admin/AddRoleModal.jsx`, add `hrScope` state. Show an HR scope selector and filter the office selector:
 
@@ -340,7 +340,7 @@ This control repairs existing Regional HR profiles that currently have no office
 
 Render an explicit `Office assignment required` status when an existing HR row has a blank or missing office ID so a Regional Administrator can identify the blocked account.
 
-- [ ] **Step 5: Serialize an HR-safe office summary**
+- [x] **Step 5: Serialize an HR-safe office summary**
 
 Add to `lib/offices/hr-office-settings.js`:
 
@@ -370,7 +370,7 @@ In `app/api/offices/route.js`, return full `enriched` offices only to administra
 
 `app/api/public/offices/route.js` already omits coordinates and radius. Add a route assertion so this remains locked.
 
-- [ ] **Step 6: Permit assigned Regional HR to edit only work policy**
+- [x] **Step 6: Permit assigned Regional HR to edit only work policy**
 
 Rename `getOfficeForOfficeHr` to `getOfficeForHr` in `app/api/hr/office-settings/route.js`. Replace the scope check with:
 
@@ -382,7 +382,7 @@ if (!resolvedSession?.active || !resolvedSession.officeId) {
 
 Keep `toHrOfficeSettings` and `updateLocalHrOfficeWorkPolicy`; do not add location fields to request or response.
 
-- [ ] **Step 7: Update UI tests**
+- [x] **Step 7: Update UI tests**
 
 In `tests/ui/admin-operations.test.jsx`, prove:
 
@@ -396,7 +396,7 @@ In `components/AdminDashboard.jsx`, add `office-settings` and `workforce` naviga
 
 In `tests/ui/admin-role-routing.test.jsx`, make the `AdminShell` mock render navigation labels and make the `WorkforcePanel` mock expose the `allowNationalHolidays` value. Prove Regional HR receives Office Settings and Workforce, does not receive Office, and receives `allowNationalHolidays={false}`. In `tests/ui/admin-operations.test.jsx`, verify `HrOfficeSettingsPanel` renders no map or location fields and sends only `{ workPolicy }` when saving.
 
-- [ ] **Step 8: Run focused tests**
+- [x] **Step 8: Run focused tests**
 
 Run: `npx vitest run tests/ui/admin-operations.test.jsx tests/ui/admin-role-routing.test.jsx`
 
@@ -406,7 +406,7 @@ Run: `npm run test:routes -- --test-name-pattern="HR account assignment|HR offic
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add app/api/hr-users app/api/offices/route.js app/api/hr/office-settings/route.js components/AdminDashboard.jsx components/admin/AddRoleModal.jsx components/admin/AdminsPanel.jsx components/admin/HrOfficeSettingsPanel.jsx lib/offices/hr-office-settings.js tests/ui/admin-operations.test.jsx tests/ui/admin-role-routing.test.jsx tests/postgres/identity.routes.test.mjs
@@ -443,6 +443,8 @@ Create active employees in the Regional Office, Gensan fixture, and Cotabato fix
 - employee update, activation or rejection, deletion, photo read/write, and access-code regeneration reject Gensan and Cotabato employees.
 
 Using each Office HR cookie, assert the same routes return only its assigned field office.
+
+**Execution correction identified on 2026-09-02:** `/api/persons` GET and `/api/attendance/recent` currently accept only administrator cookies. Replacing their office-filter expressions alone would still reject every HR request. Use `resolveEmployeeManagementSession` and `resolveStaffAttendanceSession`, respectively, with `sessionAllowsOffice` so the tests prove both authorized own-office access and rejection or omission of outside records. Preserve the public persons POST path. Test both normal and `access-codes` modes of `/api/hr/employees`, including a forged requested office, and the paged and ordinary persons directory modes. Existing DTR JSON/workbook paths already authorize the saved person's office; verify them rather than forcing unnecessary edits.
 
 - [ ] **Step 2: Run focused tests and confirm the current global Regional HR behavior fails**
 
@@ -528,6 +530,8 @@ assert.deepEqual(stored.rows[0], {
 ```
 
 Assert the same request from another Office HR returns 403. Add GET assertions showing `personId` and date are sufficient without Employee ID. Add delete and field-duty review cases proving authorization uses the saved attendance row office.
+
+**Execution correction identified on 2026-09-02:** `refreshDailyRecord` in the attendance-item route currently returns early when Employee ID is blank. Add regressions proving deletion and field-duty review refresh the daily record for an employee identified by `personId` with no Employee ID. Require the canonical person ID and date for that refresh; do not reintroduce an Employee ID requirement after fixing creation. Preserve the saved person's division information when resolving its work policy.
 
 - [ ] **Step 2: Run the focused route test and confirm failure**
 
@@ -1011,6 +1015,8 @@ SERVER_ATTENDANCE_ANTISPOOF_ENABLED=true
 
 An explicit false setting does not permit attendance: it produces no server score and the policy fails closed.
 
+Make that contract explicit in the server result mapping: when the attendance anti-spoof model is disabled, return `antispoof: null` rather than accepting any default value a disabled model might leave in `face.real`.
+
 - [ ] **Step 5: Aggregate the weakest authoritative frame and remove liveness payloads**
 
 In `lib/biometrics/server-attendance.js`, remove liveness collection and return anti-spoof only when every accepted frame has a finite score:
@@ -1079,6 +1085,7 @@ git commit -m "fix: require server anti-spoofing"
 - Delete: `public/models/human/iris.json`
 - Delete: `public/models/human/iris.bin`
 - Modify: `lib/biometrics/human.js`
+- Modify: `lib/biometrics/server-embedding-core.js`
 - Modify: `hooks/useVerificationBurst.js`
 - Modify: `hooks/useKioskLoop.js`
 - Modify: `lib/kiosk-utils.js`
@@ -1107,6 +1114,8 @@ liveness.bin
 ```
 
 Add kiosk UI assertions that anti-spoof failure displays “Photo or screen detected” and no screen asks the employee to blink, move naturally, or pass liveness.
+
+**Execution clarification identified on 2026-09-02:** the Human library configuration still needs explicit disabled model switches. Permit only `liveness: { enabled: false }` (and the equivalent disabled iris setting) in the two Human configuration files; these switches are not active features. Remove obsolete profile properties and liveness model-path strings. Source checks must distinguish these deliberate disabling flags from a model load, returned metric, capture decision, request field, or UI instruction. A literal zero-occurrence check for the word `liveness` would contradict the required disabled configuration.
 
 - [ ] **Step 2: Run source and UI tests and confirm failure**
 
@@ -1150,7 +1159,7 @@ Run:
 rg -n -i "liveness|livenessEvidence|blocked_liveness|weak_eye_signal" app components hooks lib public .env.example README.md tests
 ```
 
-Expected: output is limited to the explicit legacy decision-code mapping in `lib/maintenance/event-evidence.js` and any fixture labeled as legacy evidence. There is no liveness import, model path, request or response field, capture decision, UI guidance, or active maintenance category.
+Expected: output is limited to the explicit legacy decision-code mapping in `lib/maintenance/event-evidence.js`, fixtures labeled as legacy evidence, and the narrowly allowed disabled Human configuration switches. There is no liveness import, model path, request or response field, capture decision, UI guidance, or active maintenance category.
 
 - [ ] **Step 8: Run focused suites**
 
@@ -1182,6 +1191,9 @@ git commit -m "refactor: remove biometric liveness"
 - Create: `tests/security/server-error-responses.test.mjs`
 - Modify: `package.json`
 - Modify: `lib/routes/persons-route.js`
+- Modify: `lib/biometrics/server-attendance.js`
+- Modify: `lib/attendance/process.js`
+- Modify: `tests/postgres/identity.routes.test.mjs`
 
 - [ ] **Step 1: Write failing runtime tests**
 
@@ -1229,7 +1241,7 @@ test('declared request errors keep only their approved public message', async ()
 
 - [ ] **Step 2: Write a failing source guard**
 
-Create `tests/security/server-error-responses.test.mjs`. Recursively read `app/api` and `lib/routes`; fail on these raw-error message fields:
+Create `tests/security/server-error-responses.test.mjs`. Recursively read `app/api`, `lib/routes`, and `lib/attendance`; fail on these raw-error message fields:
 
 ```javascript
 const forbidden = [
@@ -1242,6 +1254,8 @@ const forbidden = [
 ```
 
 Use `internalMessage` rather than `message` for server-only `console.error` and `console.warn` metadata. This keeps the guard simple and prevents raw errors from being mistaken for client-safe message fields. Direct log arguments such as `console.error(label, error?.message)` remain allowed because they do not create a response-like `message` field.
+
+**Execution correction identified on 2026-09-02:** the attendance processor also copies caught embedding errors into an intermediate `message` variable and returns that text as a scan rejection. A route-only field search would miss this path. Add a runtime test injecting an embedding service failure containing a private connection string or file path; `/api/attendance/v2` must return its generic 500 response with an error ID, never raw text or a misleading 403. Check the one-frame and fallback-frame error paths. Preserve normal expected scan guidance only for explicitly declared safe request errors; unexpected model, image, filesystem, or database failures must propagate to the existing safe outer route catch. Add a focused source assertion for these intermediate handoffs as well as the field patterns above.
 
 - [ ] **Step 3: Add the tests to the normal test command and confirm failure**
 
@@ -1257,7 +1271,7 @@ Create `lib/http/server-error.js`:
 
 ```javascript
 import { randomUUID } from 'node:crypto'
-import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server.js'
 
 export class SafeRequestError extends Error {
   constructor(message, { status = 400, code = 'invalid_request' } = {}) {
@@ -1296,6 +1310,8 @@ export function serverErrorResponse(error, {
 
 - [ ] **Step 5: Restrict registration error codes**
 
+The explicit `.js` import is required by the standalone Node 22 ESM helper tests; the extensionless Next import does not resolve without the route test loader. In `server-attendance.js`, declare expected capture errors using `SafeRequestError` with the existing approved decision code and status. In the processor, retain only those approved messages and rethrow unknown errors to the outer route catch. Do not remove the existing one-frame/two-frame retry decisions or convert native errors into trusted request errors merely because they have a `message` or `code` property.
+
 In `lib/routes/persons-route.js`, keep only the expected duplicate conflict as a direct response:
 
 ```javascript
@@ -1325,7 +1341,7 @@ Run: `node --test tests/server-error.test.mjs`
 
 Expected: PASS. Source guard still fails until Tasks 10 and 11 finish.
 
-Run: `npm run test:routes -- --test-name-pattern="registration hides internal error|duplicate registration"`
+Run: `npm run test:routes -- --test-name-pattern="registration hides internal error|attendance hides internal error|duplicate registration"`
 
 Expected: PASS.
 
