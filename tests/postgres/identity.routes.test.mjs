@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import { strFromU8, unzipSync } from 'fflate'
 import sharp from 'sharp'
 import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
-import { createPersonsPostHandler } from '../../lib/routes/persons-route.js'
+import * as personsRouteFactories from '../../lib/routes/persons-route.js'
 import { closePostgresPool, getPostgresPool, queryPostgres } from '../../lib/postgres/client.js'
 import { enrollLocalPerson, getLocalPersonById, refreshLocalPersonBiometrics } from '../../lib/postgres/person-store.js'
 import { issueAttendanceChallenge } from '../../lib/attendance-challenge.js'
@@ -313,7 +313,7 @@ async function transitionLifecycle(personId, lifecycleStatus, reason = `Route te
 }
 
 function registrationHandler(overrides = {}) {
-  return createPersonsPostHandler({
+  return personsRouteFactories.createPersonsPostHandler({
     buildAuthoritativeEnrollmentPayload: deterministicEnrollmentPayload,
     enrollLocalPerson,
     normalizeDataImage,
@@ -416,13 +416,33 @@ test('cross-office ordinary person directory permits own-office HR and preserves
   for (const person of all) assert.ok(global.persons.some(row => row.id === person.id))
 })
 
+test('cross-office paged person directory fails closed on an out-of-scope query result', async () => {
+  assert.equal(typeof personsRouteFactories.createPersonsGetHandler, 'function')
+  const handler = personsRouteFactories.createPersonsGetHandler({
+    loadLocalPersonDirectory: async () => ({
+      persons: [
+        { id: 'forced-in-scope-person', officeId: regionalOffice.id },
+        { id: 'forced-outside-person', officeId: otherOffice.id },
+      ],
+      hasMore: true,
+      total: 2,
+      approved: 2,
+      pending: 0,
+      rejected: 0,
+    }),
+  })
+  const response = await handler(sameOriginRequest('/api/persons?mode=directory', {
+    cookie: assignedOfficeActors()[0].cookie,
+  }))
+  const payload = await response.json()
+  assert.equal(response.status, 403, JSON.stringify(payload))
+  assert.equal(payload.persons, undefined)
+  assert.equal(payload.page, undefined)
+  assert.equal(JSON.stringify(payload).includes('nextCursor'), false)
+  assert.equal(JSON.stringify(payload).includes('forced-outside-person'), false)
+})
+
 test('cross-office paged person directory ignores forged office filters for HR and narrows Regional divisions', async () => {
-  const routeSource = await readFile(new URL('../../app/api/persons/route.js', import.meta.url), 'utf8')
-  assert.match(
-    routeSource,
-    /const visiblePersons = directory\.persons\.filter\(person => sessionAllowsOffice\(resolvedSession, person\.officeId\)\)/,
-    'paged directory must enforce route-level session scope after the PostgreSQL query',
-  )
   const { all } = await assignedOfficeReads()
   for (const actor of assignedOfficeActors()) {
     const rows = []
