@@ -521,10 +521,14 @@ git commit -m "fix: scope every HR work path"
 - Modify: `app/api/admin/attendance/route.js`
 - Modify: `app/api/admin/attendance/[attendanceId]/route.js`
 - Modify: `components/admin/AttendanceOverrideModal.jsx`
+- Modify: `app/api/attendance/recent/route.js` (reuse its existing HR response filtering)
+- Create: focused shared attendance-response helper (recent and correction HR field lists)
+- Modify: `lib/daily-attendance.js` (exclude rejected field duty from attendance segments)
 - Modify: `tests/postgres/identity.routes.test.mjs`
 - Modify: `tests/ui/admin-operations.test.jsx`
+- Modify: `tests/run-tests.mjs`
 
-- [ ] **Step 1: Write failing correction tests**
+- [x] **Step 1: Write failing correction tests**
 
 Extend the correction route test with an employee whose `employee_id` is empty. Send a body containing the correct `personId` but forged name, employee ID, and outside office fields. Assert the stored row uses the database person:
 
@@ -542,13 +546,17 @@ Assert the same request from another Office HR returns 403. Add GET assertions s
 
 **Execution correction identified on 2026-09-02:** `refreshDailyRecord` in the attendance-item route currently returns early when Employee ID is blank. Add regressions proving deletion and field-duty review refresh the daily record for an employee identified by `personId` with no Employee ID. Require the canonical person ID and date for that refresh; do not reintroduce an Employee ID requirement after fixing creation. Preserve the saved person's division information when resolving its work policy.
 
-- [ ] **Step 2: Run the focused route test and confirm failure**
+The correction-history GET also returns the raw attendance payload to HR, including location details. Share the recent-attendance scalar/null filtering in a focused helper, preserving the exact recent response and adding an explicit correction field list for review details. Neither HR response may contain direct or nested GPS, map, radius, Wi-Fi, raw geofence text, unknown fields, or object-valued metadata. Administrator payloads remain unchanged. Prove correction privacy through the actual route and rerun recent-attendance privacy tests after moving the helper.
+
+A standalone Node 22 probe confirmed another defect in this refresh path: `computeSegmentTimes` excludes pending field duty but counts rejected requests as attendance. Exclude both pending and rejected entries from attendance segments and next-action calculation; preserve raw history and its count. Add unit proof plus actual approved/rejected PATCH regressions for a blank-Employee-ID person, showing that approval creates attendance credit and rejection does not.
+
+- [x] **Step 2: Run the focused route test and confirm failure**
 
 Run: `npm run test:routes -- --test-name-pattern="attendance correction"`
 
 Expected: FAIL because GET and POST require Employee ID and POST trusts browser identity and office fields.
 
-- [ ] **Step 3: Load the person before authorization and writing**
+- [x] **Step 3: Load the person before authorization and writing**
 
 In GET, require `personId` and date, load `getLocalPersonById(personId)`, authorize `person.officeId`, then query logs with `{ personId: person.id, employeeId: person.employeeId || '', dateKey }`. Ignore any Employee ID supplied by the caller; it is display data, not correction identity.
 
@@ -609,7 +617,7 @@ const entry = {
 
 Reject when `buildAttendanceEntryTiming(timestamp).dateKey !== requestedDateKey` so audit and daily projection cannot disagree about the date.
 
-- [ ] **Step 4: Stop the UI sending identity copies**
+- [x] **Step 4: Stop the UI sending identity copies**
 
 In `components/admin/AttendanceOverrideModal.jsx`, load logs with:
 
@@ -619,7 +627,7 @@ In `components/admin/AttendanceOverrideModal.jsx`, load logs with:
 
 POST only `personId`, `action`, `manualSlot`, `timestamp`, `dateKey`, and `reason`. Keep Employee ID as optional display text.
 
-- [ ] **Step 5: Add a UI request-body regression test**
+- [x] **Step 5: Add a UI request-body regression test**
 
 In `tests/ui/admin-operations.test.jsx`, capture the correction fetch body and assert:
 
@@ -631,7 +639,7 @@ expect(body).not.toHaveProperty('officeId')
 expect(body).not.toHaveProperty('officeName')
 ```
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run: `npx vitest run tests/ui/admin-operations.test.jsx`
 
@@ -641,12 +649,14 @@ Run: `npm run test:routes -- --test-name-pattern="attendance correction"`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/api/admin/attendance components/admin/AttendanceOverrideModal.jsx tests/postgres/identity.routes.test.mjs tests/ui/admin-operations.test.jsx
 git commit -m "fix: use saved identity for corrections"
 ```
+
+**Accepted on 2026-09-03:** Task 4 is committed in `054b89b` and review fix `36f67bd`. Specification review passed. Quality review found and then verified the fix for boolean/fractional timestamp coercion; final quality verdict passed. Node 22.23.2 implementation evidence: full PostgreSQL routes **90/90**, units **119/119**, UI **80/80**, and local production build passed. Independent root evidence after the final fix: correction routes **13/13**, units **119/119**, Admin operations **24/24**, and `git diff --check` passed. HR correction history now uses the same explicit scalar response boundary as recent attendance; no browser identity copies or protected office-location data are trusted or returned to HR. No deployment was performed.
 
 ## Task 5: Commit accepted attendance as one operation
 
