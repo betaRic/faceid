@@ -490,6 +490,80 @@ test('cross-office recent attendance permits HR reads without returning another 
   for (const person of active) assert.ok(global.attendance.some(row => row.personId === person.id))
 })
 
+let recentLocationFixtures
+async function createRecentLocationFixtures() {
+  if (recentLocationFixtures) return recentLocationFixtures
+  const { active } = await assignedOfficeReads()
+  const location = { latitude: 6.123456789, longitude: 125.987654321, radiusMeters: 987, wifiSsid: 'RECENT-WIFI-SECRET', mapUrl: 'https://example.test/RECENT-MAP-SECRET' }
+  const metadata = { capture: { office: { gps: location } } }
+  const geofenceStatus = `Inside office radius · Wi-Fi context mismatch (${location.wifiSsid})`
+  for (const person of active) {
+    const data = { ...location, gps: location, metadata, captureContext: metadata, scanDiagnostics: metadata, source: 'manual_override', manualSlot: 'am_in', fieldDutyStatus: 'approved' }
+    await queryPostgres(`
+      UPDATE attendance SET latitude = $2, longitude = $3, geofence_status = $4,
+        attendance_mode = 'On-site', decision_code = 'accepted_onsite', confidence = 0.98,
+        date_label = 'September 1, 2026', time_label = '08:00 AM', data = $5::jsonb
+      WHERE id = $1
+    `, [`assigned-office-attendance-${person.id}`, location.latitude, location.longitude, geofenceStatus, JSON.stringify(data)])
+    await queryPostgres(`
+      INSERT INTO attendance (id, employee_id, person_id, name, action, timestamp_ms, date_key, office_id, office_name, data)
+      VALUES ($1,$2,$3,$4,'checkout',$5,'2026-09-01',$6,$7,$8::jsonb)
+    `, [`recent-nested-status-${person.id}`, person.employeeId, person.id, person.name, Date.now(), person.officeId, person.officeName, JSON.stringify({ source: metadata, manualSlot: [location], fieldDutyStatus: metadata })])
+  }
+  recentLocationFixtures = { active, location, metadata, geofenceStatus }
+  return recentLocationFixtures
+}
+
+for (const [actorIndex, actorName] of ['Regional HR', 'Gensan HR', 'Cotabato HR'].entries()) {
+  test(`recent attendance hides location and nested payloads for ${actorName}`, async () => {
+    const { active } = await createRecentLocationFixtures()
+    const actor = assignedOfficeActors()[actorIndex]
+    const payload = await assertJsonStatus(await getRecentAttendance(sameOriginRequest('/api/attendance/recent', { cookie: actor.cookie })), 200, actor.name)
+    assertAssignedRows(payload.attendance, actor, active, 'personId')
+    const expectedFields = ['id', 'employeeId', 'personId', 'name', 'action', 'timestamp', 'dateKey', 'dateLabel', 'date', 'time', 'officeId', 'officeName', 'attendanceMode', 'decisionCode', 'confidence', 'source', 'manualSlot', 'fieldDutyStatus'].sort()
+    for (const person of active.filter(entry => entry.officeId === actor.officeId)) {
+      const row = payload.attendance.find(entry => entry.id === `assigned-office-attendance-${person.id}`)
+      assert.deepEqual(Object.keys(row).sort(), expectedFields, `${actor.name}: only explicit ordinary attendance fields`)
+      assert.equal(row.employeeId, person.employeeId)
+      assert.equal(row.name, person.name)
+      assert.equal(row.action, 'checkin')
+      assert.equal(row.dateKey, '2026-09-01')
+      assert.equal(row.dateLabel, 'September 1, 2026')
+      assert.equal(row.time, '08:00 AM')
+      assert.equal(typeof row.timestamp, 'number')
+      assert.equal(row.attendanceMode, 'On-site')
+      assert.equal(row.decisionCode, 'accepted_onsite')
+      assert.equal(row.confidence, 0.98)
+      assert.equal(row.source, 'manual_override')
+      assert.equal(row.manualSlot, 'am_in')
+      assert.equal(row.fieldDutyStatus, 'approved')
+      const nested = payload.attendance.find(entry => entry.id === `recent-nested-status-${person.id}`)
+      for (const field of ['source', 'manualSlot', 'fieldDutyStatus']) assert.equal(nested[field], undefined)
+    }
+    assert.ok(payload.attendance.every(row => Object.values(row).every(value => value === null || typeof value !== 'object')))
+    assert.doesNotMatch(JSON.stringify(payload), /latitude|longitude|radius|geofence|wifi|mapUrl|metadata|captureContext|scanDiagnostics|RECENT-WIFI-SECRET|RECENT-MAP-SECRET/i)
+  })
+}
+
+test('recent attendance preserves location payloads for Regional and Office Administrators', async () => {
+  const { active, location, metadata, geofenceStatus } = await createRecentLocationFixtures()
+  for (const actor of [
+    { cookie: adminCookie(), officeId: '' },
+    { cookie: adminCookie({ uid: 'route-test-office-admin', email: 'route-test-office-admin@example.test', scope: 'office', officeId: office.id }), officeId: office.id },
+  ]) {
+    const payload = await assertJsonStatus(await getRecentAttendance(sameOriginRequest('/api/attendance/recent', { cookie: actor.cookie })), 200)
+    if (actor.officeId) assert.ok(payload.attendance.every(row => row.officeId === actor.officeId))
+    for (const person of active.filter(entry => !actor.officeId || entry.officeId === actor.officeId)) {
+      const row = payload.attendance.find(entry => entry.id === `assigned-office-attendance-${person.id}`)
+      for (const [key, value] of Object.entries(location)) assert.equal(row[key], value)
+      assert.equal(row.geofenceStatus, geofenceStatus)
+      assert.deepEqual(row.metadata, metadata)
+      const nested = payload.attendance.find(entry => entry.id === `recent-nested-status-${person.id}`)
+      assert.deepEqual(nested.source, metadata)
+    }
+  }
+})
+
 test('cross-office HR employee pages and access-code export ignore forged requested offices', async () => {
   const { all } = await assignedOfficeReads()
   for (const actor of assignedOfficeActors()) {
