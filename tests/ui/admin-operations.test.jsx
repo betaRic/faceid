@@ -284,6 +284,32 @@ describe('admin employee operations', () => {
     expect(screen.getByRole('button', { name: 'Save correction' })).toBeVisible()
   })
 
+  it('loads and saves blank EmployeeID corrections using only canonical person ID and correction fields', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, logs: [] }) })
+    const onSaved = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<AttendanceOverrideModal onClose={vi.fn()} onSaved={onSaved} row={{
+      personId: 'person-blank-id', employeeId: '', name: 'Blank ID Person', officeId: 'regional',
+      officeName: 'Regional Office XII', dateKey: '2026-08-24', amIn: '08:15',
+    }} />)
+    expect(screen.getByText(/No employee ID/)).toBeVisible()
+    await screen.findByText('No entries recorded')
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/admin/attendance?personId=person-blank-id&date=2026-08-24'])
+    await userEvent.type(screen.getByLabelText(/Reason/), '  Scanner failure  ')
+    await userEvent.click(screen.getByRole('button', { name: 'Save correction' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+    const [url, request] = fetchMock.mock.calls[1]
+    expect(url).toBe('/api/admin/attendance')
+    expect(request.method).toBe('POST')
+    expect(JSON.parse(request.body)).toEqual({
+      personId: 'person-blank-id', action: 'checkin', manualSlot: 'am_in',
+      timestamp: Date.parse('2026-08-24T08:15:00+08:00'), dateKey: '2026-08-24', reason: 'Scanner failure',
+    })
+    expect(fetchMock.mock.calls[2]).toEqual(['/api/admin/attendance?personId=person-blank-id&date=2026-08-24'])
+    expect(storeState.addToast).toHaveBeenCalledWith('Manual AM In added.', 'success')
+    expect(screen.getByLabelText(/Reason/)).toHaveValue('')
+  })
+
   it('keeps DTR employee, period, scope, and output actions in one flow', () => {
     render(
       <DtrSelectionView

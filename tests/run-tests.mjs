@@ -407,6 +407,28 @@ await run('deriveDailyAttendanceRecord treats exact 8 worked hours as no underti
   assert.equal(record.workingMinutes, 480)
 })
 
+await run('field-duty attendance segments exclude pending and rejected requests but count approved history', () => {
+  const office = {
+    id: 'office-field-duty-review',
+    name: 'Field Duty Review Office',
+    workPolicy: { morningIn: '08:00', morningOut: '12:00', afternoonIn: '13:00', afternoonOut: '17:00' },
+  }
+  const timestamp = new Date('2026-04-09T08:30:00+08:00').getTime()
+  const person = { id: 'person-field-duty-review', employeeId: '', name: 'Field Duty Employee', officeId: office.id, officeName: office.name }
+
+  for (const [fieldDutyStatus, expectedTimestamp, expectedAction] of [
+    ['pending', null, 'checkin'],
+    ['rejected', null, 'checkin'],
+    ['approved', timestamp, 'checkout'],
+  ]) {
+    const logs = [{ action: 'checkin', timestamp, source: 'field_duty', fieldDutyStatus }]
+    const record = deriveDailyAttendanceRecord({ logs, person, office, targetDateKey: '2026-04-09' })
+    assert.equal(record.amInTimestamp, expectedTimestamp, fieldDutyStatus)
+    assert.equal(record.logCount, 1, `${fieldDutyStatus}: raw history remains counted`)
+    assert.equal(getNextAttendanceAction(logs, office, new Date('2026-04-09T09:00:00+08:00').getTime()), expectedAction, fieldDutyStatus)
+  }
+})
+
 await run('deriveDailyAttendanceRecord does not invent pmIn from extra morning scans', () => {
   const office = {
     id: 'office-2',

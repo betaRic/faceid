@@ -7,6 +7,8 @@ import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
 import * as personsRouteFactories from '../../lib/routes/persons-route.js'
 import { closePostgresPool, getPostgresPool, queryPostgres } from '../../lib/postgres/client.js'
 import { enrollLocalPerson, getLocalPersonById, refreshLocalPersonBiometrics } from '../../lib/postgres/person-store.js'
+import { getLocalAttendanceById } from '../../lib/postgres/report-store.js'
+import { upsertLocalDailyAttendanceRecord } from '../../lib/postgres/attendance-store.js'
 import { issueAttendanceChallenge } from '../../lib/attendance-challenge.js'
 import {
   getLocalFileStorageRoot,
@@ -79,10 +81,12 @@ import {
 import { GET as getAttendanceTable } from '../../app/api/attendance/table/route.js'
 import { GET as getAttendanceDtr } from '../../app/api/attendance/dtr/route.js'
 import {
+  GET as getAttendanceCorrections,
   POST as createAttendanceCorrection,
 } from '../../app/api/admin/attendance/route.js'
 import {
   DELETE as deleteAttendanceCorrection,
+  PATCH as reviewAttendanceFieldDuty,
 } from '../../app/api/admin/attendance/[attendanceId]/route.js'
 import { GET as rebuildDailySummary } from '../../app/api/cron/rebuild-daily-summary/route.js'
 import { formatAttendanceDateKey } from '../../lib/attendance-time.js'
@@ -3278,6 +3282,215 @@ test('attendance correction creates and deletes a scoped manual entry with daily
     [created.attendanceId],
   )
   assert.deepEqual(audit.rows.map(row => row.action), ['attendance_override_add', 'attendance_override_delete'])
+})
+
+let correctionPeopleFixture
+async function correctionPeople() {
+  if (!correctionPeopleFixture) {
+    correctionPeopleFixture = (async () => {
+      const people = await createAssignedOfficePeople('Correctionidentity')
+      await queryPostgres("UPDATE persons SET employee_id = '', employee_id_lower = '' WHERE id = ANY($1::text[])", [people.map(person => person.id)])
+      return Promise.all(people.map(person => getLocalPersonById(person.id)))
+    })()
+  }
+  return correctionPeopleFixture
+}
+
+function correctionBody(person, dateKey = '2042-06-02') {
+  return { personId: person.id, action: 'checkin', manualSlot: 'am_in', timestamp: Date.parse(`${dateKey}T09:00:00+08:00`), dateKey, reason: 'Verified scanner failure' }
+}
+
+async function seedCorrectionLog(person, id, dateKey, data = {}, { action = 'checkin', time = '09:00' } = {}) {
+  await queryPostgres(`
+    INSERT INTO attendance (id, employee_id, person_id, name, action, timestamp_ms, date_key, office_id, office_name, data)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+  `, [id, person.employeeId, person.id, person.name, action, Date.parse(`${dateKey}T${time}:00+08:00`), dateKey, person.officeId, person.officeName, JSON.stringify(data)])
+}
+
+test('attendance correction uses saved blank-ID identity, office, division, and audit despite forged browser copies', async () => {
+  const people = await correctionPeople()
+  for (const actor of assignedOfficeActors()) {
+    for (const person of people.filter(candidate => candidate.officeId === actor.officeId)) {
+      const body = { ...correctionBody(person), employeeId: '999999', name: 'Forged name', officeId: 'forged-office', officeName: 'Forged office', divisionId: 'forged-division', divisionName: 'Forged division' }
+      const created = await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', {
+        method: 'POST', cookie: actor.cookie, body,
+      })), 200, `${actor.name} ${person.divisionId}`)
+      assert.equal(created.attendanceId, `${person.id}_${body.timestamp}_override`)
+      const stored = (await queryPostgres('SELECT employee_id, person_id, name, office_id, office_name, latitude, longitude, data FROM attendance WHERE id = $1', [created.attendanceId])).rows[0]
+      assert.deepEqual({ employeeId: stored.employee_id, personId: stored.person_id, name: stored.name, officeId: stored.office_id, officeName: stored.office_name }, {
+        employeeId: '', personId: person.id, name: person.name, officeId: person.officeId, officeName: person.officeName,
+      })
+      for (const field of ['employeeId', 'name', 'officeId', 'officeName', 'divisionId', 'divisionName']) assert.equal(stored.data[field], person[field], field)
+      assert.equal(stored.data.source, 'manual_override')
+      assert.equal(stored.data.dateKey, body.dateKey)
+      assert.equal(stored.data.manualSlot, body.manualSlot)
+      for (const field of ['descriptor', 'landmarks', 'latitude', 'longitude']) assert.equal(stored.data[field], null, field)
+      assert.equal(stored.latitude, null)
+      assert.equal(stored.longitude, null)
+      const daily = (await queryPostgres('SELECT employee_id, data FROM attendance_daily WHERE person_id = $1 AND date_key = $2', [person.id, body.dateKey])).rows[0]
+      assert.equal(daily.employee_id, '')
+      assert.equal(daily.data.divisionId, person.divisionId)
+      const audit = (await queryPostgres("SELECT office_id, summary, metadata FROM audit_logs WHERE target_id = $1 AND action = 'attendance_override_add'", [created.attendanceId])).rows[0]
+      assert.equal(audit.office_id, person.officeId)
+      assert.equal(audit.metadata.personId, person.id)
+      assert.equal(audit.metadata.employeeId, '')
+      assert.equal(audit.metadata.name, person.name)
+      assert.equal(audit.metadata.dateKey, body.dateKey)
+      assert.doesNotMatch(audit.summary, /Forged|999999/)
+      await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', { method: 'POST', cookie: actor.cookie, body })), 409)
+    }
+  }
+})
+
+test('attendance correction GET needs only saved person ID and date and ignores caller EmployeeID', async () => {
+  const people = await correctionPeople()
+  for (const actor of assignedOfficeActors()) {
+    for (const person of people.filter(candidate => candidate.officeId === actor.officeId)) {
+      const dateKey = '2042-06-03'
+      const id = `correction-get-${person.id}`
+      await seedCorrectionLog(person, id, dateKey)
+      // A saved historical row in another office must still be filtered after person authorization.
+      await seedCorrectionLog({ ...person, officeId: 'unassigned-old-office' }, `${id}-outside`, dateKey)
+      for (const suffix of ['', '&employeeId=999999']) {
+        const payload = await assertJsonStatus(await getAttendanceCorrections(sameOriginRequest(`/api/admin/attendance?personId=${person.id}&date=${dateKey}${suffix}`, { cookie: actor.cookie })), 200)
+        assert.deepEqual(payload.logs.map(log => log.id), [id])
+        assert.equal(payload.logs[0].employeeId, '')
+      }
+    }
+  }
+})
+
+test('attendance correction rejects missing people, invalid input, and wrong Manila dates without writes', async () => {
+  const person = (await correctionPeople())[2]
+  const valid = { ...correctionBody(person, '2042-06-04'), employeeId: '999999', officeId: person.officeId }
+  const before = await queryPostgres('SELECT id FROM attendance WHERE person_id = $1 ORDER BY id', [person.id])
+  const invalidBodies = [
+    ...['personId', 'action', 'dateKey', 'reason'].map(field => ({ ...valid, [field]: '' })),
+    ...['personId', 'action', 'manualSlot', 'dateKey', 'reason'].map(field => ({ ...valid, [field]: {} })),
+    { ...valid, action: 'invalid' }, { ...valid, dateKey: 'not-a-date' },
+    ...[null, 0, -1, 'invalid', 1e30].map(timestamp => ({ ...valid, timestamp })),
+    { ...valid, timestamp: Date.parse('2042-06-04T16:00:00Z') },
+    { ...valid, timestamp: Date.parse('2042-06-03T15:59:59Z') },
+  ]
+  for (const body of invalidBodies) {
+    await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', { method: 'POST', cookie: hrCookie(), body })), 400, JSON.stringify(body))
+  }
+  await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', {
+    method: 'POST', cookie: hrCookie(), body: { ...valid, personId: 'missing-correction-person' },
+  })), 404)
+  for (const query of [`date=${valid.dateKey}&employeeId=999999`, `personId=${person.id}`, `personId=${person.id}&date=invalid`, `personId=${person.id}&date=2042-02-30`]) {
+    await assertJsonStatus(await getAttendanceCorrections(sameOriginRequest(`/api/admin/attendance?${query}`, { cookie: hrCookie() })), 400)
+  }
+  await assertJsonStatus(await getAttendanceCorrections(sameOriginRequest(`/api/admin/attendance?personId=missing-correction-person&employeeId=999999&date=${valid.dateKey}`, { cookie: hrCookie() })), 404)
+  assert.deepEqual((await queryPostgres('SELECT id FROM attendance WHERE person_id = $1 ORDER BY id', [person.id])).rows, before.rows)
+  assert.equal((await queryPostgres('SELECT id FROM attendance_daily WHERE person_id = $1 AND date_key = $2', [person.id, valid.dateKey])).rowCount, 0)
+})
+
+test('attendance correction preserves optional manual slots and numeric-string timestamps', async () => {
+  const person = (await correctionPeople())[2]
+  const actor = assignedOfficeActors().find(candidate => candidate.officeId === person.officeId)
+  const dateKey = '2042-06-08'
+  const timestamp = Date.parse(`${dateKey}T09:00:00+08:00`)
+  const created = await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', {
+    method: 'POST',
+    cookie: actor.cookie,
+    body: { personId: person.id, action: 'checkin', timestamp: String(timestamp), dateKey, reason: 'Legacy correction client' },
+  })), 200)
+  const stored = await getLocalAttendanceById(created.attendanceId)
+  assert.equal(stored.personId, person.id)
+  assert.equal(stored.timestamp, timestamp)
+  assert.equal(stored.manualSlot, '')
+})
+
+test('attendance correction GET POST DELETE and field-duty PATCH enforce saved office for every HR scope', async () => {
+  const people = await correctionPeople()
+  for (const actor of assignedOfficeActors()) {
+    for (const person of people.filter(candidate => candidate.officeId !== actor.officeId)) {
+      const id = `correction-denied-${actor.officeId}-${person.id}`
+      const body = { ...correctionBody(person, '2042-06-05'), employeeId: '999999', officeId: actor.officeId }
+      await seedCorrectionLog(person, id, body.dateKey, { source: 'field_duty', fieldDutyStatus: 'pending' })
+      const storedBefore = await getLocalAttendanceById(id)
+      await assertJsonStatus(await getAttendanceCorrections(sameOriginRequest(`/api/admin/attendance?personId=${person.id}&employeeId=999999&date=${body.dateKey}`, { cookie: actor.cookie })), 403)
+      await assertJsonStatus(await createAttendanceCorrection(sameOriginRequest('/api/admin/attendance', { method: 'POST', cookie: actor.cookie, body })), 403)
+      for (const [handler, method, requestBody] of [[deleteAttendanceCorrection, 'DELETE'], [reviewAttendanceFieldDuty, 'PATCH', { fieldDutyStatus: 'approved', officeId: actor.officeId }]]) {
+        await assertJsonStatus(await handler(sameOriginRequest(`/api/admin/attendance/${id}`, { method, cookie: actor.cookie, body: requestBody }), { params: Promise.resolve({ attendanceId: id }) }), 403)
+      }
+      assert.deepEqual(await getLocalAttendanceById(id), storedBefore)
+      assert.equal(await getLocalAttendanceById(`${person.id}_${body.timestamp}_override`), null)
+    }
+  }
+})
+
+for (const operation of ['delete', 'approved', 'rejected']) {
+  test(`attendance correction ${operation} refreshes blank-ID daily totals with saved division and employee policy`, async () => {
+    const person = (await correctionPeople())[0]
+    const dateKey = '2042-06-06'
+    const day = new Date(`${dateKey}T12:00:00Z`).getUTCDay()
+    const id = `correction-refresh-${operation}`
+    const policyId = `correction-policy-${operation}`
+    await queryPostgres(`INSERT INTO workforce_policies (id, scope_type, scope_id, weekly_schedule) VALUES ($1,'division',$2,$3::jsonb)`, [
+      policyId, person.divisionId, JSON.stringify({ [day]: { working: true, morningIn: '09:00', morningOut: '12:00', afternoonIn: '13:00', afternoonOut: '17:00' } }),
+    ])
+    try {
+      for (const [suffix, schedule, expectedLate, expectedUndertime] of [['division', {}, 60, 300], ['employee', { [day]: { morningIn: '10:00' } }, 0, 240]]) {
+        await queryPostgres('UPDATE persons SET weekly_schedule = $2::jsonb WHERE id = $1', [person.id, JSON.stringify(schedule)])
+        const attendanceId = `${id}-${suffix}`
+        const baseId = `${id}-${suffix}-base`
+        await seedCorrectionLog(person, `${baseId}-in`, dateKey, {}, { time: '10:00' })
+        await seedCorrectionLog(person, `${baseId}-out`, dateKey, {}, { action: 'checkout', time: '12:00' })
+        await seedCorrectionLog(person, attendanceId, dateKey, { source: 'field_duty', fieldDutyStatus: 'pending', divisionId: 'forged-old-division' }, { time: '13:00' })
+        await upsertLocalDailyAttendanceRecord({ personId: person.id, employeeId: '', dateKey, logCount: 99, divisionId: 'stale' })
+        const method = operation === 'delete' ? 'DELETE' : 'PATCH'
+        const handler = operation === 'delete' ? deleteAttendanceCorrection : reviewAttendanceFieldDuty
+        await assertJsonStatus(await handler(sameOriginRequest(`/api/admin/attendance/${attendanceId}`, {
+          method, cookie: assignedOfficeActors()[0].cookie, body: operation === 'delete' ? undefined : { fieldDutyStatus: operation },
+        }), { params: Promise.resolve({ attendanceId }) }), 200)
+        const daily = (await queryPostgres('SELECT employee_id, log_count, data FROM attendance_daily WHERE person_id = $1 AND date_key = $2', [person.id, dateKey])).rows[0]
+        assert.equal(daily.employee_id, '')
+        assert.equal(daily.log_count, operation === 'delete' ? 2 : 3)
+        assert.equal(daily.data.divisionId, person.divisionId)
+        assert.equal(daily.data.divisionName, person.divisionName)
+        assert.equal(daily.data.amInTimestamp, Date.parse(`${dateKey}T10:00:00+08:00`))
+        assert.equal(daily.data.amOutTimestamp, Date.parse(`${dateKey}T12:00:00+08:00`))
+        assert.equal(daily.data.pmInTimestamp, operation === 'approved' ? Date.parse(`${dateKey}T13:00:00+08:00`) : null)
+        assert.equal(daily.data.workingMinutes, 120)
+        assert.equal(daily.data.lateMinutes, expectedLate)
+        assert.equal(daily.data.undertimeMinutes, expectedUndertime)
+        if (operation !== 'delete') assert.equal((await getLocalAttendanceById(attendanceId)).fieldDutyStatus, operation)
+        await queryPostgres('DELETE FROM attendance WHERE id = ANY($1::text[])', [[attendanceId, `${baseId}-in`, `${baseId}-out`]])
+      }
+    } finally {
+      await queryPostgres('DELETE FROM workforce_policies WHERE id = $1', [policyId])
+      await queryPostgres("UPDATE persons SET weekly_schedule = '{}'::jsonb WHERE id = $1", [person.id])
+    }
+  })
+}
+
+test('attendance correction history hides HR location and nested metadata but preserves Administrator payloads', async () => {
+  const people = await correctionPeople()
+  const location = { latitude: 6.12345, longitude: 125.54321, radiusMeters: 456, wifiSsid: 'CORRECTION-WIFI-SECRET', mapUrl: 'https://example.test/CORRECTION-MAP-SECRET' }
+  const nested = { capture: { gps: location } }
+  for (const actor of assignedOfficeActors()) {
+    const person = people.find(candidate => candidate.officeId === actor.officeId)
+    const dateKey = '2042-06-07'
+    const id = `correction-private-${person.id}`
+    const data = { ...location, metadata: nested, captureContext: nested, scanDiagnostics: nested, source: 'manual_override', manualSlot: 'am_in', fieldDutyStatus: 'pending', overrideReason: 'Approved scanner correction', fieldDutyReason: 'Unrendered legacy reason', unknown: 'Unknown payload' }
+    await seedCorrectionLog(person, id, dateKey, data)
+    await queryPostgres('UPDATE attendance SET latitude = $2, longitude = $3, geofence_status = $4 WHERE id = $1', [id, location.latitude, location.longitude, `Inside radius with ${location.wifiSsid}`])
+    await seedCorrectionLog(person, `${id}-nested`, dateKey, { source: nested, manualSlot: [location], fieldDutyStatus: nested, overrideReason: nested })
+    const url = `/api/admin/attendance?personId=${person.id}&employeeId=legacy-ignored&date=${dateKey}`
+    const hr = await assertJsonStatus(await getAttendanceCorrections(sameOriginRequest(url, { cookie: actor.cookie })), 200)
+    const row = hr.logs.find(log => log.id === id)
+    assert.equal(row.overrideReason, data.overrideReason)
+    assert.equal(row.fieldDutyStatus, 'pending')
+    assert.deepEqual(Object.keys(row).sort(), ['id', 'employeeId', 'personId', 'name', 'officeId', 'officeName', 'action', 'timestamp', 'dateKey', 'dateLabel', 'date', 'time', 'attendanceMode', 'decisionCode', 'confidence', 'source', 'manualSlot', 'fieldDutyStatus', 'overrideReason'].sort())
+    assert.ok(hr.logs.every(log => Object.values(log).every(value => value === null || typeof value !== 'object')))
+    assert.doesNotMatch(JSON.stringify(hr), /latitude|longitude|radius|geofence|wifi|mapUrl|metadata|captureContext|scanDiagnostics|unknown|fieldDutyReason|CORRECTION-WIFI-SECRET|CORRECTION-MAP-SECRET/i)
+    for (const cookie of [adminCookie(), ...(person.officeId === office.id ? [adminCookie({ uid: 'route-test-office-admin', email: 'route-test-office-admin@example.test', scope: 'office', officeId: office.id })] : [])]) {
+      const admin = await assertJsonStatus(await getAttendanceCorrections(sameOriginRequest(url, { cookie })), 200)
+      for (const attendanceId of [id, `${id}-nested`]) assert.deepEqual(admin.logs.find(log => log.id === attendanceId), await getLocalAttendanceById(attendanceId))
+    }
+  }
 })
 
 test('daily-summary cron rejects wrong authorization and rebuilds yesterday through PostgreSQL', async () => {

@@ -8,6 +8,7 @@ import { kvDel } from '@/lib/kv-utils'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
 import { resolveWorkforcePolicyForDate } from '@/lib/workforce-policy'
 import { getOfficeRecord } from '@/lib/office-directory'
+import { getLocalPersonById } from '@/lib/postgres/person-store'
 import {
   deleteLocalAttendanceById,
   getLocalAttendanceById,
@@ -17,26 +18,31 @@ import {
 import { upsertLocalDailyAttendanceRecord } from '@/lib/postgres/attendance-store'
 
 async function refreshDailyRecord(data, db) {
-  if (!data?.employeeId || !data?.dateKey) return
-  await kvDel(`attendance:logs:${data.employeeId}:${data.dateKey}`)
+  if (!data?.personId || !data?.dateKey) return
+  const savedPerson = await getLocalPersonById(data.personId)
+  const person = savedPerson || {
+    id: data.personId,
+    employeeId: data.employeeId || '',
+    name: data.name || '',
+    officeId: data.officeId || '',
+    officeName: data.officeName || '',
+    divisionId: data.divisionId || '',
+    divisionName: data.divisionName || '',
+    weeklySchedule: data.weeklySchedule || {},
+    flexitime: data.flexitime || {},
+  }
+  await kvDel(`attendance:logs:${person.employeeId || ''}:${data.dateKey}`)
   const [freshLogs, office] = await Promise.all([
     listLocalAttendanceLogs({
-      employeeId: data.employeeId,
-      personId: data.personId,
+      employeeId: person.employeeId || '',
+      personId: person.id,
       dateKey: data.dateKey,
       direction: 'asc',
       limit: 500,
     }),
-    getOfficeRecord(db, data.officeId),
+    getOfficeRecord(db, person.officeId || data.officeId),
   ])
   if (!office) return
-  const person = {
-    id: data.personId,
-    employeeId: data.employeeId,
-    name: data.name,
-    officeId: data.officeId,
-    officeName: data.officeName,
-  }
   const policyOverride = await resolveWorkforcePolicyForDate({ person, office, dateKey: data.dateKey })
   await upsertLocalDailyAttendanceRecord(deriveDailyAttendanceRecord({
     logs: freshLogs,

@@ -57,7 +57,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
     setLoading(true)
     try {
       const res = await fetch(
-        `/api/admin/attendance?employeeId=${encodeURIComponent(row.employeeId)}&personId=${encodeURIComponent(row.personId || '')}&date=${encodeURIComponent(row.dateKey)}`,
+        `/api/admin/attendance?personId=${encodeURIComponent(row.personId || '')}&date=${encodeURIComponent(row.dateKey)}`,
       )
       const data = await res.json()
       if (data.ok) setLogs(data.logs || [])
@@ -78,11 +78,7 @@ export default function AttendanceOverrideModal({ row, onClose, onSaved }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeId: row.employeeId,
           personId: row.personId || '',
-          name: row.name,
-          officeId: row.officeId,
-          officeName: row.officeName,
           action: selectedAction?.action || 'checkin',
           manualSlot: action,
           timestamp,

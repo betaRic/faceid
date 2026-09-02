@@ -6,21 +6,8 @@ import {
   resolveStaffAttendanceSession,
   sessionAllowsOffice,
 } from '@/lib/employee-access'
+import { serializeHrRecentAttendance } from '@/lib/attendance/response'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
-
-const HR_RECENT_ATTENDANCE_FIELDS = [
-  'id', 'employeeId', 'personId', 'name', 'officeId', 'officeName',
-  'action', 'timestamp', 'dateKey', 'dateLabel', 'date', 'time',
-  'attendanceMode', 'decisionCode', 'confidence', 'source', 'manualSlot', 'fieldDutyStatus',
-]
-
-function serializeHrRecentAttendance(entry) {
-  // Raw geofence text can embed Wi-Fi/location details. Unknown payload fields
-  // and object-valued legacy metadata must never enter the HR response.
-  return Object.fromEntries(HR_RECENT_ATTENDANCE_FIELDS
-    .map(field => [field, entry[field]])
-    .filter(([, value]) => value === null || ['string', 'number', 'boolean'].includes(typeof value)))
-}
 
 export async function GET(request) {
   try {
