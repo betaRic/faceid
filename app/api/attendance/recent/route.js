@@ -1,24 +1,23 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
+import {
+  getSessionOfficeFilter,
+  resolveStaffAttendanceSession,
+  sessionAllowsOffice,
+} from '@/lib/employee-access'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
-  const session = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required to load attendance.' }, { status: 401 })
-  }
-
   try {
-    const resolvedSession = await resolveAdminSession(null, session)
+    const resolvedSession = await resolveStaffAttendanceSession(request, null)
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR attendance access is required.' }, { status: 403 })
     }
 
     const attendance = (await listLocalAttendanceLogs({
-      officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '', limit: 500, direction: 'desc',
-    })).filter(entry => adminSessionAllowsOffice(resolvedSession, entry.officeId))
+      officeId: getSessionOfficeFilter(resolvedSession), limit: 500, direction: 'desc',
+    })).filter(entry => sessionAllowsOffice(resolvedSession, entry.officeId))
 
     return NextResponse.json({ ok: true, attendance })
   } catch (error) {

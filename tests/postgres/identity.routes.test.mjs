@@ -50,6 +50,24 @@ import {
 } from '../../lib/thresholds.js'
 import { isRegionalPinEnabled } from '../../lib/bootstrap-pin.js'
 import { GET as getPersons } from '../../app/api/persons/route.js'
+import { GET as getPendingCount } from '../../app/api/persons/pending-count/route.js'
+import { GET as getRecentAttendance } from '../../app/api/attendance/recent/route.js'
+import { GET as getHrEmployees } from '../../app/api/hr/employees/route.js'
+import { GET as getHrDtrEmployees } from '../../app/api/hr/dtr/employees/route.js'
+import { GET as getHrDtr } from '../../app/api/hr/dtr/route.js'
+import { POST as getHrDtrWorkbook } from '../../app/api/hr/dtr/workbook/route.js'
+import {
+  GET as getWorkforceRecords,
+  POST as createWorkforceRecord,
+  PATCH as updateWorkforceRecord,
+  DELETE as deleteWorkforceRecord,
+} from '../../app/api/hr/workforce-records/route.js'
+import {
+  GET as getPersonPhoto,
+  POST as updatePersonPhoto,
+} from '../../app/api/persons/[personId]/photo/route.js'
+import { POST as regeneratePersonAccessCode } from '../../app/api/persons/[personId]/access-code/route.js'
+import * as employeeAccess from '../../lib/employee-access.js'
 import {
   DELETE as deletePerson,
   PUT as updatePerson,
@@ -82,13 +100,13 @@ import { GET as getPublicOffices } from '../../app/api/public/offices/route.js'
 
 const office = {
   id: 'office-route-test',
-  name: 'Route Test Field Office',
+  name: 'Route Test Gensan Field Office',
   officeType: 'Field Office',
   divisions: [],
 }
 const otherOffice = {
   id: 'office-route-test-other',
-  name: 'Other Route Test Office',
+  name: 'Route Test Cotabato Field Office',
   officeType: 'Field Office',
   divisions: [],
 }
@@ -169,9 +187,10 @@ before(async () => {
       id, email, email_lower, name, display_name, scope, office_id, active, data
     ) VALUES
       ('route-test-office-hr', 'route-test-office-hr@example.test', 'route-test-office-hr@example.test', 'Route Test Office HR', 'Route Test Office HR', 'office', $1, true, $3::jsonb),
+      ('route-test-other-office-hr', 'route-test-other-office-hr@example.test', 'route-test-other-office-hr@example.test', 'Route Test Cotabato HR', 'Route Test Cotabato HR', 'office', $4, true, $3::jsonb),
       ('route-test-regional-hr', 'route-test-regional-hr@example.test', 'route-test-regional-hr@example.test', 'Route Test Regional HR', 'Route Test Regional HR', 'regional', $2, true, $3::jsonb),
       ('route-test-unassigned-regional-hr', 'route-test-unassigned-regional-hr@example.test', 'route-test-unassigned-regional-hr@example.test', 'Route Test Unassigned Regional HR', 'Route Test Unassigned Regional HR', 'regional', '', true, $3::jsonb)
-  `, [office.id, regionalOffice.id, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] })])
+  `, [office.id, regionalOffice.id, JSON.stringify({ permissions: ['employees', 'summary', 'dtr'] }), otherOffice.id])
   await queryPostgres(
     'UPDATE admin_users SET pin_hash = $1 WHERE id = $2',
     [hashLocalPin('7351'), 'route-test-admin'],
@@ -309,6 +328,415 @@ async function register(body, overrides) {
     body,
   }))
 }
+
+function assignedOfficeActors() {
+  return [
+    {
+      name: 'Regional HR', officeId: regionalOffice.id,
+      cookie: hrCookie({ email: 'route-test-regional-hr@example.test', uid: 'route-test-regional-hr', hrUserId: 'route-test-regional-hr', scope: 'regional', officeId: regionalOffice.id }),
+    },
+    { name: 'Gensan HR', officeId: office.id, cookie: hrCookie() },
+    {
+      name: 'Cotabato HR', officeId: otherOffice.id,
+      cookie: hrCookie({ email: 'route-test-other-office-hr@example.test', uid: 'route-test-other-office-hr', hrUserId: 'route-test-other-office-hr', officeId: otherOffice.id }),
+    },
+  ]
+}
+
+async function createAssignedOfficePeople(lastName, { active = true } = {}) {
+  const people = []
+  const photoDataUrl = await pngDataUrl()
+  for (const [assignedOffice, divisionId] of [
+    [regionalOffice, 'finance-division'], [regionalOffice, 'operations-division'],
+    [office, ''], [otherOffice, ''],
+  ]) {
+    const body = registrationFixture({ lastName: `${lastName}${people.length}`, photoDataUrl })
+    Object.assign(body.profile, { officeId: assignedOffice.id, officeName: assignedOffice.name, divisionId })
+    const response = await register(body)
+    const result = await response.json()
+    assert.equal(response.status, 200, JSON.stringify(result))
+    if (active) await transitionLifecycle(result.personId, 'active')
+    people.push(await getLocalPersonById(result.personId))
+  }
+  return people
+}
+
+let assignedOfficeReadFixtures
+async function assignedOfficeReads() {
+  if (!assignedOfficeReadFixtures) {
+    assignedOfficeReadFixtures = (async () => {
+      const active = await createAssignedOfficePeople('Assignedreadactive')
+      const pending = await createAssignedOfficePeople('Assignedreadpending', { active: false })
+      for (const [index, person] of active.entries()) {
+        await queryPostgres(`
+          INSERT INTO attendance (id, employee_id, person_id, name, action, timestamp_ms, date_key, office_id, office_name)
+          VALUES ($1, $2, $3, $4, 'checkin', $5, '2026-09-01', $6, $7)
+        `, [`assigned-office-attendance-${person.id}`, person.employeeId, person.id, person.name, Date.now() + index, person.officeId, person.officeName])
+      }
+      return { active, pending, all: [...active, ...pending] }
+    })()
+  }
+  return assignedOfficeReadFixtures
+}
+
+async function assertJsonStatus(response, status, label = '') {
+  const payload = await response.json()
+  assert.equal(response.status, status, `${label}: ${JSON.stringify(payload)}`)
+  return payload
+}
+
+function assertAssignedRows(rows, actor, expectedPeople, idField = 'id') {
+  assert.ok(rows.length > 0, `${actor.name} must retain own-office access`)
+  assert.ok(rows.every(row => row.officeId === actor.officeId), `${actor.name} leaked another office`)
+  for (const person of expectedPeople.filter(person => person.officeId === actor.officeId)) {
+    assert.ok(rows.some(row => row[idField] === person.id), `${actor.name} omitted ${person.name}`)
+  }
+}
+
+test('cross-office session filter keeps every HR assigned and preserves Regional Admin request filters', () => {
+  assert.equal(typeof employeeAccess.getSessionOfficeFilter, 'function')
+  const filter = employeeAccess.getSessionOfficeFilter
+  for (const scope of ['regional', 'office']) {
+    assert.equal(filter({ active: true, role: 'hr', scope, officeId: ' assigned ' }, 'forged'), 'assigned')
+  }
+  assert.equal(filter({ active: true, role: 'admin', scope: 'regional' }, ' requested '), 'requested')
+  assert.equal(filter({ active: true, role: 'admin', scope: 'regional' }), '')
+  assert.equal(filter({ active: true, role: 'admin', scope: 'office', officeId: ' assigned ' }, 'forged'), 'assigned')
+  assert.equal(filter({ active: false, role: 'hr', scope: 'regional', officeId: 'assigned' }), '')
+  assert.equal(filter(null, 'forged'), '')
+})
+
+test('cross-office ordinary person directory permits own-office HR and preserves global Admin access', async () => {
+  const { all } = await assignedOfficeReads()
+  for (const actor of assignedOfficeActors()) {
+    const payload = await assertJsonStatus(await getPersons(sameOriginRequest(`/api/persons?officeId=${otherOffice.id}`, { cookie: actor.cookie })), 200, actor.name)
+    assertAssignedRows(payload.persons, actor, all)
+  }
+  const global = await assertJsonStatus(await getPersons(sameOriginRequest('/api/persons', { cookie: adminCookie() })), 200)
+  for (const person of all) assert.ok(global.persons.some(row => row.id === person.id))
+})
+
+test('cross-office paged person directory ignores forged office filters for HR and narrows Regional divisions', async () => {
+  const { all } = await assignedOfficeReads()
+  for (const actor of assignedOfficeActors()) {
+    const rows = []
+    let cursor = ''
+    let total
+    do {
+      const params = new URLSearchParams({ mode: 'directory', q: 'Assignedread', limit: '1', officeId: actor.officeId === office.id ? otherOffice.id : office.id, cursor })
+      const payload = await assertJsonStatus(await getPersons(sameOriginRequest(`/api/persons?${params}`, { cookie: actor.cookie })), 200, actor.name)
+      total = payload.page.total
+      rows.push(...payload.persons)
+      cursor = payload.page.hasMore ? payload.page.nextCursor : ''
+      assert.ok(rows.length <= all.length, 'directory pagination must terminate without repeated pages')
+    } while (cursor)
+    assertAssignedRows(rows, actor, all)
+    assert.equal(total, all.filter(person => person.officeId === actor.officeId).length)
+    assert.equal(new Set(rows.map(row => row.id)).size, total)
+  }
+  for (const division of regionalOffice.divisions) {
+    const payload = await assertJsonStatus(await getPersons(sameOriginRequest(`/api/persons?mode=directory&q=Assignedread&officeId=${otherOffice.id}&divisionId=${division.id}`, { cookie: assignedOfficeActors()[0].cookie })), 200)
+    assert.equal(payload.persons.length, 2)
+    assert.ok(payload.persons.every(row => row.officeId === regionalOffice.id && row.divisionId === division.id))
+  }
+  const global = await assertJsonStatus(await getPersons(sameOriginRequest(`/api/persons?mode=directory&q=Assignedread&officeId=${otherOffice.id}`, { cookie: adminCookie() })), 200)
+  assert.equal(global.persons.length, 2)
+  assert.ok(global.persons.every(row => row.officeId === otherOffice.id))
+})
+
+test('cross-office pending count includes only the assigned Regional Office or assigned field office', async () => {
+  await assignedOfficeReads()
+  for (const actor of [...assignedOfficeActors(), { name: 'Regional Admin', cookie: adminCookie(), officeId: '' }]) {
+    const payload = await assertJsonStatus(await getPendingCount(sameOriginRequest('/api/persons/pending-count', { cookie: actor.cookie })), 200, actor.name)
+    const expected = await queryPostgres("SELECT count(*)::integer AS count FROM persons WHERE lifecycle_status = 'pending' AND ($1 = '' OR office_id = $1)", [actor.officeId])
+    assert.ok(expected.rows[0].count > 0)
+    assert.equal(payload.pending, expected.rows[0].count, actor.name)
+  }
+})
+
+test('cross-office recent attendance permits HR reads without returning another office', async () => {
+  const { active } = await assignedOfficeReads()
+  for (const actor of assignedOfficeActors()) {
+    const payload = await assertJsonStatus(await getRecentAttendance(sameOriginRequest('/api/attendance/recent', { cookie: actor.cookie })), 200, actor.name)
+    assertAssignedRows(payload.attendance, actor, active, 'personId')
+  }
+  const global = await assertJsonStatus(await getRecentAttendance(sameOriginRequest('/api/attendance/recent', { cookie: adminCookie() })), 200)
+  for (const person of active) assert.ok(global.attendance.some(row => row.personId === person.id))
+})
+
+test('cross-office HR employee pages and access-code export ignore forged requested offices', async () => {
+  const { all } = await assignedOfficeReads()
+  for (const actor of assignedOfficeActors()) {
+    for (const mode of ['', 'access-codes']) {
+      for (const officeId of ['', actor.officeId === office.id ? otherOffice.id : office.id]) {
+        const params = new URLSearchParams({ mode, officeId, query: 'Assignedread' })
+        const payload = await assertJsonStatus(await getHrEmployees(sameOriginRequest(`/api/hr/employees?${params}`, { cookie: actor.cookie })), 200, `${actor.name} ${mode}`)
+        assertAssignedRows(payload.employees, actor, all)
+        if (!mode) assert.equal(payload.pagination.total, all.filter(person => person.officeId === actor.officeId).length)
+      }
+    }
+  }
+})
+
+test('cross-office DTR employee list stays assigned-office scoped with optional division narrowing', async () => {
+  const { active } = await assignedOfficeReads()
+  for (const actor of assignedOfficeActors()) {
+    const payload = await assertJsonStatus(await getHrDtrEmployees(sameOriginRequest(`/api/hr/dtr/employees?officeId=${otherOffice.id}`, { cookie: actor.cookie })), 200, actor.name)
+    assertAssignedRows(payload.employees, actor, active)
+    const divided = await assertJsonStatus(await getHrDtrEmployees(sameOriginRequest('/api/hr/dtr/employees?divisionId=finance-division', { cookie: actor.cookie })), 200, actor.name)
+    assert.equal(divided.employees.length, actor.officeId === regionalOffice.id ? 1 : 0)
+    assert.ok(divided.employees.every(row => row.officeId === actor.officeId && row.divisionId === 'finance-division'))
+  }
+  const global = await assertJsonStatus(await getHrDtrEmployees(sameOriginRequest('/api/hr/dtr/employees', { cookie: adminCookie() })), 200)
+  for (const person of active) assert.ok(global.employees.some(row => row.id === person.id))
+})
+
+test('cross-office DTR JSON and workbook reject outside employees while both Regional divisions remain accessible', async () => {
+  const { active } = await assignedOfficeReads()
+  for (const actor of [...assignedOfficeActors(), { name: 'Regional Admin', cookie: adminCookie(), officeId: '' }]) {
+    const own = active.filter(person => !actor.officeId || person.officeId === actor.officeId)
+    for (const person of active) {
+      const allowed = !actor.officeId || person.officeId === actor.officeId
+      const payload = await assertJsonStatus(await getHrDtr(sameOriginRequest(`/api/hr/dtr?employeeId=${person.id}&month=9&year=2026`, { cookie: actor.cookie })), allowed ? 200 : 403, actor.name)
+      if (allowed) assert.equal(payload.dtr.employee.id, person.id)
+      else await assertJsonStatus(await getHrDtrWorkbook(sameOriginRequest('/api/hr/dtr/workbook', {
+        method: 'POST', cookie: actor.cookie, body: { employeeIds: [own[0].id, person.id], month: 9, year: 2026 },
+      })), 403, `${actor.name} mixed-office workbook`)
+    }
+    const workbook = await getHrDtrWorkbook(sameOriginRequest('/api/hr/dtr/workbook', {
+      method: 'POST', cookie: actor.cookie, body: { employeeIds: own.map(person => person.id), month: 9, year: 2026 },
+    }))
+    assert.equal(workbook.status, 200, actor.name)
+    const contents = unzipSync(new Uint8Array(await workbook.arrayBuffer()))
+    const sheets = Object.keys(contents).filter(name => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
+    assert.ok(sheets.length >= own.length, 'workbook may include the shared time-log details sheet')
+    const xml = Object.entries(contents).filter(([name]) => name.endsWith('.xml')).map(([, bytes]) => strFromU8(bytes)).join('\n')
+    for (const person of active) assert.equal(xml.includes(person.lastName), own.includes(person), `${actor.name}: workbook employee ${person.name}`)
+  }
+})
+
+test('cross-office read endpoints keep unauthenticated and unassigned HR sessions denied', async () => {
+  const invalidCookie = hrCookie({ email: 'route-test-unassigned-regional-hr@example.test', uid: 'route-test-unassigned-regional-hr', hrUserId: 'route-test-unassigned-regional-hr', scope: 'regional', officeId: '' })
+  for (const cookie of ['', invalidCookie, `${getHrSessionCookieName()}=invalid`]) {
+    for (const [handler, url] of [
+      [getPersons, '/api/persons'], [getPersons, '/api/persons?mode=directory'],
+      [getPendingCount, '/api/persons/pending-count'], [getRecentAttendance, '/api/attendance/recent'],
+      [getHrEmployees, '/api/hr/employees'], [getHrEmployees, '/api/hr/employees?mode=access-codes'],
+      [getHrDtrEmployees, '/api/hr/dtr/employees'], [getHrDtr, '/api/hr/dtr?employeeId=invalid&month=9&year=2026'],
+    ]) {
+      const response = await handler(sameOriginRequest(url, { cookie }))
+      assert.ok([401, 403].includes(response.status), `${url} accepted invalid access`)
+    }
+    const response = await getHrDtrWorkbook(sameOriginRequest('/api/hr/dtr/workbook', { method: 'POST', cookie, body: { employeeIds: ['invalid'], month: 9, year: 2026 } }))
+    assert.equal(response.status, 401)
+  }
+})
+
+test('cross-office employee mutations, photo access, and access-code regeneration reject outside employees without blocking own office', async () => {
+  const active = await createAssignedOfficePeople('Assignedmutationactive')
+  const pending = await createAssignedOfficePeople('Assignedmutationpending', { active: false })
+  const newPhotoDataUrl = await pngDataUrl({ width: 3, height: 3 })
+
+  const profileBody = person => ({
+    lastName: person.lastName,
+    firstName: person.firstName,
+    middleName: person.middleName || '',
+    employeeId: person.employeeId,
+    position: `${person.position} Updated`,
+    officeId: person.officeId,
+    officeName: person.officeName,
+    divisionId: person.divisionId || '',
+    divisionName: person.divisionName || '',
+  })
+  const context = person => ({ params: Promise.resolve({ personId: person.id }) })
+
+  for (const actor of assignedOfficeActors()) {
+    const own = active.filter(person => person.officeId === actor.officeId)
+    const outside = active.filter(person => person.officeId !== actor.officeId)
+    assert.ok(own.length > 0 && outside.length > 0)
+
+    for (const person of outside) {
+      await assertJsonStatus(await updatePerson(sameOriginRequest(`/api/persons/${person.id}`, {
+        method: 'PUT', cookie: actor.cookie, body: profileBody(person),
+      }), context(person)), 403, `${actor.name} outside profile`)
+      await assertJsonStatus(await updatePerson(sameOriginRequest(`/api/persons/${person.id}`, {
+        method: 'PUT', cookie: actor.cookie,
+        body: { command: 'transitionLifecycle', lifecycleStatus: 'rejected', reason: 'Cross-office rejection must fail' },
+      }), context(person)), 403, `${actor.name} outside lifecycle`)
+      await assertJsonStatus(await deletePerson(sameOriginRequest(`/api/persons/${person.id}`, {
+        method: 'DELETE', cookie: actor.cookie, body: {},
+      }), context(person)), 403, `${actor.name} outside deletion`)
+      await assertJsonStatus(await getPersonPhoto(sameOriginRequest(`/api/persons/${person.id}/photo`, { cookie: actor.cookie }), context(person)), 403, `${actor.name} outside photo read`)
+      await assertJsonStatus(await updatePersonPhoto(sameOriginRequest(`/api/persons/${person.id}/photo`, {
+        method: 'POST', cookie: actor.cookie, body: { photoDataUrl: newPhotoDataUrl },
+      }), context(person)), 403, `${actor.name} outside photo write`)
+      await assertJsonStatus(await regeneratePersonAccessCode(sameOriginRequest(`/api/persons/${person.id}/access-code`, {
+        method: 'POST', cookie: actor.cookie,
+      }), context(person)), 403, `${actor.name} outside access code`)
+    }
+
+    const person = own[0]
+    await assertJsonStatus(await updatePerson(sameOriginRequest(`/api/persons/${person.id}`, {
+      method: 'PUT', cookie: actor.cookie, body: profileBody(person),
+    }), context(person)), 200, `${actor.name} own profile`)
+    assert.equal((await getPersonPhoto(sameOriginRequest(`/api/persons/${person.id}/photo`, { cookie: actor.cookie }), context(person))).status, 200)
+    await assertJsonStatus(await updatePersonPhoto(sameOriginRequest(`/api/persons/${person.id}/photo`, {
+      method: 'POST', cookie: actor.cookie, body: { photoDataUrl: newPhotoDataUrl },
+    }), context(person)), 200, `${actor.name} own photo write`)
+    await assertJsonStatus(await regeneratePersonAccessCode(sameOriginRequest(`/api/persons/${person.id}/access-code`, {
+      method: 'POST', cookie: actor.cookie,
+    }), context(person)), 200, `${actor.name} own access code`)
+
+    const lifecyclePerson = pending.find(candidate => candidate.officeId === actor.officeId)
+    for (const lifecycleStatus of ['active', 'pending', 'rejected']) {
+      await assertJsonStatus(await updatePerson(sameOriginRequest(`/api/persons/${lifecyclePerson.id}`, {
+        method: 'PUT', cookie: actor.cookie,
+        body: { command: 'transitionLifecycle', lifecycleStatus, reason: `${actor.name} own lifecycle proof` },
+      }), context(lifecyclePerson)), 200, `${actor.name} own ${lifecycleStatus}`)
+    }
+    await assertJsonStatus(await deletePerson(sameOriginRequest(`/api/persons/${person.id}`, {
+      method: 'DELETE', cookie: actor.cookie, body: {},
+    }), context(person)), 200, `${actor.name} own deletion`)
+  }
+  for (const person of pending) {
+    const stored = await getLocalPersonById(person.id)
+    if (stored?.lifecycleStatus === 'pending') {
+      await transitionLifecycle(person.id, 'rejected', 'Clean up assigned-office mutation fixture')
+    }
+  }
+})
+
+test('national holiday and organization-wide workforce changes require Regional Admin', async () => {
+  const actors = assignedOfficeActors()
+  for (const actor of actors) {
+    await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'POST', cookie: actor.cookie, body: { type: 'holiday', seedYear: 2034 },
+    })), 403, `${actor.name} national holiday seed`)
+    await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'POST', cookie: actor.cookie,
+      body: { type: 'holiday', date: '2037-01-01', name: 'Forbidden national holiday', scopeType: 'national' },
+    })), 403, `${actor.name} national holiday`)
+    await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'POST', cookie: actor.cookie,
+      body: { type: 'policy', scopeType: 'organization', weeklySchedule: {} },
+    })), 403, `${actor.name} organization policy`)
+    await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'POST', cookie: actor.cookie,
+      body: { type: 'policy', scopeType: 'division', scopeId: 'finance-division', weeklySchedule: {} },
+    })), 403, `${actor.name} division policy`)
+  }
+
+  const seeded = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'POST', cookie: adminCookie(), body: { type: 'holiday', seedYear: 2034 },
+  })), 200, 'Regional Admin national holiday seed')
+  assert.ok(seeded.seeded > 0)
+  const national = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'POST', cookie: adminCookie(),
+    body: { type: 'holiday', date: '2037-01-01', name: 'Regional Admin holiday', scopeType: 'national' },
+  })), 200, 'Regional Admin national holiday')
+  const organization = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'POST', cookie: adminCookie(),
+    body: { type: 'policy', scopeType: 'organization', weeklySchedule: {} },
+  })), 200, 'Regional Admin organization policy')
+
+  for (const actor of actors) {
+    const holidayRead = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=holiday&year=2037', { cookie: actor.cookie })), 200)
+    assert.equal(holidayRead.records.some(record => record.id === national.id), false)
+    const policyRead = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=policy', { cookie: actor.cookie })), 200)
+    assert.equal(policyRead.records.some(record => record.id === organization.id), false)
+    await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'PATCH', cookie: actor.cookie,
+      body: { type: 'holiday', id: national.id, date: '2037-01-02', name: 'Forbidden update' },
+    })), 403, `${actor.name} national holiday patch`)
+    await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=holiday&id=${national.id}`, {
+      method: 'DELETE', cookie: actor.cookie,
+    })), 403, `${actor.name} national holiday delete`)
+    await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'PATCH', cookie: actor.cookie,
+      body: { type: 'policy', id: organization.id, weeklySchedule: {} },
+    })), 403, `${actor.name} organization policy patch`)
+    await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=policy&id=${organization.id}`, {
+      method: 'DELETE', cookie: actor.cookie,
+    })), 403, `${actor.name} organization policy delete`)
+  }
+  const adminHolidays = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=holiday&year=2037', { cookie: adminCookie() })), 200)
+  assert.ok(adminHolidays.records.some(record => record.id === national.id))
+  const adminPolicies = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest('/api/hr/workforce-records?type=policy', { cookie: adminCookie() })), 200)
+  assert.ok(adminPolicies.records.some(record => record.id === organization.id))
+})
+
+test('cross-office leave and official-order paths accept each assigned office and reject every outside employee', async () => {
+  const { active } = await assignedOfficeReads()
+  const created = []
+  const actors = assignedOfficeActors()
+  for (const [actorIndex, actor] of actors.entries()) {
+    const own = active.filter(person => person.officeId === actor.officeId)
+    const outside = active.filter(person => person.officeId !== actor.officeId)
+    for (const [personIndex, person] of own.entries()) {
+      const day = 10 + actorIndex * 3 + personIndex
+      const date = `2036-06-${String(day).padStart(2, '0')}`
+      const leave = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+        method: 'POST', cookie: actor.cookie,
+        body: { type: 'leave', personId: person.id, leaveType: 'VL', startDate: date, endDate: date },
+      })), 200, `${actor.name} own leave ${person.divisionId}`)
+      const order = await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+        method: 'POST', cookie: actor.cookie,
+        body: { type: 'order', personIds: [person.id], startDate: date, endDate: date, orderNumber: `ASSIGNED-${actorIndex}-${personIndex}` },
+      })), 200, `${actor.name} own order ${person.divisionId}`)
+      created.push({ actor, person, leaveId: leave.id, orderId: order.id, date })
+    }
+    for (const [personIndex, person] of outside.entries()) {
+      const date = `2036-07-${String(10 + actorIndex * 4 + personIndex).padStart(2, '0')}`
+      await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+        method: 'POST', cookie: actor.cookie,
+        body: { type: 'leave', personId: person.id, leaveType: 'SL', startDate: date, endDate: date },
+      })), 403, `${actor.name} outside leave`)
+      await assertJsonStatus(await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+        method: 'POST', cookie: actor.cookie,
+        body: { type: 'order', personIds: [own[0].id, person.id], startDate: date, endDate: date },
+      })), 403, `${actor.name} mixed-office order`)
+    }
+  }
+
+  for (const actor of actors) {
+    for (const type of ['leave', 'order']) {
+      const payload = await assertJsonStatus(await getWorkforceRecords(sameOriginRequest(`/api/hr/workforce-records?type=${type}`, { cookie: actor.cookie })), 200, actor.name)
+      assert.ok(payload.records.length > 0)
+      const expected = created.filter(record => record.actor.officeId === actor.officeId).map(record => type === 'leave' ? record.leaveId : record.orderId)
+      assert.ok(expected.every(id => payload.records.some(record => record.id === id)))
+      assert.ok(created.filter(record => record.actor.officeId !== actor.officeId).every(record => !payload.records.some(row => row.id === (type === 'leave' ? record.leaveId : record.orderId))))
+    }
+    const outsideRecord = created.find(record => record.actor.officeId !== actor.officeId)
+    await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'PATCH', cookie: actor.cookie,
+      body: { type: 'leave', id: outsideRecord.leaveId, leaveType: 'SL', startDate: outsideRecord.date, endDate: outsideRecord.date },
+    })), 403, `${actor.name} outside leave patch`)
+    await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=leave&id=${outsideRecord.leaveId}`, {
+      method: 'DELETE', cookie: actor.cookie,
+    })), 403, `${actor.name} outside leave delete`)
+    await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'PATCH', cookie: actor.cookie,
+      body: { type: 'order', id: outsideRecord.orderId, personIds: [outsideRecord.person.id], startDate: outsideRecord.date, endDate: outsideRecord.date },
+    })), 403, `${actor.name} outside order patch`)
+    await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=order&id=${outsideRecord.orderId}`, {
+      method: 'DELETE', cookie: actor.cookie,
+    })), 403, `${actor.name} outside order delete`)
+  }
+  for (const actor of actors) {
+    const ownRecord = created.find(record => record.actor.officeId === actor.officeId)
+    await assertJsonStatus(await updateWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'PATCH', cookie: actor.cookie,
+      body: { type: 'leave', id: ownRecord.leaveId, leaveType: 'SL', startDate: ownRecord.date, endDate: ownRecord.date },
+    })), 200, `${actor.name} own leave patch`)
+    await assertJsonStatus(await deleteWorkforceRecord(sameOriginRequest(`/api/hr/workforce-records?type=order&id=${ownRecord.orderId}`, {
+      method: 'DELETE', cookie: actor.cookie,
+    })), 200, `${actor.name} own order delete`)
+  }
+  const { pending } = await assignedOfficeReads()
+  for (const person of pending) {
+    await transitionLifecycle(person.id, 'rejected', 'Clean up assigned-office read fixture')
+  }
+})
 
 test('shared Regional PIN remains usable while a named Regional Admin exists', async () => {
   process.env.ADMIN_REGIONAL_PIN = '8042'

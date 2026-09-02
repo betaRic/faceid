@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
+import { getSessionOfficeFilter } from '@/lib/employee-access'
 import { listLocalHrEmployeeAccessCodeDirectory, listLocalHrEmployees } from '@/lib/postgres/report-store'
 
 const PAGE_SIZE = 20
@@ -14,7 +15,7 @@ export async function GET(request) {
   try {
     const session = await resolveHrSession(null, cookie)
     if (!session?.active) return NextResponse.json({ ok: false, message: 'HR session is no longer valid.' }, { status: 403 })
-    const sessionOfficeId = session.scope === 'office' ? session.officeId : ''
+    const sessionOfficeId = getSessionOfficeFilter(session, text(searchParams.get('officeId')))
     if (searchParams.get('mode') === 'access-codes') {
       const employees = await listLocalHrEmployeeAccessCodeDirectory({ sessionOfficeId })
       return NextResponse.json({ ok: true, employees })

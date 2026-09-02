@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import * as adminAuth from '@/lib/admin-auth'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enrollment'
 import {
@@ -13,6 +12,11 @@ import { parseDirectoryParams } from '@/lib/persons'
 import { encodePersonDirectoryCursor } from '@/lib/person-directory'
 import { normalizeDataImage } from '@/lib/images/safe-data-image'
 import { createPersonsPostHandler } from '@/lib/routes/persons-route'
+import {
+  getSessionOfficeFilter,
+  resolveEmployeeManagementSession,
+  sessionAllowsOffice,
+} from '@/lib/employee-access'
 
 function createRouteTimer(operation) {
   const startedAt = Date.now()
@@ -31,24 +35,17 @@ function createRouteTimer(operation) {
 
 export async function GET(request) {
   const timer = createRouteTimer('GET /api/persons')
-  const session = adminAuth.parseAdminSessionCookieValue(
-    request.cookies.get(adminAuth.getAdminSessionCookieName())?.value,
-  )
-  if (!session) {
-    return NextResponse.json({ ok: false, message: 'Admin login is required to load employees.' }, { status: 401 })
-  }
-
   try {
     const db = null
-    const resolvedSession = await adminAuth.resolveAdminSession(db, session)
+    const resolvedSession = await resolveEmployeeManagementSession(request, db)
     timer.mark('session')
     if (!resolvedSession) {
-      return NextResponse.json({ ok: false, message: 'Admin session is no longer valid.' }, { status: 403 })
+      return NextResponse.json({ ok: false, message: 'Admin or HR employee-management access is required.' }, { status: 403 })
     }
 
     if (new URL(request.url).searchParams.get('mode') === 'directory') {
       const params = parseDirectoryParams(request)
-      const effectiveOfficeId = resolvedSession.scope === 'office' ? resolvedSession.officeId : params.officeId
+      const effectiveOfficeId = getSessionOfficeFilter(resolvedSession, params.officeId)
       if (params.divisionId) {
         if (!effectiveOfficeId) {
           return NextResponse.json({ ok: false, message: 'Choose the regional office before filtering by division.' }, { status: 400 })
@@ -85,9 +82,9 @@ export async function GET(request) {
     }
 
     const persons = (await listLocalPersons({
-      officeId: resolvedSession.scope === 'office' ? resolvedSession.officeId : '',
+      officeId: getSessionOfficeFilter(resolvedSession),
     }))
-      .filter(person => adminAuth.adminSessionAllowsOffice(resolvedSession, person.officeId))
+      .filter(person => sessionAllowsOffice(resolvedSession, person.officeId))
     return NextResponse.json({ ok: true, persons })
   } catch (error) {
     timer.warnIfSlow(1000)

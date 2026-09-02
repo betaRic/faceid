@@ -203,7 +203,7 @@ function canManageRecord(session, type, officeId) {
   // this table. Until division ownership is normalized, only regional admins
   // may change them; office HR cannot use this endpoint to cross boundaries.
   if (type === "holiday" && !officeId)
-    return session.scope === "regional" && (session.role === "admin" || session.role === "hr");
+    return session.role === "admin" && session.scope === "regional";
   if (!officeId)
     return session.role === "admin" && session.scope === "regional";
   return sessionAllowsOffice(session, officeId);
@@ -305,7 +305,7 @@ export async function POST(request) {
           {
             ok: false,
             message:
-              "Only Regional Admin or Regional HR may seed the national calendar.",
+              "Only Regional Admin may seed the national calendar.",
           },
           { status: 403 },
         );
@@ -348,7 +348,7 @@ export async function POST(request) {
         !canManageRecord(session, "holiday", "")
       )
         return NextResponse.json(
-          { ok: false, message: "Only Regional Admin or Regional HR may manage national holidays." },
+          { ok: false, message: "Only Regional Admin may manage national holidays." },
           { status: 403 },
         );
       if (officeId && !sessionAllowsOffice(session, officeId))
