@@ -8,7 +8,7 @@ import { Button, EmptyState, LoadingState, PageHeader, ResponsiveRecordList, Sel
 import { AddRoleModal } from './AddRoleModal'
 
 function AdminsPanelInner() {
-  const { roleScope, offices } = useAdminStore(useShallow((state) => ({ roleScope: state.roleScope, offices: state.offices || [] })))
+  const { roleScope, offices, addToast } = useAdminStore(useShallow((state) => ({ roleScope: state.roleScope, offices: state.offices || [], addToast: state.addToast })))
   const { admins, adminsLoaded, handleCreateAdmin, handleUpdateAdmin, handleDeleteAdmin, isPending } = useAdmins()
   const { hrUsers, hrUsersLoaded, createHrUser, updateHrUser, deleteHrUser, isPending: isHrPending } = useHrUsers()
   const [showAddModal, setShowAddModal] = useState(false)
@@ -38,6 +38,10 @@ function AdminsPanelInner() {
   }
 
   const handleUpdate = (user, updates) => user.userType === 'hr' ? updateHrUser(user, updates) : handleUpdateAdmin(user, updates)
+  const handleHrOfficeChange = async (user, officeId) => {
+    const result = await updateHrUser(user, { scope: user.scope, officeId })
+    if (!result?.ok) addToast(result?.message || 'Failed to update HR office. Please try again.', 'error')
+  }
   const handleDelete = (user) => user.userType === 'hr' ? deleteHrUser(user) : handleDeleteAdmin(user)
   const roleName = (user) => user.userType === 'hr' ? (user.scope === 'regional' ? 'Regional HR' : 'Office HR') : 'Administrator'
   const renderOffice = (user, view) => user.userType === 'hr' ? (
@@ -46,8 +50,9 @@ function AdminsPanelInner() {
         aria-label={`Office for ${user.displayName || user.email}`}
         aria-describedby={!user.officeId ? `hr-office-warning-${view}-${user.id}` : undefined}
         className="min-w-40"
+        disabled={isHrPending(`hr-user-update-${user.id}`)}
         value={user.officeId || ''}
-        onChange={(event) => handleUpdate(user, { scope: user.scope, officeId: event.target.value })}
+        onChange={(event) => handleHrOfficeChange(user, event.target.value)}
       >
         <option value="">Select office</option>
         {offices.filter(office => user.scope === 'regional' ? office.officeType === 'Regional Office' : office.officeType !== 'Regional Office')

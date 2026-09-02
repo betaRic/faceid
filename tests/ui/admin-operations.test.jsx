@@ -18,6 +18,7 @@ import { AddRoleModal } from '@/components/admin/AddRoleModal'
 import { AdminsPanel } from '@/components/admin/AdminsPanel'
 import { MaintenanceEvidencePanel } from '@/components/admin/MaintenanceEvidencePanel'
 import { DashboardPanel } from '@/components/admin/DashboardPanel'
+import { ToastContainer } from '@/components/shared/ui'
 
 vi.mock('@/components/AdminOfficePanel', () => ({
   default: () => <div>Office configuration fields</div>,
@@ -27,8 +28,9 @@ const nextPage = vi.fn()
 const previousPage = vi.fn()
 const roleHooks = vi.hoisted(() => ({
   createHrUser: vi.fn(),
-  updateHrUser: vi.fn(),
+  updateHrUser: vi.fn(async () => ({ ok: true })),
   deleteHrUser: vi.fn(),
+  isHrPending: vi.fn(() => false),
 }))
 
 const employees = [
@@ -66,7 +68,7 @@ vi.mock('@/lib/admin/hooks', () => ({
     createHrUser: roleHooks.createHrUser,
     updateHrUser: roleHooks.updateHrUser,
     deleteHrUser: roleHooks.deleteHrUser,
-    isPending: vi.fn(() => false),
+    isPending: roleHooks.isHrPending,
   }),
 }))
 
@@ -135,6 +137,8 @@ const storeState = {
   setEditingEmployee: vi.fn(),
   setDeletingEmployee: vi.fn(),
   addToast: vi.fn(),
+  toasts: [],
+  removeToast: vi.fn(),
   refreshEmployees: vi.fn(),
   setPending: vi.fn(),
   isPending: vi.fn(() => false),
@@ -144,6 +148,9 @@ vi.mock('@/lib/admin/store', () => ({ useAdminStore: (selector) => typeof select
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
+  roleHooks.isHrPending.mockReturnValue(false)
+  storeState.addToast.mockReset()
+  storeState.toasts = []
 })
 
 describe('admin employee operations', () => {
@@ -440,6 +447,45 @@ describe('admin employee operations', () => {
       pin: '5937',
       scope: 'regional',
     }))
+  })
+
+  it.each([
+    ['mobile', 0, 'An office assignment is required.'],
+    ['desktop', 1, 'Network request failed.'],
+  ])('shows HR office repair failures in the existing toast on %s', async (_view, index, message) => {
+    roleHooks.updateHrUser.mockResolvedValueOnce({ ok: false, message })
+    storeState.addToast.mockImplementationOnce((text, type) => {
+      storeState.toasts = [{ id: 'repair-error', message: text, type }]
+    })
+    const { rerender } = render(<><AdminsPanel /><ToastContainer /></>)
+    const repairSelect = screen.getAllByRole('combobox', { name: 'Office for Unassigned Office HR' })[index]
+
+    await userEvent.selectOptions(repairSelect, 'field-office')
+
+    await waitFor(() => expect(storeState.addToast).toHaveBeenCalledWith(message, 'error'))
+    expect(roleHooks.updateHrUser).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'hr-unassigned', scope: 'office' }),
+      { scope: 'office', officeId: 'field-office' },
+    )
+    rerender(<><AdminsPanel /><ToastContainer /></>)
+    expect(screen.getByText(message)).toBeVisible()
+    expect(screen.getByText(message).closest('[aria-live="polite"]')).not.toBeNull()
+    expect(repairSelect).toBeEnabled()
+    expect(repairSelect).toHaveValue('')
+  })
+
+  it('disables only the pending HR account office selectors in both layouts', () => {
+    roleHooks.isHrPending.mockImplementation(key => key === 'hr-user-update-hr-unassigned')
+    render(<AdminsPanel />)
+
+    const pendingSelectors = screen.getAllByRole('combobox', { name: 'Office for Unassigned Office HR' })
+    expect(pendingSelectors).toHaveLength(2)
+    pendingSelectors.forEach(selector => expect(selector).toBeDisabled())
+    for (const name of ['Office for Regional HR', 'Office for Unassigned Regional HR']) {
+      const otherSelectors = screen.getAllByRole('combobox', { name })
+      expect(otherSelectors).toHaveLength(2)
+      otherSelectors.forEach(selector => expect(selector).toBeEnabled())
+    }
   })
 
   function maintenancePayload(overrides = {}) {
