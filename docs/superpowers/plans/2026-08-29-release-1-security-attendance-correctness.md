@@ -850,7 +850,7 @@ git commit -m "fix: commit attendance atomically"
 - Modify: `tests/postgres/identity.routes.test.mjs`
 - Modify: `tests/run-tests.mjs`
 
-- [ ] **Step 1: Write a failing simultaneous same-face registration test**
+- [x] **Step 1: Write a failing simultaneous same-face registration test**
 
 Submit two registrations concurrently with the same deterministic server descriptors but different names and empty Employee IDs:
 
@@ -864,11 +864,11 @@ assert.deepEqual([left.status, right.status].sort(), [200, 409])
 
 Query both normalized names and assert exactly one person exists. Assert the winner retains its own identity, photo, descriptors, and pending approval state.
 
-- [ ] **Step 2: Add a create-only source contract test**
+- [x] **Step 2: Add a create-only source contract test**
 
 In `tests/run-tests.mjs`, read `lib/postgres/person-store.js` and assert the `enrollLocalPerson` slice contains neither `const existing = null` nor `ON CONFLICT (id)` nor `DO UPDATE SET`.
 
-- [ ] **Step 3: Run focused tests and confirm failure**
+- [x] **Step 3: Run focused tests and confirm failure**
 
 Run: `npm run test:routes -- --test-name-pattern="simultaneous same-face"`
 
@@ -878,7 +878,7 @@ Run: `node tests/run-tests.mjs`
 
 Expected: FAIL on the create-only source contract.
 
-- [ ] **Step 4: Lock the final duplicate check and insert**
+- [x] **Step 4: Lock the final duplicate check and insert**
 
 Inside the existing enrollment transaction, before identity-specific locking and `loadDuplicateCandidates`, acquire one enrollment-decision lock:
 
@@ -891,7 +891,7 @@ await client.query(
 
 Keep the identity-specific lock after it so every registration takes locks in the same order.
 
-- [ ] **Step 5: Remove unreachable update behavior**
+- [x] **Step 5: Remove unreachable update behavior**
 
 Delete `existing`, every `existing ?` branch, stored-descriptor merge, and `ON CONFLICT(id) DO UPDATE`. Build a new person directly:
 
@@ -910,11 +910,11 @@ Keep the existing persons column list and values, but make it a plain `INSERT IN
 
 Keep the current post-transaction `biometric_index` sync for Release 2 removal.
 
-- [ ] **Step 6: Stop registration API from implying update behavior**
+- [x] **Step 6: Stop registration API from implying update behavior**
 
 In `lib/routes/persons-route.js`, keep the safe 409 duplicate response. Remove only fields or warning text that refer to resubmission or existing-record update. Do not change administrator approval.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run: `node tests/run-tests.mjs`
 
@@ -924,12 +924,14 @@ Run: `npm run test:routes -- --test-name-pattern="missing Employee ID does not b
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add lib/postgres/person-store.js lib/routes/persons-route.js tests/postgres/identity.routes.test.mjs tests/run-tests.mjs
 git commit -m "fix: serialize create-only enrollment"
 ```
+
+**Accepted on 2026-09-03:** Task 6 is committed in `2e172dd` with quality follow-up `9e84fae`. Final specification review found no missing or extra work, and separate quality review approved the result with no Critical or Important findings. Node 22.23.2 evidence: focused registration routes **3/3**, full PostgreSQL routes **95/95**, units **122/122**, full local test command exited 0, and `git diff --check` passed. The simultaneous same-face test now proves two blank-ID registrations create exactly one pending person with its own photo, descriptors, and audit record; the other receives a safe conflict. Enrollment decisions run under one transaction lock and use a plain create-only insert. Quality review found and reproduced an approved-first tie that could hide an exact pending duplicate; the follow-up scans every pending candidate, while a second regression proves one exact sample cannot block an otherwise different face. No deployment was performed.
 
 ## Task 7: Require server anti-spoofing without liveness
 
