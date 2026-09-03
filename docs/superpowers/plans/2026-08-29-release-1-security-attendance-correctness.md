@@ -1129,7 +1129,7 @@ git commit -m "fix: require server anti-spoofing"
 - Modify: `tests/ui/public-attendance.test.jsx`
 - Modify: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write failing source and UI expectations**
+- [x] **Step 1: Write failing source and UI expectations**
 
 Add a source-hygiene test that searches active application files, `.env.example`, and README for biometric liveness fields and model names. Allow historical migration or committed design documents, but require zero active imports or payload fields for:
 
@@ -1147,13 +1147,13 @@ Add kiosk UI assertions that anti-spoof failure displays “Photo or screen dete
 
 **Execution clarification identified on 2026-09-02:** the Human library configuration still needs explicit disabled model switches. Permit only `liveness: { enabled: false }` (and the equivalent disabled iris setting) in the two Human configuration files; these switches are not active features. Remove obsolete profile properties and liveness model-path strings. Source checks must distinguish these deliberate disabling flags from a model load, returned metric, capture decision, request field, or UI instruction. A literal zero-occurrence check for the word `liveness` would contradict the required disabled configuration.
 
-- [ ] **Step 2: Run source and UI tests and confirm failure**
+- [x] **Step 2: Run source and UI tests and confirm failure**
 
 Run: `npx vitest run tests/ui/kiosk.test.jsx tests/ui/source-hygiene.test.js`
 
 Expected: FAIL on current liveness code and labels.
 
-- [ ] **Step 3: Remove liveness capture and request data**
+- [x] **Step 3: Remove liveness capture and request data**
 
 In `lib/biometrics/human.js`, set browser liveness and iris models disabled and stop mapping `face.live`.
 
@@ -1161,7 +1161,7 @@ In `hooks/useVerificationBurst.js`, remove iris warnings, `analyzeBurstLiveness`
 
 In `hooks/useKioskLoop.js`, remove browser liveness blocking and remove `antispoof`, `liveness`, and `livenessEvidence` from the request body. Keep raw server scan frames and all non-liveness capture information.
 
-- [ ] **Step 4: Remove obsolete response labels and maintenance category**
+- [x] **Step 4: Remove obsolete response labels and maintenance category**
 
 In `lib/kiosk-utils.js`, remove active liveness response cases. Keep `blocked_antispoof` with plain photo/screen guidance.
 
@@ -1171,17 +1171,17 @@ In `lib/maintenance/system-evidence.js`, remove liveness and iris model files fr
 
 Change `/api/health` response `kind` from `process-liveness` to `process-health`; this avoids using biometric terminology for simple process status.
 
-- [ ] **Step 5: Delete unused liveness and iris assets**
+- [x] **Step 5: Delete unused liveness and iris assets**
 
 Delete the five files listed at the start of this task. Before deletion, the source search must show iris is used only by the removed liveness path.
 
-- [ ] **Step 6: Update tests and documentation**
+- [x] **Step 6: Update tests and documentation**
 
 Remove liveness imports and tests from `tests/run-tests.mjs`. Update model-inventory and PostgreSQL route fixtures to anti-spoof-only payloads. Update README authority text to “server embedding and anti-spoof policy.”
 
 Do not change the attendance PIN tests or flow.
 
-- [ ] **Step 7: Prove no active liveness remains**
+- [x] **Step 7: Prove no active liveness remains**
 
 Run:
 
@@ -1191,7 +1191,7 @@ rg -n -i "liveness|livenessEvidence|blocked_liveness|weak_eye_signal" app compon
 
 Expected: output is limited to the explicit legacy decision-code mapping in `lib/maintenance/event-evidence.js`, fixtures labeled as legacy evidence, and the narrowly allowed disabled Human configuration switches. There is no liveness import, model path, request or response field, capture decision, UI guidance, or active maintenance category.
 
-- [ ] **Step 8: Run focused suites**
+- [x] **Step 8: Run focused suites**
 
 Run: `node tests/run-tests.mjs`
 
@@ -1205,12 +1205,14 @@ Run: `npm run test:routes -- --test-name-pattern="kiosk persists|anti-spoof|heal
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add -- .env.example README.md app/api/health/route.js hooks/useKioskLoop.js hooks/useVerificationBurst.js lib/attendance/capture-policy.js lib/attendance/challenge-policy.js lib/attendance/normalize.js lib/attendance/process.js lib/biometrics/human.js lib/biometrics/liveness.js lib/biometrics/server-attendance.js lib/biometrics/server-embedding-core.js lib/kiosk-utils.js lib/maintenance/event-evidence.js lib/maintenance/system-evidence.js public/models/human/iris.bin public/models/human/iris.json public/models/human/liveness.bin public/models/human/liveness.json tests/postgres/identity.routes.test.mjs tests/run-tests.mjs tests/ui/kiosk.test.jsx tests/ui/public-attendance.test.jsx tests/ui/source-hygiene.test.js
 git commit -m "refactor: remove biometric liveness"
 ```
+
+**Accepted on 2026-09-04:** Task 8 is committed in `ceaf2dd`. Final specification review found no missing or extra work, and separate quality review approved the result with no Critical or Important findings. Node 22.23.2 evidence: safety/database checks **38/38**, units **118/118**, contracts **1/1**, full UI **82/82**, focused kiosk/source/UI **14/14**, focused health/kiosk/anti-spoof routes **4/4**, full PostgreSQL routes **96/96**, local production build passed, and `git diff --check` passed. Exactly five approved liveness/iris files were deleted. Browser capture no longer loads, calculates, sends, or displays liveness; raw server scan frames, identity, challenge, access-code/PIN flow, pose, and non-liveness diagnostics remain. Active maintenance evidence now names anti-spoofing, while old liveness decision rows remain countable as historical biometric failures. Remaining source matches are limited to explicit disabled Human switches, exact historical mappings, and enforcement tests. Real camera/device behavior and actual anti-spoof model accuracy remain unverified by automated tests. No deployment was performed.
 
 ## Task 9: Add the safe server-error contract
 
