@@ -3574,6 +3574,188 @@ test('daily-summary cron rejects wrong authorization and rebuilds yesterday thro
   }
 })
 
+function atomicAttendanceServices(person, { synchronizeMatches = false } = {}) {
+  const descriptor = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))
+  let matchCalls = 0
+  let releaseMatches
+  const matchBarrier = new Promise(resolve => { releaseMatches = resolve })
+  return {
+    buildAuthoritativeAttendancePayload: async () => ({
+      descriptor,
+      descriptors: [descriptor, descriptor],
+      descriptorSpread: 0.1,
+      antispoof: 0.92,
+      liveness: 0.88,
+      acceptedFrames: [],
+      rejectedFrames: [],
+      processedCount: 2,
+      diagnostics: {
+        modelVersion: 'route-test-atomic-attendance-v1',
+        acceptedCount: 2,
+        rejectedCount: 0,
+        averagePerformanceMs: 1,
+      },
+    }),
+    findClaimedEmployeeMatch: async () => {
+      if (synchronizeMatches) {
+        matchCalls += 1
+        if (matchCalls >= 2) releaseMatches()
+        await Promise.race([
+          matchBarrier,
+          new Promise(resolve => setTimeout(resolve, 500)),
+        ])
+      }
+      return {
+        ok: true,
+        person,
+        personId: person.id,
+        confidence: 0.99,
+        decisionCode: 'matched_person',
+        debug: {},
+      }
+    },
+  }
+}
+
+function atomicAttendanceBody(person) {
+  return {
+    employeeId: person.accessCode,
+    latitude: 6.1164,
+    longitude: 125.1716,
+    scanFrames: [
+      { frameDataUrl: 'data:image/jpeg;base64,ATOMIC-A' },
+      { frameDataUrl: 'data:image/jpeg;base64,ATOMIC-B' },
+    ],
+    captureContext: {
+      capturePolicyVersion: 'scan-v4',
+      verificationFrames: 3,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      mobile: false,
+    },
+    scanDiagnostics: { strictFrames: 3, descriptorSpread: 0.1 },
+    livenessEvidence: {
+      earSamples: [0.24, 0.17, 0.25],
+      meshDeltas: [0.31, 0.29],
+      irisDeltas: [0.22, 0.24],
+      avgAntispoof: 0.92,
+      avgLiveness: 0.88,
+      hasEyeSignal: true,
+      hasMotionSignal: true,
+      frameCount: 3,
+      pass: true,
+    },
+    kioskContext: { kioskId: `atomic-${person.id}`, source: 'web-scan' },
+  }
+}
+
+async function submitAtomicAttendance(handler, person) {
+  const body = atomicAttendanceBody(person)
+  const challenge = await issueAttendanceChallenge(null, {
+    employeeId: body.employeeId,
+    kioskId: body.kioskContext.kioskId,
+    source: body.kioskContext.source,
+  })
+  return handler(sameOriginRequest('/api/attendance/v2', {
+    method: 'POST',
+    body: { ...body, challenge },
+  }))
+}
+
+async function createActiveAtomicAttendancePerson(lastName) {
+  const response = await register(registrationFixture({
+    lastName,
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const registration = await response.json()
+  assert.equal(response.status, 200, JSON.stringify(registration))
+  await transitionLifecycle(registration.personId, 'active', `Activate ${lastName} attendance test employee`)
+  return getLocalPersonById(registration.personId)
+}
+
+test('simultaneous first scans commit exactly one accepted attendance operation', async () => {
+  const person = await createActiveAtomicAttendancePerson('AtomicConcurrent')
+  const handler = createAttendanceV2PostHandler({
+    services: atomicAttendanceServices(person, { synchronizeMatches: true }),
+  })
+
+  const responses = await Promise.all([
+    submitAtomicAttendance(handler, person),
+    submitAtomicAttendance(handler, person),
+  ])
+  const payloads = await Promise.all(responses.map(response => response.json()))
+  assert.deepEqual(responses.map(response => response.status).sort((left, right) => left - right), [200, 409])
+
+  const accepted = payloads.find(payload => payload.ok)
+  const blocked = payloads.find(payload => !payload.ok)
+  assert.equal(accepted?.entry?.personId, person.id)
+  assert.equal(accepted?.entry?.action, 'checkin')
+  assert.equal(blocked?.decisionCode, 'blocked_recent_duplicate')
+
+  const [raw, daily, events, locks] = await Promise.all([
+    queryPostgres('SELECT action FROM attendance WHERE person_id = $1', [person.id]),
+    queryPostgres('SELECT data FROM attendance_daily WHERE person_id = $1', [person.id]),
+    queryPostgres("SELECT decision_code, data FROM scan_events WHERE person_id = $1 AND status = 'accepted'", [person.id]),
+    queryPostgres('SELECT last_action FROM attendance_locks WHERE employee_id = $1', [person.id]),
+  ])
+  assert.equal(raw.rowCount, 1)
+  assert.equal(raw.rows[0].action, 'checkin')
+  assert.equal(daily.rowCount, 1)
+  assert.equal(daily.rows[0].data.logCount, 1)
+  assert.equal(events.rowCount, 1)
+  assert.equal(events.rows[0].data.verificationMode, 'challenge_v2')
+  assert.equal(locks.rowCount, 1)
+  assert.equal(locks.rows[0].last_action, 'checkin')
+})
+
+test('accepted attendance rolls back every write when accepted scan history fails', async () => {
+  const person = await createActiveAtomicAttendancePerson('AtomicRollback')
+  const handler = createAttendanceV2PostHandler({ services: atomicAttendanceServices(person) })
+  assert.match(person.id, /^[0-9a-f-]+$/i)
+  const triggerName = 'route_test_fail_accepted_scan_event'
+  const functionName = 'route_test_fail_accepted_scan_event_fn'
+
+  await queryPostgres(`DROP TRIGGER IF EXISTS ${triggerName} ON scan_events`)
+  await queryPostgres(`DROP FUNCTION IF EXISTS ${functionName}()`)
+  try {
+    await queryPostgres(`
+      CREATE FUNCTION ${functionName}() RETURNS trigger LANGUAGE plpgsql AS $function$
+      BEGIN
+        IF NEW.status = 'accepted' AND NEW.person_id = '${person.id}' THEN
+          RAISE EXCEPTION 'simulated accepted scan event failure';
+        END IF;
+        RETURN NEW;
+      END
+      $function$
+    `)
+    await queryPostgres(`
+      CREATE TRIGGER ${triggerName}
+      BEFORE INSERT ON scan_events
+      FOR EACH ROW EXECUTE FUNCTION ${functionName}()
+    `)
+
+    const response = await submitAtomicAttendance(handler, person)
+    const payload = await response.json()
+    assert.equal(response.status, 500, JSON.stringify(payload))
+    assert.equal(payload.decisionCode, 'blocked_server_error')
+
+    const [raw, daily, events, locks] = await Promise.all([
+      queryPostgres('SELECT id FROM attendance WHERE person_id = $1', [person.id]),
+      queryPostgres('SELECT id FROM attendance_daily WHERE person_id = $1', [person.id]),
+      queryPostgres("SELECT id FROM scan_events WHERE person_id = $1 AND status = 'accepted'", [person.id]),
+      queryPostgres('SELECT employee_id FROM attendance_locks WHERE employee_id = $1', [person.id]),
+    ])
+    assert.equal(raw.rowCount, 0)
+    assert.equal(daily.rowCount, 0)
+    assert.equal(events.rowCount, 0)
+    assert.equal(locks.rowCount, 0)
+  } finally {
+    await queryPostgres(`DROP TRIGGER IF EXISTS ${triggerName} ON scan_events`)
+    await queryPostgres(`DROP FUNCTION IF EXISTS ${functionName}()`)
+  }
+})
+
 test('kiosk persists the matched person ID and rejects unsafe submissions without attendance writes', async () => {
   const personAResponse = await register(registrationFixture({
     employeeId: '',
