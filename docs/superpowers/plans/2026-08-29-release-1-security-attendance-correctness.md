@@ -669,7 +669,7 @@ git commit -m "fix: use saved identity for corrections"
 - Modify: `lib/attendance/process.js`
 - Modify: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write a failing simultaneous-first-scan test**
+- [x] **Step 1: Write a failing simultaneous-first-scan test**
 
 Create a new active person with no attendance and no `attendance_locks` row. Submit two valid attendance requests concurrently with separate challenges:
 
@@ -687,17 +687,17 @@ assert.equal(Number((await queryPostgres(
 
 Assert one daily row, one accepted scan event, and one cooldown row exist.
 
-- [ ] **Step 2: Write a failing rollback test**
+- [x] **Step 2: Write a failing rollback test**
 
 In the isolated test database, add a temporary trigger that raises `simulated accepted scan event failure` only when `NEW.person_id` equals the rollback fixture. Submit attendance and assert status 500, then assert zero rows for that person in `attendance`, `attendance_daily`, `attendance_locks`, and accepted `scan_events`. Drop the trigger and function in `finally`.
 
-- [ ] **Step 3: Run the focused tests and confirm both failures**
+- [x] **Step 3: Run the focused tests and confirm both failures**
 
 Run: `npm run test:routes -- --test-name-pattern="simultaneous first scans|accepted attendance rolls back"`
 
 Expected: FAIL because a missing cooldown row cannot be locked and accepted writes currently happen in separate operations.
 
-- [ ] **Step 4: Allow low-level writers to share one transaction client**
+- [x] **Step 4: Allow low-level writers to share one transaction client**
 
 In `lib/postgres/attendance-store.js`, use this helper:
 
@@ -717,7 +717,7 @@ export async function writeLocalScanEvent(event, { client } = {})
 
 Extract the existing attendance INSERT and cooldown upsert into client-only helpers. Do not open nested transactions.
 
-- [ ] **Step 5: Make accepted scan-event building pure**
+- [x] **Step 5: Make accepted scan-event building pure**
 
 In `lib/scan-events.js`, extract the current sanitizing body into:
 
@@ -790,7 +790,7 @@ Keep `writeScanEvent` as the non-blocking wrapper for rejected scans. On a rejec
 
 Accepted attendance passes `{ status, decisionCode, reason, debug, requestMeta }` as `scanEventContext` into the attendance transaction. After the locked action is known, the transaction calls `buildScanEventRecord({ ...scanEventContext, entry: committedEntry, person })` so accepted history cannot record a stale action.
 
-- [ ] **Step 6: Implement one per-person accepted-attendance transaction**
+- [x] **Step 6: Implement one per-person accepted-attendance transaction**
 
 Replace the current `writeAttendanceAtomically` plus later daily and scan-event calls with a high-level `commitAcceptedAttendance` in `lib/attendance/write.js`. Its input is `{ entry, person, office, policyOverride, scanEventContext }`.
 
@@ -820,24 +820,26 @@ Then, using the same client:
 
 No catch inside this function may convert a database failure into success.
 
-- [ ] **Step 7: Update the attendance processor**
+- [x] **Step 7: Update the attendance processor**
 
 In `lib/attendance/process.js`, keep the current pre-write daily-log and next-action calculation only as an early user-facing check, preserving the present “day complete” decision order. Treat its action as provisional. Keep biometric, person, office, workforce, and location decisions before the write. Remove the post-write `updateDailyAttendanceCache` and accepted `writeScanEvent` calls.
 
 Call `commitAcceptedAttendance`. The locked result is authoritative: map `reason: 'complete'` to the existing `blocked_day_complete` response and `reason: 'cooldown'` to the existing `blocked_recent_duplicate` response, using `writeResult.action` in its message and evidence. Keep rejected-scan logging non-blocking.
 
-- [ ] **Step 8: Run focused route tests**
+- [x] **Step 8: Run focused route tests**
 
 Run: `npm run test:routes -- --test-name-pattern="kiosk persists|simultaneous first scans|accepted attendance rolls back"`
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add lib/postgres/attendance-store.js lib/attendance/write.js lib/scan-events.js lib/attendance/process.js tests/postgres/identity.routes.test.mjs
 git commit -m "fix: commit attendance atomically"
 ```
+
+**Accepted on 2026-09-03:** Task 5 is committed in `0502b0c`. The specification review found no missing or extra work, and the separate quality review approved the transaction design with no Critical or Important findings. Node 22.23.2 evidence: focused attendance routes **4/4**, full PostgreSQL routes **94/94**, units **119/119**, contracts **1/1**, UI **80/80**, local production build passed, and `git diff --check` passed. Two simultaneous first scans now produce one accepted operation and one cooldown response; a forced accepted scan-history failure rolls back raw attendance, daily attendance, scan history, and cooldown together. The first full route run exposed test-only blank-ID rate-limit sharing; atomic attendance fixtures now use unique test employee IDs while existing blank-ID coverage remains unchanged. No deployment was performed.
 
 ## Task 6: Serialize duplicate registration and make enrollment create-only
 
