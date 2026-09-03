@@ -2127,6 +2127,24 @@ await run('server anti-spoof policy blocks weak scores', async () => {
   assert.equal(assessServerAntispoof(0.58).ok, true)
 })
 
+await run('server attendance anti-spoof aggregation uses the weakest valid frame', async () => {
+  const { aggregateServerAntispoof } = await importLocalModule('../lib/biometrics/antispoof-policy.js')
+  assert.equal(aggregateServerAntispoof([
+    { antispoof: 0.92 },
+    { antispoof: 0.61 },
+  ]), 0.61)
+})
+
+await run('server attendance anti-spoof aggregation fails closed on incomplete scores', async () => {
+  const { aggregateServerAntispoof } = await importLocalModule('../lib/biometrics/antispoof-policy.js')
+  for (const invalidScore of [null, '', Number.NaN, Number.POSITIVE_INFINITY, -0.01, 1.01]) {
+    assert.equal(aggregateServerAntispoof([
+      { antispoof: 0.92 },
+      { antispoof: invalidScore },
+    ]), null)
+  }
+})
+
 await run('attendance normalization ignores browser PAD claims', () => {
   const entry = normalizeEntry({ antispoof: 1, liveness: 1, livenessEvidence: { pass: true } })
   assert.equal(Object.hasOwn(entry, 'antispoof'), false)

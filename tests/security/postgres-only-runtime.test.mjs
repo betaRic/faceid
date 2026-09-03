@@ -87,10 +87,15 @@ test('environment templates inventory release-critical runtime and isolated test
     'NEXT_PUBLIC_SITE_URL',
     'TRUST_SMARTASP_PROXY',
     'LOCAL_FILE_STORAGE_DIR',
-    'SERVER_ATTENDANCE_PAD_ENABLED',
+    'SERVER_ATTENDANCE_ANTISPOOF_ENABLED',
   ]) {
     assert.match(runtimeTemplate, new RegExp(`^${variable}=`, 'm'), `${variable} missing from .env.example`)
   }
+  assert.doesNotMatch(
+    runtimeTemplate,
+    /^SERVER_ATTENDANCE_PAD_ENABLED=/m,
+    'retired SERVER_ATTENDANCE_PAD_ENABLED must not remain in .env.example',
+  )
 
   for (const variable of ['FACEID_TEST_DATABASE_URL', 'FACEID_TEST_PG_BIN', 'FACEID_TEST_PG_DATA']) {
     assert.match(testTemplate, new RegExp(`^${variable}=`, 'm'), `${variable} missing from .env.test.example`)
