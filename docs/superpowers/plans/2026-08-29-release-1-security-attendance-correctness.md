@@ -948,7 +948,7 @@ git commit -m "fix: serialize create-only enrollment"
 - Modify: `tests/run-tests.mjs`
 - Modify: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Replace liveness-policy tests with failing anti-spoof tests**
+- [x] **Step 1: Replace liveness-policy tests with failing anti-spoof tests**
 
 Remove unit tests whose result depends on eye, blink, motion, iris, or `entry.liveness`. Add:
 
@@ -976,13 +976,13 @@ await run('attendance normalization ignores browser PAD claims', () => {
 
 In route tests, make a service payload with `antispoof: null` return `blocked_missing_antispoof`, and a payload with `antispoof: 0.57` return `blocked_antispoof`, regardless of browser fields.
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [x] **Step 2: Run tests and confirm failure**
 
 Run: `node tests/run-tests.mjs`
 
 Expected: FAIL because the new policy does not exist and normalization still accepts liveness and browser PAD fields.
 
-- [ ] **Step 3: Implement the pure server anti-spoof rule**
+- [x] **Step 3: Implement the pure server anti-spoof rule**
 
 Create `lib/biometrics/antispoof-policy.js`:
 
@@ -1016,7 +1016,7 @@ export function assessServerAntispoof(value) {
 }
 ```
 
-- [ ] **Step 4: Enable server anti-spoof and disable server liveness**
+- [x] **Step 4: Enable server anti-spoof and disable server liveness**
 
 In `lib/biometrics/server-embedding-core.js`:
 
@@ -1045,7 +1045,7 @@ An explicit false setting does not permit attendance: it produces no server scor
 
 Make that contract explicit in the server result mapping: when the attendance anti-spoof model is disabled, return `antispoof: null` rather than accepting any default value a disabled model might leave in `face.real`.
 
-- [ ] **Step 5: Aggregate the weakest authoritative frame and remove liveness payloads**
+- [x] **Step 5: Aggregate the weakest authoritative frame and remove liveness payloads**
 
 In `lib/biometrics/server-attendance.js`, remove liveness collection and return anti-spoof only when every accepted frame has a finite score:
 
@@ -1066,7 +1066,7 @@ const antispoof = hasCompleteAntispoof
 
 The weakest accepted frame controls the result; one suspicious frame cannot be hidden by averaging it with a strong frame.
 
-- [ ] **Step 6: Remove browser PAD authority from normalization and application**
+- [x] **Step 6: Remove browser PAD authority from normalization and application**
 
 Remove `antispoof`, `liveness`, and `livenessEvidence` from `normalizeEntry`.
 
@@ -1080,13 +1080,13 @@ antispoof: Number.isFinite(authoritativePayload.antispoof)
 
 Remove `liveness`. Add `authoritativeAntispoofSource` to capture context using the server model version.
 
-- [ ] **Step 7: Simplify capture and challenge policy**
+- [x] **Step 7: Simplify capture and challenge policy**
 
 In `lib/attendance/capture-policy.js`, remove the liveness import, constants, mapping, temporal overrides, and liveness risk flags. Call `assessServerAntispoof(entry.antispoof)` and return its block before the remaining descriptor, frame, resolution, and orientation checks.
 
 In `lib/attendance/challenge-policy.js`, remove the liveness comparison. Do not mark a score below 0.58 as a gray-zone risk because capture policy now blocks it.
 
-- [ ] **Step 8: Run unit and route tests**
+- [x] **Step 8: Run unit and route tests**
 
 Run: `node tests/run-tests.mjs`
 
@@ -1096,12 +1096,14 @@ Run: `npm run test:routes -- --test-name-pattern="kiosk persists|server anti-spo
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add .env.example lib/biometrics/antispoof-policy.js lib/biometrics/server-embedding-core.js lib/biometrics/server-attendance.js lib/attendance/normalize.js lib/attendance/capture-policy.js lib/attendance/challenge-policy.js lib/attendance/process.js tests/run-tests.mjs tests/postgres/identity.routes.test.mjs
 git commit -m "fix: require server anti-spoofing"
 ```
+
+**Accepted on 2026-09-03:** Task 7 is committed in `f72d895` with test-hardening follow-up `833b5fd`. Final specification review found no missing or extra work, and separate quality review approved the result with no Critical or Important findings. Node 22.23.2 evidence at the final head: security inventory **2/2**, units **117/117**, contracts **1/1**, focused anti-spoof routes **3/3**, full PostgreSQL routes **96/96**, and `git diff --check` passed. The server anti-spoof threshold is **0.58**; missing, disabled, malformed, or out-of-range server scores fail closed. Every accepted server frame must contain a valid score and the weakest frame controls. Browser-provided anti-spoof and liveness fields are ignored. Review caught the retired environment-setting name in a release safety test; the follow-up now requires the new name, rejects the old name, and permanently tests weakest-frame and incomplete-score handling. Real camera, model, and device testing remain pending. No deployment was performed.
 
 ## Task 8: Remove browser liveness, models, labels, and maintenance noise
 
