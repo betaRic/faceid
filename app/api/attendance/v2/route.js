@@ -91,7 +91,7 @@ export function createAttendanceV2PostHandler({ services = null } = {}) {
       return NextResponse.json(
         {
           ok: false,
-          message: 'Attendance service encountered an unexpected error. Please try again.',
+          message: `Attendance service encountered an unexpected error. Please try again. Reference: ${errorId}`,
           decisionCode: 'blocked_server_error',
           errorId,
         },

@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import { strFromU8, unzipSync } from 'fflate'
 import sharp from 'sharp'
 import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
+import { SafeRequestError } from '../../lib/http/server-error.js'
 import * as personsRouteFactories from '../../lib/routes/persons-route.js'
 import { closePostgresPool, getPostgresPool, queryPostgres } from '../../lib/postgres/client.js'
 import { enrollLocalPerson, getLocalPersonById, refreshLocalPersonBiometrics } from '../../lib/postgres/person-store.js'
@@ -1845,15 +1846,21 @@ test('photo normalization rejects SVG and malformed image data', async () => {
   ).toString('base64')
   await assert.rejects(
     normalizeDataImage('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='),
-    error => error?.status === 400 && error?.code === 'invalid_enrollment_photo',
+    error => error instanceof SafeRequestError
+      && error.status === 400
+      && error.code === 'invalid_enrollment_photo',
   )
   await assert.rejects(
     normalizeDataImage(`data:image/jpeg;base64,${disguisedSvg}`),
-    error => error?.status === 400 && error?.code === 'invalid_enrollment_photo',
+    error => error instanceof SafeRequestError
+      && error.status === 400
+      && error.code === 'invalid_enrollment_photo',
   )
   await assert.rejects(
     normalizeDataImage('data:image/jpeg;base64,not-valid-base64%%%'),
-    error => error?.status === 400 && error?.code === 'invalid_enrollment_photo',
+    error => error instanceof SafeRequestError
+      && error.status === 400
+      && error.code === 'invalid_enrollment_photo',
   )
 })
 
@@ -1943,22 +1950,27 @@ test('photo persistence preserves the previous file when database update fails',
   assert.equal((await readFile(existingFile, 'utf8')), 'previous-photo')
 })
 
-test('public error response hides database and filesystem details', async () => {
+test('registration hides internal error details behind a reference ID', async () => {
   const response = await register(
     registrationFixture({ photoDataUrl: await pngDataUrl() }),
     {
       enrollLocalPerson: async () => {
         throw Object.assign(
-          new Error('bind SQL failed in D:\\app\\node_modules\\pg'),
-          { code: 'internal_database_failure' },
+          new Error('postgres://private-registration-host/faceid'),
+          { code: 'internal_database_failure', status: 418 },
         )
       },
     },
   )
   const payload = await response.json()
   assert.equal(response.status, 500)
-  assert.equal(payload.message, 'Registration could not be completed. Please try again or contact HR.')
-  assert.doesNotMatch(JSON.stringify(payload), /bind|SQL|D:\\|node_modules/i)
+  assert.match(payload.errorId, /^[0-9a-f-]{36}$/i)
+  assert.equal(
+    payload.message,
+    `Registration could not be completed. Please try again or contact HR. Reference: ${payload.errorId}`,
+  )
+  assert.deepEqual(Object.keys(payload).sort(), ['errorId', 'message', 'ok'])
+  assert.doesNotMatch(JSON.stringify(payload), /postgres|private-registration-host/i)
 })
 
 test('post-commit biometric index warning is structured without changing registration success', async () => {
@@ -2933,7 +2945,7 @@ test('production rate limiting fails closed when PostgreSQL is unavailable', asy
   }
 })
 
-test('missing Employee ID does not bypass duplicate face rejection', async () => {
+test('duplicate registration rejects a matching face without an Employee ID', async () => {
   const candidateResponse = await register(registrationFixture({
     employeeId: '923456',
     lastName: 'DuplicateSource',
@@ -2978,7 +2990,8 @@ test('missing Employee ID does not bypass duplicate face rejection', async () =>
   )
   const payload = await response.json()
   assert.equal(response.status, 409, JSON.stringify(payload))
-  assert.equal(payload.message, 'This face matches an existing employee record. Registration cannot continue.')
+  assert.equal(payload.code, 'duplicate_person_registration')
+  assert.equal(payload.message, 'This registration matches an existing employee record and cannot be submitted again.')
 })
 
 test('simultaneous same-face public registrations create exactly one pending person', async (t) => {
@@ -3815,6 +3828,95 @@ async function submitAtomicAttendance(handler, person) {
     body: { ...body, challenge },
   }))
 }
+
+test('attendance hides internal error for one-frame and fallback-frame embedding failures', async t => {
+  const previousFastSingleFrame = process.env.ATTENDANCE_FAST_SINGLE_FRAME_ENABLED
+  const originalConsoleError = console.error
+  process.env.ATTENDANCE_FAST_SINGLE_FRAME_ENABLED = 'true'
+  console.error = () => {}
+
+  const descriptor = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))
+  const successfulSingleFramePayload = {
+    descriptor,
+    descriptors: [descriptor],
+    descriptorSpread: 0.1,
+    antispoof: 0.92,
+    acceptedFrames: [{ descriptor, antispoof: 0.92, performanceMs: 1 }],
+    rejectedFrames: [],
+    processedCount: 1,
+    diagnostics: {
+      modelVersion: 'route-test-safe-error-v1',
+      acceptedCount: 1,
+      rejectedCount: 0,
+      averagePerformanceMs: 1,
+    },
+  }
+  const assertSafeServerError = async (response, privatePattern) => {
+    const payload = await response.json()
+    assert.equal(response.status, 500, JSON.stringify(payload))
+    assert.match(payload.errorId, /^[0-9a-f-]{36}$/i)
+    assert.equal(
+      payload.message,
+      `Attendance service encountered an unexpected error. Please try again. Reference: ${payload.errorId}`,
+    )
+    assert.equal(payload.decisionCode, 'blocked_server_error')
+    assert.doesNotMatch(JSON.stringify(payload), privatePattern)
+  }
+
+  try {
+    await t.test('one-frame failure', async () => {
+      const privateError = 'postgres://private-attendance-user:private-password@private-host/faceid'
+      const callOptions = []
+      const handler = createAttendanceV2PostHandler({
+        services: {
+          buildAuthoritativeAttendancePayload: async (_frames, options) => {
+            callOptions.push(options)
+            throw Object.assign(
+              new Error(privateError),
+              { code: 'blocked_no_reliable_match', status: 403 },
+            )
+          },
+        },
+      })
+
+      const response = await submitAtomicAttendance(handler, { id: 'safe-error-one', accessCode: '7111' })
+      await assertSafeServerError(response, /private-attendance-user|private-password|private-host/i)
+      assert.equal(callOptions.length, 1)
+      assert.deepEqual(callOptions[0], { frameLimit: 1, minFrames: 1 })
+    })
+
+    await t.test('fallback-frame failure', async () => {
+      const privateError = 'D:\\private-face-models\\attendance\\weights.bin'
+      let buildCalls = 0
+      const handler = createAttendanceV2PostHandler({
+        services: {
+          buildAuthoritativeAttendancePayload: async () => {
+            buildCalls += 1
+            if (buildCalls === 1) return successfulSingleFramePayload
+            throw new Error(privateError)
+          },
+          findClaimedEmployeeMatch: async () => ({
+            ok: true,
+            debug: {
+              bestDistance: 0.7,
+              secondDistance: 0.75,
+              supportCount: 2,
+              supportDescriptorCount: 2,
+            },
+          }),
+        },
+      })
+
+      const response = await submitAtomicAttendance(handler, { id: 'safe-error-fallback', accessCode: '7222' })
+      await assertSafeServerError(response, /private-face-models|weights\.bin/i)
+      assert.equal(buildCalls, 2)
+    })
+  } finally {
+    console.error = originalConsoleError
+    if (previousFastSingleFrame === undefined) delete process.env.ATTENDANCE_FAST_SINGLE_FRAME_ENABLED
+    else process.env.ATTENDANCE_FAST_SINGLE_FRAME_ENABLED = previousFastSingleFrame
+  }
+})
 
 async function createActiveAtomicAttendancePerson(lastName) {
   const response = await register(registrationFixture({
