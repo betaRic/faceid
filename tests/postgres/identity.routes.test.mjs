@@ -3750,7 +3750,6 @@ function atomicAttendanceServices(person, { synchronizeMatches = false } = {}) {
       descriptors: [descriptor, descriptor],
       descriptorSpread: 0.1,
       antispoof: 0.92,
-      liveness: 0.88,
       acceptedFrames: [],
       rejectedFrames: [],
       processedCount: 2,
@@ -3800,17 +3799,6 @@ function atomicAttendanceBody(person) {
       mobile: false,
     },
     scanDiagnostics: { strictFrames: 3, descriptorSpread: 0.1 },
-    livenessEvidence: {
-      earSamples: [0.24, 0.17, 0.25],
-      meshDeltas: [0.31, 0.29],
-      irisDeltas: [0.22, 0.24],
-      avgAntispoof: 0.92,
-      avgLiveness: 0.88,
-      hasEyeSignal: true,
-      hasMotionSignal: true,
-      frameCount: 3,
-      pass: true,
-    },
     kioskContext: { kioskId: `atomic-${person.id}`, source: 'web-scan' },
   }
 }
@@ -3947,17 +3935,6 @@ test('kiosk persists the matched person ID and rejects unsafe submissions withou
 
   const personA = await getLocalPersonById(personARegistration.personId)
   const pendingPerson = await getLocalPersonById(pendingRegistration.personId)
-  const validLivenessEvidence = {
-    earSamples: [0.24, 0.17, 0.25],
-    meshDeltas: [0.31, 0.29],
-    irisDeltas: [0.22, 0.24],
-    avgAntispoof: 0.92,
-    avgLiveness: 0.88,
-    hasEyeSignal: true,
-    hasMotionSignal: true,
-    frameCount: 3,
-    pass: true,
-  }
   const authoritativeDescriptor = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))
   let matchedPerson = personA
   const services = {
@@ -3966,7 +3943,6 @@ test('kiosk persists the matched person ID and rejects unsafe submissions withou
       descriptors: [authoritativeDescriptor, authoritativeDescriptor],
       descriptorSpread: 0.1,
       antispoof: 0.92,
-      liveness: 0.88,
       acceptedFrames: [],
       rejectedFrames: [],
       processedCount: 2,
@@ -4013,7 +3989,6 @@ test('kiosk persists the matched person ID and rejects unsafe submissions withou
       mobile: false,
     },
     scanDiagnostics: { strictFrames: 3, descriptorSpread: 0.1 },
-    livenessEvidence: validLivenessEvidence,
     kioskContext: { kioskId: 'route-test-kiosk', source: 'web-scan' },
     ...overrides,
   })
@@ -4086,17 +4061,92 @@ test('kiosk persists the matched person ID and rejects unsafe submissions withou
   await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode), 403, 'blocked_no_reliable_match')
   matchedPerson = personA
   await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode, {
-    livenessEvidence: {
-      earSamples: [0.25, 0.25, 0.25],
-      meshDeltas: [0.34, 0.39],
-      irisDeltas: [0.02, 0.03],
-      avgAntispoof: 0.82,
-      avgLiveness: 0.74,
-      frameCount: 3,
-    },
-  }), 403, 'blocked_liveness')
-  await expectBlockedWithoutWrite(buildBody(personARegistration.accessCode, {
     latitude: 0,
     longitude: 0,
   }), 403, 'blocked_geofence')
+})
+
+test('server anti-spoof blocks missing and weak authoritative scores despite browser claims', async () => {
+  const descriptor = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))
+  let authoritativeAntispoof = null
+  const handler = createAttendanceV2PostHandler({
+    services: {
+      buildAuthoritativeAttendancePayload: async () => ({
+        descriptor,
+        descriptors: [descriptor, descriptor],
+        descriptorSpread: 0.1,
+        antispoof: authoritativeAntispoof,
+        acceptedFrames: [],
+        rejectedFrames: [],
+        processedCount: 2,
+        diagnostics: {
+          modelVersion: 'route-test-antispoof-model-v1',
+          acceptedCount: 2,
+          rejectedCount: 0,
+          averagePerformanceMs: 1,
+        },
+      }),
+      findClaimedEmployeeMatch: async () => ({
+        ok: false,
+        decisionCode: 'blocked_no_reliable_match',
+        message: 'No reliable face match found.',
+      }),
+    },
+  })
+  const body = {
+    employeeId: '1234',
+    latitude: 6.1164,
+    longitude: 125.1716,
+    scanFrames: [
+      { frameDataUrl: 'data:image/jpeg;base64,ANTISPOOF-A' },
+      { frameDataUrl: 'data:image/jpeg;base64,ANTISPOOF-B' },
+    ],
+    antispoof: 1,
+    liveness: 1,
+    livenessEvidence: {
+      earSamples: [0.24, 0.17, 0.25],
+      meshDeltas: [0.31, 0.29],
+      irisDeltas: [0.22, 0.24],
+      avgAntispoof: 1,
+      avgLiveness: 1,
+      hasEyeSignal: true,
+      hasMotionSignal: true,
+      frameCount: 3,
+      pass: true,
+    },
+    captureContext: {
+      capturePolicyVersion: 'scan-v4',
+      verificationFrames: 3,
+      trackWidth: 720,
+      trackHeight: 1280,
+      trackFacingMode: 'user',
+      mobile: false,
+    },
+    scanDiagnostics: { strictFrames: 3, descriptorSpread: 0.1 },
+    kioskContext: { kioskId: 'route-test-antispoof', source: 'web-scan' },
+  }
+  const attendanceCount = async () => Number((await queryPostgres('SELECT count(*)::integer AS count FROM attendance')).rows[0].count)
+  const submit = async () => {
+    const challenge = await issueAttendanceChallenge(null, {
+      employeeId: body.employeeId,
+      kioskId: body.kioskContext.kioskId,
+      source: body.kioskContext.source,
+    })
+    return handler(sameOriginRequest('/api/attendance/v2', {
+      method: 'POST',
+      body: { ...body, challenge },
+    }))
+  }
+  const assertBlocked = async expectedDecisionCode => {
+    const before = await attendanceCount()
+    const response = await submit()
+    const payload = await response.json()
+    assert.equal(response.status, 403, JSON.stringify(payload))
+    assert.equal(payload.decisionCode, expectedDecisionCode)
+    assert.equal(await attendanceCount(), before)
+  }
+
+  await assertBlocked('blocked_missing_antispoof')
+  authoritativeAntispoof = 0.57
+  await assertBlocked('blocked_antispoof')
 })

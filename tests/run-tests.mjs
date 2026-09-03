@@ -76,7 +76,6 @@ const attendanceNormalizeModule = await importLocalModule('../lib/attendance/nor
 const attendanceCapturePolicyModule = await importLocalModule('../lib/attendance/capture-policy.js')
 const openVinoShadowProfileModule = await importLocalModule('../lib/biometrics/openvino-shadow-profile.js')
 const attendanceDailyStoreModule = await importLocalModule('../lib/attendance-daily-store.js')
-const livenessModule = await importLocalModule('../lib/biometrics/liveness.js')
 const rawAttendanceWorkbookModule = await importLocalModule('../lib/raw-attendance-workbook.js')
 const employeeWfhModule = await importLocalModule('../lib/employee-wfh.js')
 const csrfModule = await importLocalModule('../lib/csrf.js')
@@ -170,7 +169,6 @@ const { sanitizeAttendanceEntryForStorage } = attendanceStorageModule
 const { normalizeEntry, validateClaimedEmployeeId } = attendanceNormalizeModule
 const {
   getScanCapturePolicyAssessment,
-  MIN_SCAN_STRICT_FRAMES,
   SCAN_CAPTURE_POLICY_VERSION,
 } = attendanceCapturePolicyModule
 const {
@@ -183,7 +181,6 @@ const {
   listEmployeeDailyAttendanceRecordsForMonth,
   normalizeDailyRecord,
 } = attendanceDailyStoreModule
-const { computeIrisDelta, validateLivenessEvidence } = livenessModule
 const { buildRawAttendanceWorkbookFiles, buildRawAttendanceWorksheets } = rawAttendanceWorkbookModule
 const { isEmployeeWfhDay, normalizeEmployeeWfhDays } = employeeWfhModule
 const { validateOrigin } = csrfModule
@@ -194,26 +191,6 @@ const {
 } = employeeAccessCodeExportModule
 const { loadAttendanceMatch, saveAttendanceMatch } = attendanceMatchModule
 const { materializeNextExternalPackages } = materializerModule
-
-function createMinimalFaceMesh({
-  leftEye = { x: 100, y: 100 },
-  rightEye = { x: 200, y: 100 },
-  rightIris = { x: 125, y: 100 },
-  leftIris = { x: 175, y: 100 },
-} = {}) {
-  const mesh = []
-  mesh[33] = leftEye
-  mesh[263] = rightEye
-  mesh[468] = rightIris
-  mesh[473] = leftIris
-  return mesh
-}
-
-function translateMesh(mesh, dx, dy) {
-  return mesh.map(point => (
-    point ? { x: point.x + dx, y: point.y + dy } : point
-  ))
-}
 
 await run('calculateDistanceMeters returns zero for same coordinates', () => {
   const point = { latitude: 6.4971, longitude: 124.8466 }
@@ -2135,138 +2112,32 @@ await run('security headers publish a reviewed CSP in report-only mode', async (
   assert.match(permissions, /camera=\(self\)/)
 })
 
-await run('attendance normalization preserves iris liveness evidence for server validation', () => {
-  const entry = normalizeEntry({
-    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
-    livenessEvidence: {
-      earSamples: [0.25, 0.18, 0.25],
-      meshDeltas: [0.05, 0.05],
-      irisDeltas: [0.22, 0.24],
-      blinkCount: 0,
-      avgMeshDelta: 0.05,
-      avgIrisDelta: 0.23,
-      avgAntispoof: 0.92,
-      avgLiveness: 0.88,
-      hasEyeSignal: true,
-      hasMotionSignal: true,
-      frameCount: 3,
-      score: 0.75,
-      pass: true,
-    },
+await run('server anti-spoof policy fails closed when score is missing', async () => {
+  const { assessServerAntispoof } = await importLocalModule('../lib/biometrics/antispoof-policy.js')
+  assert.deepEqual(assessServerAntispoof(null), {
+    ok: false,
+    decisionCode: 'blocked_missing_antispoof',
+    message: 'Server anti-spoofing is unavailable. Please try again.',
   })
-
-  assert.deepEqual(entry.livenessEvidence.irisDeltas, [0.22, 0.24])
-  assert.equal(entry.livenessEvidence.avgIrisDelta, 0.23)
-  assert.equal(entry.livenessEvidence.hasEyeSignal, true)
-  assert.equal(entry.livenessEvidence.hasMotionSignal, true)
-
-  const validation = validateLivenessEvidence(entry.livenessEvidence)
-  assert.equal(validation.ok, true)
-  assert.ok(validation.avgIrisDelta >= 0.2)
 })
 
-await run('iris motion ignores rigid photo movement across the frame', () => {
-  const stillPhotoFrame = createMinimalFaceMesh()
-  const movedPhotoFrame = translateMesh(stillPhotoFrame, 18, 7)
-  const relativeIrisMotion = computeIrisDelta(stillPhotoFrame, movedPhotoFrame)
-
-  assert.ok(relativeIrisMotion < 0.001)
+await run('server anti-spoof policy blocks weak scores', async () => {
+  const { assessServerAntispoof } = await importLocalModule('../lib/biometrics/antispoof-policy.js')
+  assert.equal(assessServerAntispoof(0.57).decisionCode, 'blocked_antispoof')
+  assert.equal(assessServerAntispoof(0.58).ok, true)
 })
 
-await run('iris motion detects movement relative to the face', () => {
-  const frameA = createMinimalFaceMesh()
-  const frameB = translateMesh(frameA, 18, 7)
-  frameB[468] = { x: frameB[468].x + 2, y: frameB[468].y }
-  frameB[473] = { x: frameB[473].x - 2, y: frameB[473].y }
-
-  const relativeIrisMotion = computeIrisDelta(frameA, frameB)
-
-  assert.ok(relativeIrisMotion > 1)
-})
-
-await run('liveness blocks photo-like rigid motion without eye evidence', () => {
-  const validation = validateLivenessEvidence({
-    earSamples: [0.25, 0.25, 0.25, 0.25],
-    meshDeltas: [0.34, 0.39, 0.36],
-    irisDeltas: [0.02, 0.03, 0.02],
-    avgAntispoof: 0.82,
-    avgLiveness: 0.74,
-    frameCount: 4,
-  })
-
-  assert.equal(validation.ok, false)
-  assert.equal(validation.reason, 'photo_like_rigid_motion')
-})
-
-await run('liveness keeps gray-zone antispoof as risk instead of blocking real scans', () => {
-  const validation = validateLivenessEvidence({
-    earSamples: [0.24, 0.17, 0.25],
-    meshDeltas: [0.31, 0.29],
-    irisDeltas: [0.22, 0.24],
-    avgAntispoof: 0.53,
-    avgLiveness: 0.42,
-    frameCount: 3,
-  })
-
-  assert.equal(validation.ok, true)
-  assert.equal(validation.riskFlags.includes('pad_gray_zone'), true)
-  assert.equal(validation.riskFlags.includes('weak_human_liveness_score'), true)
-})
-
-await run('scan strict frame floor matches liveness frame requirement', () => {
-  assert.equal(MIN_SCAN_STRICT_FRAMES, 3)
-
-  const validation = validateLivenessEvidence({
-    earSamples: [0.24, 0.17],
-    meshDeltas: [0.31],
-    irisDeltas: [0.22],
-    avgAntispoof: 0.82,
-    avgLiveness: 0.74,
-    frameCount: 2,
-  })
-
-  assert.equal(validation.ok, false)
-  assert.equal(validation.reason, 'insufficient_liveness_frames')
-})
-
-await run('scan capture policy treats one low PAD frame as risk when temporal liveness is strong', () => {
-  const assessment = getScanCapturePolicyAssessment({
-    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
-    antispoof: 0.29,
-    liveness: 0.82,
-    captureContext: {
-      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
-      verificationFrames: 4,
-      trackWidth: 720,
-      trackHeight: 1280,
-      trackFacingMode: 'user',
-      screenOrientation: 'portrait-primary',
-      mobile: true,
-    },
-    scanDiagnostics: {
-      strictFrames: 3,
-      descriptorSpread: 0.09,
-    },
-    livenessEvidence: {
-      earSamples: [0.25, 0.17, 0.25],
-      meshDeltas: [0.31, 0.29],
-      irisDeltas: [0.22, 0.24],
-      avgAntispoof: 0.42,
-      avgLiveness: 0.82,
-      frameCount: 3,
-    },
-  })
-
-  assert.equal(assessment.ok, true)
-  assert.equal(assessment.riskFlags.includes('single_frame_pad_low'), true)
-  assert.equal(assessment.riskFlags.includes('pad_gray_zone'), true)
+await run('attendance normalization ignores browser PAD claims', () => {
+  const entry = normalizeEntry({ antispoof: 1, liveness: 1, livenessEvidence: { pass: true } })
+  assert.equal(Object.hasOwn(entry, 'antispoof'), false)
+  assert.equal(Object.hasOwn(entry, 'liveness'), false)
+  assert.equal(Object.hasOwn(entry, 'livenessEvidence'), false)
 })
 
 await run('scan capture policy trusts server descriptor spread over legacy raw client spread', () => {
   const assessment = getScanCapturePolicyAssessment({
     descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
-    antispoof: 0.29,
-    liveness: 0.82,
+    antispoof: 0.82,
     captureContext: {
       capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
       verificationFrames: 4,
@@ -2281,14 +2152,6 @@ await run('scan capture policy trusts server descriptor spread over legacy raw c
       descriptorSpread: 5.4,
       serverDescriptorSpread: 0.22,
     },
-    livenessEvidence: {
-      earSamples: [0.25, 0.17, 0.25],
-      meshDeltas: [0.31, 0.29],
-      irisDeltas: [0.22, 0.24],
-      avgAntispoof: 0.42,
-      avgLiveness: 0.82,
-      frameCount: 3,
-    },
   })
 
   assert.equal(assessment.ok, true)
@@ -2301,7 +2164,6 @@ await run('scan capture policy blocks server-authoritative unstable descriptor s
   const assessment = getScanCapturePolicyAssessment({
     descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
     antispoof: 0.82,
-    liveness: 0.82,
     captureContext: {
       capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
       verificationFrames: 4,
@@ -2316,98 +2178,11 @@ await run('scan capture policy blocks server-authoritative unstable descriptor s
       descriptorSpread: 0.12,
       serverDescriptorSpread: 0.9,
     },
-    livenessEvidence: {
-      earSamples: [0.25, 0.17, 0.25],
-      meshDeltas: [0.31, 0.29],
-      irisDeltas: [0.22, 0.24],
-      avgAntispoof: 0.82,
-      avgLiveness: 0.82,
-      frameCount: 3,
-    },
   })
 
   assert.equal(assessment.ok, false)
   assert.equal(assessment.decisionCode, 'blocked_unstable_descriptor_burst')
   assert.equal(assessment.riskFlags.includes('unstable_descriptor_spread'), true)
-})
-
-await run('scan capture policy treats low PAD as risk when only eye signal is weak', () => {
-  const assessment = getScanCapturePolicyAssessment({
-    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
-    antispoof: 0.29,
-    liveness: 0.82,
-    captureContext: {
-      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
-      verificationFrames: 4,
-      trackWidth: 720,
-      trackHeight: 1280,
-      trackFacingMode: 'user',
-      screenOrientation: 'portrait-primary',
-      mobile: true,
-    },
-    scanDiagnostics: {
-      strictFrames: 3,
-      descriptorSpread: 0.09,
-    },
-    livenessEvidence: {
-      earSamples: [0.25, 0.25, 0.25],
-      meshDeltas: [0.31, 0.29],
-      irisDeltas: [0.22, 0.24],
-      avgAntispoof: 0.82,
-      avgLiveness: 0.82,
-      frameCount: 3,
-    },
-  })
-
-  assert.equal(assessment.ok, true)
-  assert.equal(assessment.riskFlags.includes('weak_eye_signal'), true)
-  assert.equal(assessment.riskFlags.includes('single_frame_pad_low'), true)
-})
-
-await run('scan capture policy still blocks low PAD when temporal evidence is static', () => {
-  const assessment = getScanCapturePolicyAssessment({
-    descriptor: Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0)),
-    antispoof: 0.29,
-    liveness: 0.82,
-    captureContext: {
-      capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
-      verificationFrames: 4,
-      trackWidth: 720,
-      trackHeight: 1280,
-      trackFacingMode: 'user',
-      screenOrientation: 'portrait-primary',
-      mobile: true,
-    },
-    scanDiagnostics: {
-      strictFrames: 3,
-      descriptorSpread: 0.09,
-    },
-    livenessEvidence: {
-      earSamples: [0.25, 0.25, 0.25],
-      meshDeltas: [0.05, 0.06],
-      irisDeltas: [0.02, 0.03],
-      avgAntispoof: 0.42,
-      avgLiveness: 0.82,
-      frameCount: 3,
-    },
-  })
-
-  assert.equal(assessment.ok, false)
-  assert.equal(assessment.decisionCode, 'blocked_liveness')
-})
-
-await run('liveness still hard-blocks clear anti-spoof failures', () => {
-  const validation = validateLivenessEvidence({
-    earSamples: [0.24, 0.17, 0.25],
-    meshDeltas: [0.31, 0.29],
-    irisDeltas: [0.22, 0.24],
-    avgAntispoof: 0.2,
-    avgLiveness: 0.9,
-    frameCount: 3,
-  })
-
-  assert.equal(validation.ok, false)
-  assert.equal(validation.reason, 'antispoof_hard_fail')
 })
 
 await run('match support snapshot blocks weak single-sample support on marginal matches', () => {
