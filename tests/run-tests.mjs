@@ -157,6 +157,7 @@ const { validatePublicEnrollmentIdentity } = personsEnrollmentPolicyModule
 const {
   buildDuplicateFaceSnapshot,
   evaluateDuplicateFaceCandidates,
+  findExactPendingDuplicateCandidate,
   DUPLICATE_STATUS_HARD_DUPLICATE,
   DUPLICATE_STATUS_REVIEW_REQUIRED,
 } = duplicateFaceModule
@@ -2783,6 +2784,55 @@ await run('duplicate evaluation degrades hard duplicate to review when the neare
   assert.equal(evaluation?.reviewRequired, true)
   assert.equal(evaluation?.status, DUPLICATE_STATUS_REVIEW_REQUIRED)
   assert.ok((evaluation?.marginToNext ?? 1) < 0.05)
+})
+
+await run('exact pending duplicate is found when an approved tie ranks first', () => {
+  const descriptors = [
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+  ]
+  const candidates = [
+    {
+      id: 'person-approved-exact',
+      approvalStatus: 'approved',
+      descriptors,
+    },
+    {
+      id: 'person-pending-exact',
+      approvalStatus: 'pending',
+      descriptors,
+    },
+  ]
+
+  const evaluation = evaluateDuplicateFaceCandidates(candidates, descriptors)
+  assert.equal(evaluation?.person?.id, 'person-approved-exact')
+  assert.equal(evaluation?.duplicate, false)
+  assert.equal(evaluation?.reviewRequired, true)
+
+  const exactPending = findExactPendingDuplicateCandidate(candidates, descriptors)
+  assert.equal(exactPending?.person?.id, 'person-pending-exact')
+  assert.equal(exactPending?.bestDistance, 0)
+})
+
+await run('one exact sample does not block an otherwise different pending face', () => {
+  const pending = {
+    id: 'person-pending-one-sample',
+    approvalStatus: 'pending',
+    descriptors: [
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
+    ],
+  }
+  const queryDescriptors = [
+    [1, 0, 0, 0],
+    [0, 0, 0, 1],
+    [0, 0, 0, 1],
+  ]
+
+  assert.equal(buildDuplicateFaceSnapshot(pending, queryDescriptors)?.reviewRequired, false)
+  assert.equal(findExactPendingDuplicateCandidate([pending], queryDescriptors), null)
 })
 
 await run('pending profiles can trigger review but cannot hard-block enrollment', () => {
