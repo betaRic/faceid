@@ -93,6 +93,7 @@ import { formatAttendanceDateKey } from '../../lib/attendance-time.js'
 import { createAttendanceV2PostHandler } from '../../app/api/attendance/v2/route.js'
 import { consumePostgresRateLimit, hashRateLimitKey } from '../../lib/postgres/rate-limit-store.js'
 import { enforceRateLimit, getRequestIp } from '../../lib/rate-limit.js'
+import { normalizeEmployeeNameFields } from '../../lib/person-name.js'
 import {
   GET as getHrOfficeSettings,
   PUT as updateHrOfficeSettings,
@@ -209,13 +210,17 @@ after(async () => {
   await closePostgresPool()
 })
 
-async function pngDataUrl({ width = 2, height = 2 } = {}) {
+async function pngDataUrl({
+  width = 2,
+  height = 2,
+  background = { r: 20, g: 80, b: 140, alpha: 1 },
+} = {}) {
   const buffer = await sharp({
     create: {
       width,
       height,
       channels: 4,
-      background: { r: 20, g: 80, b: 140, alpha: 1 },
+      background,
     },
   }).png().toBuffer()
   return `data:image/png;base64,${buffer.toString('base64')}`
@@ -2973,7 +2978,167 @@ test('missing Employee ID does not bypass duplicate face rejection', async () =>
   )
   const payload = await response.json()
   assert.equal(response.status, 409, JSON.stringify(payload))
-  assert.equal(payload.message, 'This registration matches an existing employee record and cannot be submitted again.')
+  assert.equal(payload.message, 'This face matches an existing employee record. Registration cannot continue.')
+})
+
+test('simultaneous same-face public registrations create exactly one pending person', async (t) => {
+  const photos = [
+    await pngDataUrl({ background: { r: 180, g: 30, b: 40, alpha: 1 } }),
+    await pngDataUrl({ background: { r: 30, g: 160, b: 70, alpha: 1 } }),
+  ]
+  const expectedPhotos = await Promise.all(photos.map(async photo => (await normalizeDataImage(photo)).buffer))
+  const descriptors = Array.from({ length: 8 }, (_, sampleIndex) => (
+    Array.from({ length: 128 }, (_, valueIndex) => valueIndex === sampleIndex ? 1 : 0)
+  ))
+  const bodies = ['ConcurrentFaceA', 'ConcurrentFaceB'].map((lastName, index) => (
+    registrationFixture({ employeeId: '', lastName, photoDataUrl: photos[index] })
+  ))
+  const buildAuthoritativeEnrollmentPayload = async () => ({
+    descriptors,
+    captureMetadata: { qualityScore: 0.91 },
+    biometricModelVersion: 'route-test-concurrent-model-v1',
+    diagnostics: {},
+  })
+  await queryPostgres(
+    'DELETE FROM request_rate_limits WHERE key_hash = ANY($1::text[])',
+    [[
+      hashRateLimitKey('persons-ip:direct:unknown'),
+      hashRateLimitKey(`persons-employee:${office.id}:`),
+    ]],
+  )
+  const handler = registrationHandler({ buildAuthoritativeEnrollmentPayload })
+
+  await queryPostgres(`
+    CREATE OR REPLACE FUNCTION route_test_hold_concurrent_person_insert()
+    RETURNS trigger AS $$
+    BEGIN
+      IF NEW.name_lower IN ('concurrentfacea, test', 'concurrentfaceb, test') THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended('route_test:concurrent_person_insert', 0));
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `)
+  await queryPostgres(`
+    DROP TRIGGER IF EXISTS route_test_hold_concurrent_person_insert ON persons;
+    CREATE TRIGGER route_test_hold_concurrent_person_insert
+    BEFORE INSERT ON persons
+    FOR EACH ROW EXECUTE FUNCTION route_test_hold_concurrent_person_insert()
+  `)
+  t.after(async () => {
+    await queryPostgres('DROP TRIGGER IF EXISTS route_test_hold_concurrent_person_insert ON persons')
+    await queryPostgres('DROP FUNCTION IF EXISTS route_test_hold_concurrent_person_insert()')
+  })
+
+  // Hold a test-only insert gate. Without decision serialization, both
+  // transactions pass duplicate detection and wait in the trigger. With it,
+  // one waits in the trigger while the other waits at the biometric lock.
+  const gateClient = await getPostgresPool().connect()
+  let responsesPromise
+  let waitingLocks = []
+  try {
+    await gateClient.query('BEGIN')
+    await gateClient.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      ['route_test:concurrent_person_insert'],
+    )
+    responsesPromise = Promise.all(bodies.map(body => handler(sameOriginRequest('/api/persons', {
+      method: 'POST',
+      body,
+    }))))
+
+    const deadline = Date.now() + 5_000
+    do {
+      const waiting = await gateClient.query(`
+        WITH targets(lock_key) AS (
+          VALUES
+            (hashtextextended($1, 0)),
+            (hashtextextended($2, 0))
+        )
+        SELECT pid, classid, objid, objsubid
+        FROM pg_locks
+        WHERE locktype = 'advisory'
+          AND granted = false
+          AND objsubid = 1
+          AND EXISTS (
+            SELECT 1
+            FROM targets
+            WHERE classid::bigint = ((targets.lock_key >> 32) & 4294967295)
+              AND objid::bigint = (targets.lock_key & 4294967295)
+          )
+        ORDER BY pid
+      `, ['route_test:concurrent_person_insert', 'person_registration:biometric'])
+      waitingLocks = waiting.rows
+      if (waitingLocks.length >= 2) break
+      await new Promise(resolve => setTimeout(resolve, 10))
+    } while (Date.now() < deadline)
+  } finally {
+    await gateClient.query('ROLLBACK').catch(() => {})
+    gateClient.release()
+  }
+
+  const responses = await responsesPromise
+  const payloads = await Promise.all(responses.map(response => response.json()))
+  assert.equal(waitingLocks.length, 2, JSON.stringify({
+    waitingLocks,
+    statuses: responses.map(response => response.status),
+    payloads,
+  }))
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 409], JSON.stringify(payloads))
+
+  const normalizedNames = bodies.map(body => (
+    `${body.profile.lastName}, ${body.profile.firstName}`.toLowerCase()
+  ))
+  const saved = await queryPostgres(`
+    SELECT
+      id, employee_id, name, name_lower, last_name, first_name, middle_name,
+      position, office_id, office_name, division_id, division_name,
+      lifecycle_status, approval_status, descriptors, sample_count,
+      photo_path, photo_content_type, data
+    FROM persons
+    WHERE name_lower = ANY($1::text[])
+    ORDER BY name_lower
+  `, [normalizedNames])
+  assert.equal(saved.rowCount, 1, JSON.stringify(saved.rows))
+
+  const winner = saved.rows[0]
+  const winnerIndex = winner.name_lower === normalizedNames[0] ? 0 : 1
+  const winnerBody = bodies[winnerIndex].profile
+  const winnerNames = normalizeEmployeeNameFields(winnerBody)
+  const successPayload = payloads.find(payload => payload.ok)
+  assert.equal(winner.id, successPayload.personId)
+  assert.equal(winner.employee_id, '')
+  assert.equal(winner.name, winnerNames.name)
+  assert.equal(winner.name_lower, normalizedNames[winnerIndex])
+  assert.equal(winner.last_name, winnerNames.lastName)
+  assert.equal(winner.first_name, winnerNames.firstName)
+  assert.equal(winner.middle_name, winnerNames.middleName)
+  assert.equal(winner.position, winnerBody.position)
+  assert.equal(winner.office_id, winnerBody.officeId)
+  assert.equal(winner.office_name, winnerBody.officeName)
+  assert.equal(winner.division_id, winnerBody.divisionId)
+  assert.equal(winner.division_name, '')
+  assert.equal(winner.lifecycle_status, 'pending')
+  assert.equal(winner.approval_status, 'pending')
+  assert.equal(winner.sample_count, descriptors.length)
+  assert.deepEqual(winner.descriptors, descriptors.map(vector => ({ vector })))
+  assert.equal(winner.data.biometricModelVersion, 'route-test-concurrent-model-v1')
+  assert.equal(winner.photo_content_type, 'image/jpeg')
+  assert.match(winner.photo_path, /\.jpg$/)
+  const savedPhoto = await readFile(path.join(getLocalFileStorageRoot(), ...winner.photo_path.split('/')))
+  assert.deepEqual(savedPhoto, expectedPhotos[winnerIndex])
+  assert.notDeepEqual(savedPhoto, expectedPhotos[1 - winnerIndex])
+
+  const audit = await queryPostgres(`
+    SELECT action, summary
+    FROM audit_logs
+    WHERE target_id = $1
+      AND action = 'person_submission_create'
+  `, [winner.id])
+  assert.deepEqual(audit.rows, [{
+    action: 'person_submission_create',
+    summary: `Public enrollment submitted for ${winner.name}`,
+  }])
 })
 
 test('re-enrollment is bound to person ID and preserves employee ownership fields', async () => {

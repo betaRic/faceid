@@ -2927,6 +2927,19 @@ await run('PostgreSQL public enrollment binds lifecycle status before active and
   )
 })
 
+await run('PostgreSQL public registration enrollment is create-only', async () => {
+  const source = await readFile(new URL('../lib/postgres/person-store.js', import.meta.url), 'utf8')
+  const start = source.indexOf('export async function enrollLocalPerson')
+  const end = source.indexOf('export async function writeLocalEnrollmentAuditLog', start)
+  assert.notEqual(start, -1, 'Could not find enrollLocalPerson')
+  assert.notEqual(end, -1, 'Could not find end of enrollLocalPerson')
+  const enrollmentSource = source.slice(start, end)
+
+  for (const forbidden of ['const existing = null', 'ON CONFLICT (id)', 'DO UPDATE SET']) {
+    assert.equal(enrollmentSource.includes(forbidden), false, `enrollLocalPerson still contains: ${forbidden}`)
+  }
+})
+
 await run('PostgreSQL employee lifecycle transition binds the authoritative lifecycle status', async () => {
   const source = await readFile(new URL('../lib/postgres/person-store.js', import.meta.url), 'utf8')
   const params = extractPostgresQueryParams(source, 'SET lifecycle_status = $2,')
