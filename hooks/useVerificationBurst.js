@@ -18,7 +18,6 @@ import {
 } from '@/lib/config'
 import { MIN_SCAN_STRICT_FRAMES } from '@/lib/attendance/capture-policy'
 import { selectOvalReadyFace, buildOvalCaptureCanvas } from '@/lib/biometrics/oval-capture'
-import { analyzeBurstLiveness } from '@/lib/biometrics/liveness'
 
 const wait = duration => new Promise(resolve => {
   window.setTimeout(resolve, duration)
@@ -50,20 +49,7 @@ function measureFrameMetrics(canvas, box) {
   }
 }
 
-let irisWarningIssued = false
-function warnIfMissingIrisLandmarks(mesh) {
-  if (irisWarningIssued || process.env.NODE_ENV === 'production') return
-  if (Array.isArray(mesh) && mesh.length < 478) {
-    irisWarningIssued = true
-    console.warn(
-      `[liveness] Face mesh length ${mesh.length} — iris landmarks (indices 468-477) are missing. `
-      + 'Iris motion signal will always be null. Verify Human config has face.iris.enabled=true.',
-    )
-  }
-}
-
 function mapDetectedFace(face) {
-  warnIfMissingIrisLandmarks(face.mesh)
   return {
     detection: {
       box: {
@@ -77,7 +63,6 @@ function mapDetectedFace(face) {
     landmarks: { positions: face.mesh },
     descriptor: face.embedding,
     antispoof: face.real ?? null,
-    liveness: face.live ?? null,
     rotation: extractFaceRotationAngles(face),
   }
 }
@@ -147,22 +132,7 @@ export function useVerificationBurst(camera) {
     if (captures.length === 0) return null
 
     const strictCaptures = captures.filter(capture => capture?.primary?.strictOval)
-    // Strict-oval captures are used for both descriptor aggregation AND liveness
-    // analysis. Loose/fallback captures have jittery mesh coordinates that can
-    // inflate EAR variance and mesh delta signals from detection noise alone,
-    // producing false liveness positives on a held-still photo.
     if (strictCaptures.length < MIN_SCAN_STRICT_FRAMES) return null
-
-    const livenessFrames = strictCaptures.map(capture => ({
-      primary: {
-        detection: {
-          landmarks: capture.primary?.detection?.landmarks || null,
-          antispoof: capture.primary?.detection?.antispoof ?? null,
-          liveness: capture.primary?.detection?.liveness ?? null,
-        },
-      },
-    }))
-    const livenessEvidence = analyzeBurstLiveness(livenessFrames)
 
     const selectedCaptures = selectStableVerificationCaptures(strictCaptures, {
       aggregationCount: Math.min(3, strictCaptures.length),
@@ -210,7 +180,6 @@ export function useVerificationBurst(camera) {
       fusedDescriptor,
       descriptorSpread,
       burstDiagnostics,
-      livenessEvidence,
     }
   }, [camera])
 

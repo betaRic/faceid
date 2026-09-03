@@ -32,7 +32,7 @@ Existing employees are not expected to register or enroll again. Biometrics are 
 | Workflow | Entry | Authority |
 |---|---|---|
 | Registration | `/registration` → `POST /api/persons` | Server embedding, duplicate checks, PostgreSQL transaction |
-| Attendance | `/scan` → challenge → `POST /api/attendance/v2` | Server embedding, liveness/PAD policy, access-code identity, workforce/geofence checks |
+| Attendance | `/scan` → challenge → `POST /api/attendance/v2` | Server embedding and anti-spoof policy, access-code identity, workforce/geofence checks |
 | Employee review | `/admin` | Admin/HR session and office scope |
 | Workforce and DTR | `/admin` and HR APIs | PostgreSQL policy, attendance, correction, and audit records |
 | Hosting | root `app.js` + `web.config` | SmartASP `httpPlatformHandler` |

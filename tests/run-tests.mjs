@@ -1732,7 +1732,7 @@ await run('system evidence does not echo dependency failure details', async () =
   assert.doesNotMatch(JSON.stringify(report), /private|postgres:\/\//i)
 })
 
-await run('system evidence requires every Human model used by verification and server enrollment', async () => {
+await run('system evidence requires every Human face and anti-spoof model in use', async () => {
   const report = await buildSystemEvidence({
     query: async sql => {
       if (/SHOW server_version/i.test(sql)) return { rows: [{ server_version: '18.1' }] }
@@ -1751,15 +1751,15 @@ await run('system evidence requires every Human model used by verification and s
     },
     cwd: 'D:/projects/faceid',
     access: async target => {
-      if (String(target).endsWith('liveness.bin')) throw new Error('missing')
+      if (String(target).endsWith('antispoof.bin')) throw new Error('missing')
     },
     readdir: async () => [],
     readFile: async () => 'build-123',
   })
 
-  assert.equal(report.models.human.requiredFileCount, 12)
+  assert.equal(report.models.human.requiredFileCount, 8)
   assert.equal(report.models.human.status, 'failing')
-  assert.deepEqual(report.models.human.missing, ['liveness.bin'])
+  assert.deepEqual(report.models.human.missing, ['antispoof.bin'])
   assert.ok(report.actions.some(action => action.id === 'human-models'))
 })
 
@@ -2145,11 +2145,15 @@ await run('server attendance anti-spoof aggregation fails closed on incomplete s
   }
 })
 
-await run('attendance normalization ignores browser PAD claims', () => {
-  const entry = normalizeEntry({ antispoof: 1, liveness: 1, livenessEvidence: { pass: true } })
+await run('attendance normalization ignores browser anti-spoof claims', () => {
+  const entry = normalizeEntry({ antispoof: 1 })
   assert.equal(Object.hasOwn(entry, 'antispoof'), false)
-  assert.equal(Object.hasOwn(entry, 'liveness'), false)
-  assert.equal(Object.hasOwn(entry, 'livenessEvidence'), false)
+})
+
+await run('maintenance evidence separates active anti-spoof blocks from legacy liveness evidence', () => {
+  assert.equal(classifyScanEvent({ decisionCode: 'blocked_antispoof' }), 'antispoof_observation_block')
+  assert.equal(classifyScanEvent({ decisionCode: 'blocked_liveness' }), 'other_biometric_failure')
+  assert.equal(classifyScanEvent({ decisionCode: 'blocked_missing_liveness' }), 'other_biometric_failure')
 })
 
 await run('scan capture policy trusts server descriptor spread over legacy raw client spread', () => {

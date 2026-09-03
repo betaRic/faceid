@@ -7,6 +7,7 @@ import KioskSuccessScreen from '@/components/kiosk/KioskSuccessScreen'
 import KioskAlert from '@/components/kiosk/KioskAlert'
 import EmployeeReenrollPage from '@/app/admin/employee/[personId]/reenroll/EmployeeReenrollPage'
 import ThemeProvider from '@/components/ThemeProvider'
+import { getSafeDecisionMessage } from '@/lib/kiosk-utils'
 
 const kioskState = {
   kioskState: 'idle', setKioskState: vi.fn(), currentMatch: null, setCurrentMatch: vi.fn(),
@@ -101,6 +102,14 @@ describe('kiosk presentation', () => {
   it('announces blocked and unknown scan feedback', () => {
     render(<KioskAlert alertState="Face not recognized" />)
     expect(screen.getByRole('alert')).toHaveTextContent('Face not recognized')
+  })
+
+  it('shows plain photo or screen guidance for an anti-spoof failure', () => {
+    const message = getSafeDecisionMessage('blocked_antispoof')
+    render(<KioskAlert alertState={message.detail} />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Photo or screen detected')
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/blink|move naturally|liveness/i)
   })
 
   it('keeps profile refresh authorized, named, and non-destructive', () => {

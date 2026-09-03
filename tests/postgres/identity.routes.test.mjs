@@ -1084,12 +1084,12 @@ test('legacy shared Regional PIN session keeps shared attribution', () => {
   assert.equal(session.authMethod, 'shared_regional_pin')
 })
 
-test('public health reports process liveness without claiming dependency readiness', async () => {
+test('public health reports process health without claiming dependency readiness', async () => {
   const response = await getHealth()
   const payload = await response.json()
   assert.deepEqual(payload, {
     ok: true,
-    kind: 'process-liveness',
+    kind: 'process-health',
     service: 'faceattend',
     timestamp: payload.timestamp,
   })
@@ -4102,18 +4102,6 @@ test('server anti-spoof blocks missing and weak authoritative scores despite bro
       { frameDataUrl: 'data:image/jpeg;base64,ANTISPOOF-B' },
     ],
     antispoof: 1,
-    liveness: 1,
-    livenessEvidence: {
-      earSamples: [0.24, 0.17, 0.25],
-      meshDeltas: [0.31, 0.29],
-      irisDeltas: [0.22, 0.24],
-      avgAntispoof: 1,
-      avgLiveness: 1,
-      hasEyeSignal: true,
-      hasMotionSignal: true,
-      frameCount: 3,
-      pass: true,
-    },
     captureContext: {
       capturePolicyVersion: 'scan-v4',
       verificationFrames: 3,

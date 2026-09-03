@@ -287,7 +287,6 @@ export function useKioskLoop({
           fusedDescriptor,
           descriptorSpread,
           burstDiagnostics,
-          livenessEvidence,
         } = burstResult
         const primaryVerification = selectPrimaryFace(burstResult.detections, bestCanvas.width, bestCanvas.height)
 
@@ -324,34 +323,6 @@ export function useKioskLoop({
           return
         }
 
-        const antispoof = primaryVerification.detection.antispoof
-        const liveness = primaryVerification.detection.liveness
-
-        // Burst-level anti-spoof + liveness gate. Uses temporal signals across
-        // all strict-oval frames (not just the primary), which is more robust
-        // than any single-frame PAD/liveness score.
-        if (livenessEvidence && !livenessEvidence.pass) {
-          recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
-          setKioskState('blocked')
-          pausedRef.current = true
-          const message = (
-            livenessEvidence.reason === 'antispoof_failed'
-              ? 'Anti-spoof check failed. Please present your live face.'
-              : livenessEvidence.reason === 'static_image_detected'
-                ? 'Static image detected. Please present your live face.'
-                : livenessEvidence.reason === 'photo_like_rigid_motion'
-                  ? 'Photo-like scan detected. Please blink naturally and scan your live face.'
-                  : livenessEvidence.reason === 'missing_motion_signal'
-                    ? 'Please hold steady and look at the camera naturally.'
-                    : livenessEvidence.reason === 'missing_eye_signal'
-                      ? 'Please blink naturally and try again.'
-                      : 'Liveness check failed. Please scan again.'
-          )
-          showAlertAndResume(message, 3500)
-          confirmRef.current = 0
-          return
-        }
-
         setCapturedFrameUrl(bestCanvas.toDataURL('image/jpeg', 0.82))
         const networkStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
         const baseAttendanceEntry = {
@@ -365,8 +336,6 @@ export function useKioskLoop({
           fieldDuty: fieldDuty || undefined,
           confidence: 0,
           landmarks: landmarks || [],
-          antispoof,
-          liveness,
           captureContext: {
             ...captureContext,
             capturePolicyVersion: SCAN_CAPTURE_POLICY_VERSION,
@@ -406,7 +375,6 @@ export function useKioskLoop({
             clientKey: captureContext.kioskId || '',
             source: 'web-scan',
           },
-          livenessEvidence: livenessEvidence || null,
           verificationMode: 'challenge_v2',
           verificationStage: 'passive',
           timestamp: timing.timestamp,
@@ -510,7 +478,7 @@ export function useKioskLoop({
               employeeViewSessionExpiresAt: error?.employeeViewSessionExpiresAt || null,
             })
             setAlertState(null)
-          } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {
+          } else if (decisionCode === 'blocked_antispoof') {
             setKioskState('unknown')
             showAlertAndResume(safeDecision.detail, 3500)
           } else {
@@ -557,7 +525,7 @@ export function useKioskLoop({
           employeeViewSessionExpiresAt: error?.employeeViewSessionExpiresAt || null,
         })
         setAlertState(null)
-      } else if (decisionCode === 'blocked_liveness' || decisionCode === 'blocked_antispoof') {
+      } else if (decisionCode === 'blocked_antispoof') {
         setKioskState('unknown')
         showAlertAndResume(safeDecision.detail, 3500)
       } else {
