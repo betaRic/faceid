@@ -1533,7 +1533,7 @@ git commit -m "fix: hide public route errors"
 - Modify: `app/api/hr/workforce-records/route.js`
 - Test: `tests/security/server-error-responses.test.mjs`
 
-- [ ] **Step 1: Convert declared workforce validation failures**
+- [x] **Step 1: Convert declared workforce validation failures**
 
 Import `SafeRequestError` and `serverErrorResponse` in the workforce route. Replace each validation `throw new Error(message)` with:
 
@@ -1561,7 +1561,7 @@ Use this exact message-to-code mapping for both POST and PATCH while keeping eve
 | `A selected employee already has an overlapping official order.` | `workforce_date_conflict` |
 | `A valid policy scope is required.` | `invalid_policy_scope` |
 
-- [ ] **Step 2: Replace every staff and administrator raw catch**
+- [x] **Step 2: Replace every staff and administrator raw catch**
 
 For each listed route and method, replace `error.message` response data with the exact context and public message below:
 
@@ -1605,24 +1605,26 @@ return serverErrorResponse(error, {
 
 Keep expected 400, 401, 403, 404, and 409 responses outside the unexpected catch. A database uniqueness error or programming exception must not become a client-visible message.
 
-- [ ] **Step 3: Run the source guard**
+- [x] **Step 3: Run the source guard**
 
 Run: `node --test tests/server-error.test.mjs tests/security/server-error-responses.test.mjs`
 
 Expected: PASS with no raw caught-error message in API responses.
 
-- [ ] **Step 4: Run focused route tests**
+- [x] **Step 4: Run focused route tests**
 
 Run: `npm run test:routes -- --test-name-pattern="HR|attendance correction|workforce|office"`
 
 Expected: PASS; expected validation text remains stable and unexpected failures are generic.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/api/admin app/api/admins app/api/hr-users app/api/hr lib/http/server-error.js tests/security/server-error-responses.test.mjs
 git commit -m "fix: hide staff route errors"
 ```
+
+**Accepted 2026-09-08:** Implemented in `c1d0a34`. All `26` remaining staff and Administrator caught-error response fields were replaced with fixed public messages and tracking IDs. All workforce POST/PATCH validation failures keep their exact approved wording, status 400, and specific safe code; native database and programming failures return generic 500 responses. Real route tests prove both the declared validation response and a PostgreSQL-triggered private failure. Fresh Node 22 checks passed: helper plus source guard `4/4`, new runtime regressions `2/2`, focused HR/attendance/workforce/office routes `50/50`, units `118/118`, contracts `3/3`, all route checks `107/107`, and the normal `npm test` command exited 0, including `42` safety and `82` UI checks. Final independent reviews: specification `COMPLIANT`; quality `APPROVED` with no Critical or Important findings. The reviewer noted that the source guard is pattern-based, so route-level failure tests remain necessary for future catch changes.
 
 ## Task 12: Release 1 verification and evidence
 
