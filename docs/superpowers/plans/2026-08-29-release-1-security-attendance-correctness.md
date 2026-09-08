@@ -1633,7 +1633,7 @@ git commit -m "fix: hide staff route errors"
 - Modify only if a failing check reveals a Release 1 defect.
 - Do not begin Release 2 cleanup while fixing Release 1 verification.
 
-- [ ] **Step 1: Confirm working tree contains only intended Release 1 changes**
+- [x] **Step 1: Confirm working tree contains only intended Release 1 changes**
 
 Run: `git status --short`
 
@@ -1643,7 +1643,7 @@ Run: `git diff --check`
 
 Expected: no whitespace errors.
 
-- [ ] **Step 2: Prove Node.js release version**
+- [x] **Step 2: Prove Node.js release version**
 
 Run: `node --version`
 
@@ -1651,19 +1651,19 @@ Expected for final release evidence: `v22.x.x`.
 
 If local shell is not Node.js 22, record that limitation and rerun final proof in the configured Node.js 22 environment. Do not change global Node configuration without user authorization.
 
-- [ ] **Step 3: Run all non-route tests**
+- [x] **Step 3: Run all non-route tests**
 
 Run: `npm test`
 
 Expected: PASS.
 
-- [ ] **Step 4: Run all PostgreSQL route tests**
+- [x] **Step 4: Run all PostgreSQL route tests**
 
 Run: `npm run test:routes`
 
 Expected: PASS against the guarded local PostgreSQL 18 `faceid_rc_*` database. The runner must refuse missing or unsafe `FACEID_TEST_DATABASE_URL` rather than using production `DATABASE_URL`.
 
-- [ ] **Step 5: Run complete liveness and raw-error checks**
+- [x] **Step 5: Run complete liveness and raw-error checks**
 
 Run:
 
@@ -1675,7 +1675,7 @@ rg -n "(message|error|detail|reason)\s*:\s*(error\s+instanceof\s+Error\s*\?\s*er
 
 Expected: liveness search output is limited to the explicit legacy decision-code mapping and labeled legacy fixtures; the raw-error guard passes; the final raw-error search prints nothing. No liveness import, model path, request or response field, capture decision, UI guidance, or active maintenance category remains.
 
-- [ ] **Step 6: Build the hosting artifact**
+- [x] **Step 6: Build the hosting artifact**
 
 Run: `npm run build:hosting`
 
@@ -1695,7 +1695,7 @@ Using local test accounts and non-production data:
 8. Attendance PIN flow behaves exactly as before.
 9. Forced internal route failure returns a tracking ID and no database or file-system detail.
 
-- [ ] **Step 8: Review final diff**
+- [x] **Step 8: Review final diff**
 
 Run: `git diff e38ae78..HEAD --stat`
 
@@ -1704,3 +1704,7 @@ Run: `git log --oneline e38ae78..HEAD`
 Expected: small, named commits matching Tasks 1–11 plus the approved plan commit; no Release 2 or Release 3 work mixed in.
 
 If any check exposes a defect, return to the owning task, add a focused failing test, fix only that defect, rerun the task checks, and amend that task before repeating this final gate. Do not create an empty “verification” commit.
+
+**2026-09-08 automated verification evidence:** The worktree and final diff check were clean. Final proof used Node.js `v22.23.2`. `npm test` passed 42 safety checks, 118 unit checks, 3 contract checks, and 82 UI checks. The guarded PostgreSQL route suite passed 107 checks. The raw-error guard passed 2 checks and the direct raw-error search returned no matches. The liveness search found only the two explicitly retained legacy decision-code mappings; it found no active liveness model, import, request field, response field, capture rule, or user guidance. `npm run build:hosting` completed successfully. As already recorded for Release 4, the build still materializes OpenVINO and this Release 1 work does not claim that packaging issue is fixed. The final change list and commit history contain Release 1 Tasks 1–11 only; no Release 2 or Release 3 cleanup is mixed in.
+
+Step 7 remains open. Automated PostgreSQL and route checks cover the rules behind items 1–5, 8, and 9, but they do not count as a manual browser or device check. Printed/displayed replay rejection and genuine-face success still require a real camera and real test conditions. Release 1 is therefore an automated release candidate, not yet a fully accepted production release. No deployment was performed.
