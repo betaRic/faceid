@@ -47,7 +47,7 @@ export async function GET(request, { params }) {
       },
     })
   } catch (error) {
-    console.error('[PersonPhotoAPI] Photo read failed', { code: error?.code, message: error?.message })
+    console.error('[PersonPhotoAPI] Photo read failed', { code: error?.code, internalMessage: error?.message })
     return NextResponse.json(
       { ok: false, message: 'Failed to load employee photo.' },
       { status: 500 },
@@ -110,7 +110,7 @@ export async function POST(request, { params }) {
     })
   } catch (error) {
     const status = toHttpStatus(error?.status)
-    console.error('[PersonPhotoAPI] Photo save failed', { code: error?.code, message: error?.message })
+    console.error('[PersonPhotoAPI] Photo save failed', { code: error?.code, internalMessage: error?.message })
     return NextResponse.json(
       { ok: false, message: status === 400 ? 'Choose a valid JPEG, PNG, or WebP image.' : 'Failed to save profile photo.' },
       { status },

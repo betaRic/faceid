@@ -6,6 +6,7 @@ import { getHrSessionCookieName, hrSessionAllowsOffice, parseHrSessionCookieValu
 import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
 import { recalculateDailyAttendanceMetrics } from '@/lib/daily-attendance'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listOfficeRecords } from '@/lib/office-directory'
 import { queryPostgres } from '@/lib/postgres/client'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
@@ -51,6 +52,9 @@ export async function GET(request) {
       .map(row => ({ id: row.employeeId ? `${row.employeeId}_${date}` : `${row.name}_${date}`, ...row }))
     return NextResponse.json({ ok: true, records })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to load daily attendance records.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/attendance/daily:GET',
+      publicMessage: 'Failed to load daily attendance records.',
+    })
   }
 }

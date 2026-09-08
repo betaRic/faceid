@@ -104,7 +104,10 @@ import {
 import { POST as createHrUser } from '../../app/api/hr-users/route.js'
 import { PUT as updateHrUser } from '../../app/api/hr-users/[hrUserId]/route.js'
 import { GET as getOffices } from '../../app/api/offices/route.js'
-import { GET as getPublicOffices } from '../../app/api/public/offices/route.js'
+import {
+  createPublicOfficesGetHandler,
+  GET as getPublicOffices,
+} from '../../app/api/public/offices/route.js'
 
 const office = {
   id: 'office-route-test',
@@ -1975,6 +1978,28 @@ test('registration hides internal error details behind a reference ID', async ()
   assert.doesNotMatch(JSON.stringify(payload), /postgres|private-registration-host/i)
 })
 
+test('public route hides internal error behind a reference ID', async () => {
+  const originalConsoleError = console.error
+  console.error = () => {}
+  try {
+    const handler = createPublicOfficesGetHandler({
+      listOffices: async () => {
+        throw new Error('postgres://private-office-user:private-password@private-host/faceid')
+      },
+    })
+    const response = await handler()
+    const payload = await response.json()
+
+    assert.equal(response.status, 500)
+    assert.match(payload.errorId, /^[0-9a-f-]{36}$/i)
+    assert.equal(payload.message, `Failed to load offices. Reference: ${payload.errorId}`)
+    assert.deepEqual(Object.keys(payload).sort(), ['errorId', 'message', 'ok'])
+    assert.doesNotMatch(JSON.stringify(payload), /private-office-user|private-password|private-host/i)
+  } finally {
+    console.error = originalConsoleError
+  }
+})
+
 test('server enrollment capture validation uses the approved safe request contract', async () => {
   await assert.rejects(
     buildAuthoritativeEnrollmentPayload([], null),
@@ -3371,6 +3396,38 @@ test('employee view sessions allow optional Employee ID but require canonical pe
     () => createEmployeeViewSessionCookieValue({ employeeId: '955555' }),
     /person ID is required/i,
   )
+})
+
+test('attendance table returns safe 503 when office policy is missing', async () => {
+  const response = await register(registrationFixture({
+    employeeId: '955550',
+    lastName: 'MissingPolicy',
+    photoDataUrl: await pngDataUrl(),
+  }))
+  const enrolled = await response.json()
+  assert.equal(response.status, 200, JSON.stringify(enrolled))
+  await queryPostgres(
+    `UPDATE persons
+     SET office_id = '', office_name = '', data = data || '{"officeId":"","officeName":""}'::jsonb
+     WHERE id = $1`,
+    [enrolled.personId],
+  )
+
+  const token = createEmployeeViewSessionCookieValue({
+    personId: enrolled.personId,
+    employeeId: '955550',
+  })
+  const attendance = await getAttendanceTable(sameOriginRequest('/api/attendance/table?month=8&year=2026', {
+    headers: { 'x-employee-view-session': token },
+  }))
+  const payload = await attendance.json()
+
+  assert.equal(attendance.status, 503, JSON.stringify(payload))
+  assert.deepEqual(payload, {
+    ok: false,
+    code: 'office_policy_unavailable',
+    message: 'Office work policy is not configured for attendance history.',
+  })
 })
 
 test('employee with no Employee ID can load attendance by canonical session person ID', async () => {

@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import { getSessionOfficeFilter, resolveEmployeeManagementSession } from '@/lib/employee-access'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listLocalPersons } from '@/lib/postgres/person-store'
 
 export async function GET(request) {
@@ -19,10 +20,10 @@ export async function GET(request) {
 
     return NextResponse.json({ ok: true, pending })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load pending count.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/persons/pending-count:GET',
+      publicMessage: 'Failed to load pending count.',
+    })
   }
 }
 

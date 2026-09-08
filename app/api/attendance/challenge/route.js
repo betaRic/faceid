@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { createOriginGuard } from '@/lib/csrf'
 import { touchKioskDevice } from '@/lib/kiosk-devices'
 import { prepareAttendanceChallenge } from '@/lib/attendance/process'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { postgresEnabled } from '@/lib/postgres/client'
 
 export async function POST(request) {
@@ -30,10 +31,10 @@ export async function POST(request) {
     })
     return NextResponse.json({ ok: true, challenge, riskFlags })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to issue attendance challenge.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/attendance/challenge:POST',
+      publicMessage: 'Failed to issue attendance challenge.',
+    })
   }
 }
 

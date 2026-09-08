@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { adminSessionAllowsOffice, getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { getHrSessionCookieName, hrSessionAllowsOffice, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listOfficeRecords, getOfficeEmployeeCounts } from '@/lib/office-directory'
 import { toHrOfficeSummary } from '@/lib/offices/hr-office-settings'
 
@@ -32,10 +33,10 @@ export async function GET(request) {
 
     return NextResponse.json({ ok: true, offices: enriched })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load offices.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/offices:GET',
+      publicMessage: 'Failed to load offices.',
+    })
   }
 }
 

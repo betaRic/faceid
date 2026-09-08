@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getEmployeeDailyAttendanceRecord } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { formatAttendanceDateKey, getAttendanceHour } from '@/lib/attendance-time'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
@@ -68,10 +69,10 @@ export async function GET(request) {
       }))
     return buildAttendanceMeResponse({ date, employeeId: resolvedEmployeeId, entries })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load attendance records.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/attendance/me:GET',
+      publicMessage: 'Failed to load attendance records.',
+    })
   }
 }
 

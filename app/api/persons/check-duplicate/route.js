@@ -3,13 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { DESCRIPTOR_LENGTH } from '@/lib/config'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { enforceRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { checkLocalDuplicateFace } from '@/lib/postgres/person-store'
-
-function toHttpStatus(value) {
-  const status = Number(value)
-  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
-}
 
 export async function POST(request) {
   const guard = createOriginGuard()
@@ -65,10 +61,10 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, duplicate: false, reviewRequired: false })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to check duplicate.' },
-      { status: toHttpStatus(error?.status) },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/persons/check-duplicate:POST',
+      publicMessage: 'Failed to check duplicate.',
+    })
   }
 }
 

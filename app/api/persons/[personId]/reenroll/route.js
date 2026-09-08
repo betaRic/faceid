@@ -119,7 +119,7 @@ export function createPersonReenrollHandler({
       })
     } catch (error) {
       const status = toHttpStatus(error?.status)
-      console.error('[PersonReenrollAPI] Re-enrollment failed', { code: error?.code, message: error?.message })
+      console.error('[PersonReenrollAPI] Re-enrollment failed', { code: error?.code, internalMessage: error?.message })
       return NextResponse.json({
         ok: false,
         code: error?.code || 'reenrollment_failed',

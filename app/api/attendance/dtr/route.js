@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { buildEmployeeDtrDocument } from '@/lib/dtr-server'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { postgresEnabled } from '@/lib/postgres/client'
 import {
   buildDtrWorkbookBytes,
@@ -50,10 +51,10 @@ export async function GET(request) {
 
     return createDtrWorkbookResponse(bytes, filename)
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to generate DTR workbook.' },
-      { status: error?.status || 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/attendance/dtr:GET',
+      publicMessage: 'Failed to generate DTR workbook.',
+    })
   }
 }
 

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { listDailyAttendanceRecordsForDate } from '@/lib/attendance-daily-store'
 import { buildAttendanceSummary } from '@/lib/attendance-summary'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listOfficeRecords } from '@/lib/office-directory'
 import { isPublicAttendanceEnabled } from '@/lib/public-features'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
@@ -50,10 +51,10 @@ export async function GET(request) {
 
     return NextResponse.json({ ok: true, records })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load daily attendance records.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/attendance/public:GET',
+      publicMessage: 'Failed to load daily attendance records.',
+    })
   }
 }
 

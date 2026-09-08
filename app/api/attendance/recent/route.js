@@ -7,6 +7,7 @@ import {
   sessionAllowsOffice,
 } from '@/lib/employee-access'
 import { serializeHrRecentAttendance } from '@/lib/attendance/response'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export async function GET(request) {
@@ -25,10 +26,10 @@ export async function GET(request) {
       attendance: resolvedSession.role === 'hr' ? attendance.map(serializeHrRecentAttendance) : attendance,
     })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load attendance.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/attendance/recent:GET',
+      publicMessage: 'Failed to load attendance.',
+    })
   }
 }
 

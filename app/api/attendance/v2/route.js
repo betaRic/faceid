@@ -92,7 +92,7 @@ export function createAttendanceV2PostHandler({ services = null } = {}) {
       console.error('[attendance/v2] Unhandled error', {
         errorId,
         stage: safeErrorStage,
-        message: error instanceof Error ? error.message : String(error),
+        internalMessage: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       })
       await writeAuditLog(null, {

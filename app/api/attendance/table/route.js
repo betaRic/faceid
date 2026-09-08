@@ -1,6 +1,7 @@
 import { listEmployeeDailyAttendanceRecords, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
+import { SafeRequestError, serverErrorResponse } from '@/lib/http/server-error'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 import { loadWorkforcePolicies, resolveEmployeeDayPolicy } from '@/lib/workforce-policy'
@@ -66,7 +67,10 @@ export async function GET(request) {
     const logs = await listLocalAttendanceLogs({ personId, startMs: startDate.getTime(), endMs: endDate.getTime(), direction: 'asc', limit: 3000 })
     const office = await getOfficeRecord(db, access.person?.officeId || logs[0]?.officeId || '')
     if (!office?.workPolicy) {
-      throw new Error('Office work policy is not configured for attendance history.')
+      throw new SafeRequestError(
+        'Office work policy is not configured for attendance history.',
+        { status: 503, code: 'office_policy_unavailable' },
+      )
     }
     const policies = await loadWorkforcePolicies()
     const logsByDate = {}
@@ -118,8 +122,10 @@ export async function GET(request) {
         days,
     })
   } catch (error) {
-    console.error('Attendance table error:', error)
-    return Response.json({ ok: false, message: error.message }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/attendance/table:GET',
+      publicMessage: 'Failed to load attendance table.',
+    })
   }
 }
 

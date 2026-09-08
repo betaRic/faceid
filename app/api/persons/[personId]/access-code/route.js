@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
 import { resolveEmployeeManagementSession, sessionAllowsOffice } from '@/lib/employee-access'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { postgresEnabled } from '@/lib/postgres/client'
 import { getLocalPersonById, regenerateLocalAccessCode } from '@/lib/postgres/person-store'
 
@@ -49,9 +50,9 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ ok: true, accessCode: updated.accessCode })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to regenerate the access code.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/persons/[personId]/access-code:POST',
+      publicMessage: 'Failed to regenerate the access code.',
+    })
   }
 }

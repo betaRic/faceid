@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listOfficeRecords } from '@/lib/office-directory'
-import { postgresEnabled } from '@/lib/postgres/client'
 
 function toPublicOffice(office) {
   return {
@@ -24,24 +24,25 @@ function toPublicOffice(office) {
   }
 }
 
-export async function GET() {
-  try {
-    const db = null
-    const offices = await listOfficeRecords(db)
-
-    return NextResponse.json({
-      ok: true,
-      offices: offices
-        .filter(office => (office?.status || 'active') !== 'inactive')
-        .map(toPublicOffice),
-    })
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load offices.' },
-      { status: 500 },
-    )
+export function createPublicOfficesGetHandler({ listOffices = listOfficeRecords } = {}) {
+  return async function getPublicOffices() {
+    try {
+      const offices = await listOffices(null)
+      return NextResponse.json({
+        ok: true,
+        offices: offices
+          .filter(office => (office?.status || 'active') !== 'inactive')
+          .map(toPublicOffice),
+      })
+    } catch (error) {
+      return serverErrorResponse(error, {
+        context: 'api/public/offices:GET',
+        publicMessage: 'Failed to load offices.',
+      })
+    }
   }
 }
 
+export const GET = createPublicOfficesGetHandler()
 
 

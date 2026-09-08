@@ -1,6 +1,7 @@
 import { listEmployeeDailyAttendanceRecordsForMonth, hasDailyAttendanceLogs } from '@/lib/attendance-daily-store'
 import { resolveAttendanceViewer } from '@/lib/employee-access'
 import { buildAttendanceEntryTiming } from '@/lib/attendance-time'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { listLocalAttendanceLogs } from '@/lib/postgres/report-store'
 
 export const dynamic = 'force-dynamic'
@@ -81,8 +82,10 @@ export async function GET(request) {
         records: records.slice(0, 50),
     })
   } catch (error) {
-    console.error('Monthly summary error:', error)
-    return Response.json({ ok: false, message: error.message }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/attendance/monthly:GET',
+      publicMessage: 'Failed to load monthly attendance.',
+    })
   }
 }
 
