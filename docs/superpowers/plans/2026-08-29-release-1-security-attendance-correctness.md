@@ -1227,7 +1227,7 @@ git commit -m "refactor: remove biometric liveness"
 - Modify: `lib/attendance/process.js`
 - Modify: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Write failing runtime tests**
+- [x] **Step 1: Write failing runtime tests**
 
 Create `tests/server-error.test.mjs`:
 
@@ -1271,7 +1271,7 @@ test('declared request errors keep only their approved public message', async ()
 })
 ```
 
-- [ ] **Step 2: Write a failing source guard**
+- [x] **Step 2: Write a failing source guard**
 
 Create `tests/security/server-error-responses.test.mjs`. Recursively read `app/api`, `lib/routes`, and `lib/attendance`; fail on these raw-error message fields:
 
@@ -1289,7 +1289,7 @@ Use `internalMessage` rather than `message` for server-only `console.error` and 
 
 **Execution correction identified on 2026-09-02:** the attendance processor also copies caught embedding errors into an intermediate `message` variable and returns that text as a scan rejection. A route-only field search would miss this path. Add a runtime test injecting an embedding service failure containing a private connection string or file path; `/api/attendance/v2` must return its generic 500 response with an error ID, never raw text or a misleading 403. Check the one-frame and fallback-frame error paths. Preserve normal expected scan guidance only for explicitly declared safe request errors; unexpected model, image, filesystem, or database failures must propagate to the existing safe outer route catch. Add a focused source assertion for these intermediate handoffs as well as the field patterns above.
 
-- [ ] **Step 3: Add the tests to the normal test command and confirm failure**
+- [x] **Step 3: Add the tests to the normal test command and confirm failure**
 
 Add both files to the first `node --test` group in `package.json`.
 
@@ -1297,7 +1297,7 @@ Run: `node --test tests/server-error.test.mjs tests/security/server-error-respon
 
 Expected: FAIL because helper is missing and many routes return caught error text.
 
-- [ ] **Step 4: Implement the helper**
+- [x] **Step 4: Implement the helper**
 
 Create `lib/http/server-error.js`:
 
@@ -1340,7 +1340,7 @@ export function serverErrorResponse(error, {
 }
 ```
 
-- [ ] **Step 5: Restrict registration error codes**
+- [x] **Step 5: Restrict registration error codes**
 
 The explicit `.js` import is required by the standalone Node 22 ESM helper tests; the extensionless Next import does not resolve without the route test loader. In `server-attendance.js`, declare expected capture errors using `SafeRequestError` with the existing approved decision code and status. In the processor, retain only those approved messages and rethrow unknown errors to the outer route catch. Do not remove the existing one-frame/two-frame retry decisions or convert native errors into trusted request errors merely because they have a `message` or `code` property.
 
@@ -1367,7 +1367,7 @@ Rename both server-only log metadata keys in this file from `message` to `intern
 
 In `tests/postgres/identity.routes.test.mjs`, create a persons POST handler whose injected `enrollLocalPerson` throws `new Error('postgres://private-registration-host/faceid')`. Submit an otherwise valid fixture and assert status 500, matching `errorId`, a visible `Reference: <same ID>` in the message, and no private string. Keep the existing duplicate-registration 409 assertion.
 
-- [ ] **Step 6: Run helper test**
+- [x] **Step 6: Run helper test**
 
 Run: `node --test tests/server-error.test.mjs`
 
@@ -1377,12 +1377,14 @@ Run: `npm run test:routes -- --test-name-pattern="registration hides internal er
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/http/server-error.js lib/routes/persons-route.js package.json tests/server-error.test.mjs tests/security/server-error-responses.test.mjs tests/postgres/identity.routes.test.mjs
 git commit -m "feat: add safe server error responses"
 ```
+
+**Accepted 2026-09-08:** Implemented in `dd63d80`, with review fixes in `4e7e27d` and `951698f`. The shared helper returns approved request errors unchanged and gives unexpected failures a generic response plus a tracking ID. Registration keeps its duplicate conflict and normal enrollment-capture guidance while hiding database, model, filesystem, and native-library details. Attendance embedding failures now reach the safe outer response in both the one-frame and fallback-frame paths. Attendance failure audit records keep only the tracking ID, an allowlisted server stage, and the error type; real Administrator audit readback tests prove that private error text and forged stage text are absent. Fresh Node 22 checks passed: helper `2/2`, attendance handoff guard `1/1`, focused route checks `6/6`, units `118/118`, contracts `3/3`, and all route checks `101/101`. The broad source guard remains intentionally red with exactly `45` routes owned by Tasks 10 and 11, so the normal full test command is not a release-pass claim yet. Final independent reviews: specification `COMPLIANT`; quality `APPROVED` with no Critical or Important findings.
 
 ## Task 10: Replace raw errors in public and employee routes
 
