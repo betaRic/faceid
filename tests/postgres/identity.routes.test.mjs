@@ -3336,6 +3336,89 @@ test('re-enrollment is bound to person ID and preserves employee ownership field
   assert.equal(auditAfter.rows.at(-1).action, 'person_self_reenroll')
 })
 
+test('re-enrollment hides native failure status code and internal text', async () => {
+  const personId = 'reenroll-native-error-person'
+  const token = createEmployeeViewSessionCookieValue({
+    personId,
+    employeeId: '933003',
+    officeId: office.id,
+  })
+  const nativeError = Object.assign(
+    new Error('postgres://private-reenroll-user:private-password@private-host/faceid'),
+    { code: 'PRIVATE_REENROLL_DATABASE_CODE', status: 418 },
+  )
+  const handler = createPersonReenrollHandler({
+    getPerson: async () => ({
+      id: personId,
+      employeeId: '933003',
+      name: 'NativeError, Reenroll',
+      officeId: office.id,
+    }),
+    buildAuthoritativeEnrollmentPayload: async () => { throw nativeError },
+  })
+
+  const originalConsoleError = console.error
+  console.error = () => {}
+  try {
+    const response = await handler(
+      sameOriginRequest(`/api/persons/${personId}/reenroll`, {
+        method: 'POST',
+        headers: { 'x-employee-view-session': token },
+        body: { sampleFrames: [], captureMetadata: {} },
+      }),
+      { params: Promise.resolve({ personId }) },
+    )
+    const payload = await response.json()
+
+    assert.equal(response.status, 500, JSON.stringify(payload))
+    assert.deepEqual(payload, {
+      ok: false,
+      code: 'reenrollment_failed',
+      message: 'Re-enrollment could not be completed. Please try again or contact HR.',
+    })
+    assert.doesNotMatch(
+      JSON.stringify(payload),
+      /private-reenroll-user|private-password|private-host|PRIVATE_REENROLL_DATABASE_CODE|418/i,
+    )
+  } finally {
+    console.error = originalConsoleError
+  }
+})
+
+test('re-enrollment preserves approved capture errors', async () => {
+  const personId = 'reenroll-safe-capture-person'
+  const token = createEmployeeViewSessionCookieValue({
+    personId,
+    employeeId: '933004',
+    officeId: office.id,
+  })
+  const handler = createPersonReenrollHandler({
+    getPerson: async () => ({
+      id: personId,
+      employeeId: '933004',
+      name: 'SafeCapture, Reenroll',
+      officeId: office.id,
+    }),
+  })
+
+  const response = await handler(
+    sameOriginRequest(`/api/persons/${personId}/reenroll`, {
+      method: 'POST',
+      headers: { 'x-employee-view-session': token },
+      body: { sampleFrames: [], captureMetadata: {} },
+    }),
+    { params: Promise.resolve({ personId }) },
+  )
+  const payload = await response.json()
+
+  assert.equal(response.status, 400, JSON.stringify(payload))
+  assert.deepEqual(payload, {
+    ok: false,
+    code: 'invalid_enrollment_capture',
+    message: 'Guided enrollment snapshots are required.',
+  })
+})
+
 test('failed biometric refresh rolls back database and photo replacement', async () => {
   const response = await register(registrationFixture({
     employeeId: '944001',

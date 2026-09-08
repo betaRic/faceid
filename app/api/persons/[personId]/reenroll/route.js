@@ -7,14 +7,10 @@ import { createOriginGuard } from '@/lib/csrf'
 import { buildAuthoritativeEnrollmentPayload } from '@/lib/biometrics/server-enrollment'
 import { ENROLLMENT_MIN_SAMPLES, ENROLLMENT_SUPPORT_SAMPLE_MIN_DIVERSITY } from '@/lib/biometrics/enrollment-burst'
 import { getBiometricReenrollmentAssessment } from '@/lib/biometrics/descriptor-utils'
+import { SafeRequestError } from '@/lib/http/server-error'
 import { normalizeDataImage } from '@/lib/images/safe-data-image'
 import { deduplicateDescriptors } from '@/lib/persons/enrollment-descriptors'
 import { checkLocalDuplicateFace, getLocalPersonById, refreshLocalPersonBiometrics } from '@/lib/postgres/person-store'
-
-function toHttpStatus(value) {
-  const status = Number(value)
-  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500
-}
 
 export function createPersonReenrollHandler({
   buildAuthoritativeEnrollmentPayload: buildEnrollmentPayload = buildAuthoritativeEnrollmentPayload,
@@ -118,15 +114,15 @@ export function createPersonReenrollHandler({
           : `Face data updated. ${person.name} ${statusMessage}`,
       })
     } catch (error) {
-      const status = toHttpStatus(error?.status)
+      const declaredError = error instanceof SafeRequestError
       console.error('[PersonReenrollAPI] Re-enrollment failed', { code: error?.code, internalMessage: error?.message })
       return NextResponse.json({
         ok: false,
-        code: error?.code || 'reenrollment_failed',
-        message: status === 400
-          ? 'Re-enrollment data is invalid. Retake the guided capture and try again.'
+        code: declaredError ? error.code : 'reenrollment_failed',
+        message: declaredError
+          ? error.message
           : 'Re-enrollment could not be completed. Please try again or contact HR.',
-      }, { status })
+      }, { status: declaredError ? error.status : 500 })
     }
   }
 }
