@@ -3898,6 +3898,7 @@ test('attendance hides internal error for one-frame and fallback-frame embedding
   try {
     await t.test('one-frame failure', async () => {
       const privateError = 'postgres://private-attendance-user:private-password@private-host/faceid'
+      const privateStage = 'https://private-stage.example/D:/secret-models/weights.bin'
       const callOptions = []
       const handler = createAttendanceV2PostHandler({
         services: {
@@ -3905,7 +3906,11 @@ test('attendance hides internal error for one-frame and fallback-frame embedding
             callOptions.push(options)
             throw Object.assign(
               new Error(privateError),
-              { code: 'blocked_no_reliable_match', status: 403 },
+              {
+                code: 'blocked_no_reliable_match',
+                status: 403,
+                attendanceStage: privateStage,
+              },
             )
           },
         },
@@ -3928,12 +3933,13 @@ test('attendance hides internal error for one-frame and fallback-frame embedding
       assert.ok(auditLog, 'Admin audit readback must contain the matching safe server-error record')
       assert.deepEqual(auditLog.metadata, {
         errorId: responsePayload.errorId,
-        stage: 'server_embed_1',
+        stage: 'process_submission',
         errorType: 'Error',
       })
+      assert.equal(auditLog.summary, 'Attendance submission failed at process_submission.')
       assert.doesNotMatch(
         JSON.stringify(auditLog),
-        /private-attendance-user|private-password|private-host/i,
+        /private-attendance-user|private-password|private-host|private-stage|secret-models|weights\.bin/i,
       )
     })
 

@@ -10,6 +10,30 @@ import { warmServerAttendanceEmbedding } from '@/lib/biometrics/server-embedding
 import { getRequestIp } from '@/lib/rate-limit'
 import { writeAuditLog } from '@/lib/audit-log'
 
+const SAFE_ATTENDANCE_ERROR_STAGES = new Set([
+  'origin_guard',
+  'parse_request',
+  'consume_challenge',
+  'process_submission',
+  'rate_limit',
+  'server_embed_1',
+  'server_embed_2',
+  'offices',
+  'match_1',
+  'match_2',
+  'office',
+  'daily_logs',
+  'workforce_policy',
+  'employee_session',
+  'write_attendance',
+])
+
+function resolveSafeErrorStage(reportedStage, routeStage) {
+  if (SAFE_ATTENDANCE_ERROR_STAGES.has(reportedStage)) return reportedStage
+  if (SAFE_ATTENDANCE_ERROR_STAGES.has(routeStage)) return routeStage
+  return 'process_submission'
+}
+
 export function createAttendanceV2PostHandler({ services = null } = {}) {
   return async function handleAttendanceV2Post(request) {
     const errorId = crypto.randomUUID()
@@ -64,9 +88,10 @@ export function createAttendanceV2PostHandler({ services = null } = {}) {
       // Keep failure details in the server log only. A correlation ID is safe to
       // return and lets support find the exact failure without exposing database,
       // biometric, or stack details to a kiosk browser.
+      const safeErrorStage = resolveSafeErrorStage(error?.attendanceStage, stage)
       console.error('[attendance/v2] Unhandled error', {
         errorId,
-        stage: error?.attendanceStage || stage,
+        stage: safeErrorStage,
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       })
@@ -76,10 +101,10 @@ export function createAttendanceV2PostHandler({ services = null } = {}) {
         action: 'attendance_server_error',
         targetType: 'attendance',
         targetId: errorId,
-        summary: `Attendance submission failed at ${error?.attendanceStage || stage}.`,
+        summary: `Attendance submission failed at ${safeErrorStage}.`,
         metadata: {
           errorId,
-          stage: error?.attendanceStage || stage,
+          stage: safeErrorStage,
           errorType: error?.constructor?.name || 'UnknownError',
         },
       }).catch(() => {})
