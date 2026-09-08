@@ -1412,7 +1412,7 @@ git commit -m "feat: add safe server error responses"
 - Test: `tests/security/server-error-responses.test.mjs`
 - Test: `tests/postgres/identity.routes.test.mjs`
 
-- [ ] **Step 1: Add a forced public-route failure test**
+- [x] **Step 1: Add a forced public-route failure test**
 
 Expose a small factory for `app/api/public/offices/route.js`:
 
@@ -1441,7 +1441,7 @@ export const GET = createPublicOfficesGetHandler()
 
 Inject a loader that throws a secret-like connection string. Assert response has status 500, a tracking ID, and no secret text.
 
-- [ ] **Step 2: Replace public-route catches with the shared helper**
+- [x] **Step 2: Replace public-route catches with the shared helper**
 
 For every file listed above, import `serverErrorResponse` and replace raw catch responses using this exact mapping:
 
@@ -1491,7 +1491,7 @@ throw new SafeRequestError(
 
 Keep the existing custom `/api/attendance/v2` safe error and audit behavior; it already returns a tracking ID without internal text.
 
-- [ ] **Step 3: Run source and route tests**
+- [x] **Step 3: Run source and route tests**
 
 Run: `node --test tests/server-error.test.mjs tests/security/server-error-responses.test.mjs`
 
@@ -1501,12 +1501,14 @@ Run: `npm run test:routes -- --test-name-pattern="public route hides internal er
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/api/attendance app/api/offices/route.js app/api/public/offices/route.js app/api/persons tests/security/server-error-responses.test.mjs tests/postgres/identity.routes.test.mjs
 git commit -m "fix: hide public route errors"
 ```
+
+**Accepted 2026-09-08:** Implemented in `2c5224d`, with the re-enrollment review fix in `9e9c998`. Every listed public and employee-facing route now replaces unexpected internal failures with fixed public text and a tracking ID. Public office loading has an injected database-failure regression, attendance history keeps the declared `office_policy_unavailable` 503 response, and re-enrollment trusts status/code/message only from `SafeRequestError`; native database, file, and biometric errors return generic 500 responses. Fresh Node 22 checks passed: focused public, attendance-table, and re-enrollment checks `7/7`, helper `2/2`, units `118/118`, contracts `3/3`, and all route checks `105/105`. The broad guard fell from `45` to exactly `26`, all in Task 11 staff and Administrator routes. Final independent reviews: specification `COMPLIANT`; quality `APPROVED` with no Critical or Important findings.
 
 ## Task 11: Replace raw errors in staff and administrator routes
 
