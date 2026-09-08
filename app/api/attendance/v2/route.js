@@ -81,11 +81,6 @@ export function createAttendanceV2PostHandler({ services = null } = {}) {
           errorId,
           stage: error?.attendanceStage || stage,
           errorType: error?.constructor?.name || 'UnknownError',
-          // Internal audit detail only. Do not return this to the browser.
-          errorMessage: String(error?.message || error || 'Unknown error').slice(0, 500),
-          source: String(body?.kioskContext?.source || 'web-scan').slice(0, 40),
-          kioskId: String(body?.kioskContext?.kioskId || body?.captureContext?.kioskId || '').slice(0, 120),
-          employeeId: String(body?.employeeId || '').slice(0, 64),
         },
       }).catch(() => {})
       return NextResponse.json(

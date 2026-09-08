@@ -5,6 +5,7 @@ import { strFromU8, unzipSync } from 'fflate'
 import sharp from 'sharp'
 import { normalizeDataImage } from '../../lib/images/safe-data-image.js'
 import { SafeRequestError } from '../../lib/http/server-error.js'
+import { buildAuthoritativeEnrollmentPayload } from '../../lib/biometrics/server-enrollment.js'
 import * as personsRouteFactories from '../../lib/routes/persons-route.js'
 import { closePostgresPool, getPostgresPool, queryPostgres } from '../../lib/postgres/client.js'
 import { enrollLocalPerson, getLocalPersonById, refreshLocalPersonBiometrics } from '../../lib/postgres/person-store.js'
@@ -45,6 +46,7 @@ import {
   POST as updateGlobalThresholds,
 } from '../../app/api/admin/thresholds/route.js'
 import { GET as getMaintenanceEvidence } from '../../app/api/admin/biometric-benchmark/route.js'
+import { GET as getAdminAuditLogs } from '../../app/api/admin/audit-logs/route.js'
 import { GET as getReenrollmentCandidates } from '../../app/api/admin/reenrollment-candidates/route.js'
 import { GET as getHealth } from '../../app/api/health/route.js'
 import {
@@ -1973,6 +1975,36 @@ test('registration hides internal error details behind a reference ID', async ()
   assert.doesNotMatch(JSON.stringify(payload), /postgres|private-registration-host/i)
 })
 
+test('server enrollment capture validation uses the approved safe request contract', async () => {
+  await assert.rejects(
+    buildAuthoritativeEnrollmentPayload([], null),
+    error => {
+      assert.ok(error instanceof SafeRequestError)
+      assert.equal(error.status, 400)
+      assert.equal(error.code, 'invalid_enrollment_capture')
+      assert.equal(error.message, 'Guided enrollment snapshots are required.')
+      return true
+    },
+  )
+})
+
+test('registration returns an actual server enrollment capture validation as safe 400', async () => {
+  const response = await register(
+    registrationFixture({ photoDataUrl: await pngDataUrl() }),
+    {
+      buildAuthoritativeEnrollmentPayload: async () => buildAuthoritativeEnrollmentPayload([], null),
+    },
+  )
+  const payload = await response.json()
+
+  assert.equal(response.status, 400, JSON.stringify(payload))
+  assert.deepEqual(payload, {
+    ok: false,
+    code: 'invalid_enrollment_capture',
+    message: 'Guided enrollment snapshots are required.',
+  })
+})
+
 test('post-commit biometric index warning is structured without changing registration success', async () => {
   const response = await register(
     registrationFixture({ photoDataUrl: await pngDataUrl() }),
@@ -3880,9 +3912,29 @@ test('attendance hides internal error for one-frame and fallback-frame embedding
       })
 
       const response = await submitAtomicAttendance(handler, { id: 'safe-error-one', accessCode: '7111' })
+      const responsePayload = await response.clone().json()
       await assertSafeServerError(response, /private-attendance-user|private-password|private-host/i)
       assert.equal(callOptions.length, 1)
       assert.deepEqual(callOptions[0], { frameLimit: 1, minFrames: 1 })
+
+      const auditDateKey = formatAttendanceDateKey(Date.now())
+      const auditResponse = await getAdminAuditLogs(sameOriginRequest(
+        `/api/admin/audit-logs?decisionCode=attendance_server_error&date=${auditDateKey}&limit=500`,
+        { cookie: adminCookie() },
+      ))
+      const auditPayload = await auditResponse.json()
+      assert.equal(auditResponse.status, 200, JSON.stringify(auditPayload))
+      const auditLog = auditPayload.logs.find(log => log.targetId === responsePayload.errorId)
+      assert.ok(auditLog, 'Admin audit readback must contain the matching safe server-error record')
+      assert.deepEqual(auditLog.metadata, {
+        errorId: responsePayload.errorId,
+        stage: 'server_embed_1',
+        errorType: 'Error',
+      })
+      assert.doesNotMatch(
+        JSON.stringify(auditLog),
+        /private-attendance-user|private-password|private-host/i,
+      )
     })
 
     await t.test('fallback-frame failure', async () => {
