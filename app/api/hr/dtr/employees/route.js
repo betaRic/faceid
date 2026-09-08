@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { listLocalDtrEmployees } from '@/lib/postgres/report-store'
+import { serverErrorResponse } from '@/lib/http/server-error'
 
 export async function GET(request) {
   const adminCookie = parseAdminSessionCookieValue(request.cookies.get(getAdminSessionCookieName())?.value)
@@ -18,6 +19,9 @@ export async function GET(request) {
     }))
     return NextResponse.json({ ok: true, employees })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to load employees.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/hr/dtr/employees:GET',
+      publicMessage: 'Failed to load employees.',
+    })
   }
 }

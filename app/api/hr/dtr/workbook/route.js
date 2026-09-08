@@ -5,6 +5,7 @@ import { loadPersonByEmployeeIdentifier, resolveStaffAttendanceSession, sessionA
 import { buildEmployeeDtrDocument } from '@/lib/dtr-server'
 import { postgresEnabled } from '@/lib/postgres/client'
 import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import {
   buildDtrWorkbookBytes,
   buildDtrWorkbookFilename,
@@ -108,10 +109,10 @@ export async function POST(request) {
 
     return createDtrWorkbookResponse(bytes, filename)
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to generate DTR workbook.' },
-      { status: error?.status || 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/hr/dtr/workbook:POST',
+      publicMessage: 'Failed to generate DTR workbook.',
+    })
   }
 }
 

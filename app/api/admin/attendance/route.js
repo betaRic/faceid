@@ -6,6 +6,7 @@ import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
 import { serializeHrCorrectionAttendance } from '@/lib/attendance/response'
 import { buildAttendanceEntryTiming, isAttendanceDateKey } from '@/lib/attendance-time'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { kvDel } from '@/lib/kv-utils'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
 import { resolveWorkforcePolicyForDate } from '@/lib/workforce-policy'
@@ -68,10 +69,10 @@ export async function GET(request) {
       logs: resolvedSession.role === 'hr' ? logs.map(serializeHrCorrectionAttendance) : logs,
     })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load attendance logs.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admin/attendance:GET',
+      publicMessage: 'Failed to load attendance logs.',
+    })
   }
 }
 
@@ -232,10 +233,10 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, attendanceId })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to create attendance entry.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admin/attendance:POST',
+      publicMessage: 'Failed to create attendance entry.',
+    })
   }
 }
 

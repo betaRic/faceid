@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { getOfficeRecord } from '@/lib/office-directory'
 import { validateHrOfficeAssignment } from '@/lib/hr-scope'
 import {
@@ -109,10 +110,10 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to update HR user record.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/hr-users/[hrUserId]:PUT',
+      publicMessage: 'Failed to update HR user record.',
+    })
   }
 }
 
@@ -166,10 +167,10 @@ export async function DELETE(request, { params }) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to delete HR user record.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/hr-users/[hrUserId]:DELETE',
+      publicMessage: 'Failed to delete HR user record.',
+    })
   }
 }
 

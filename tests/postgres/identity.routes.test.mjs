@@ -819,6 +819,73 @@ async function createWorkforceSqlFixtures() {
   return records
 }
 
+test('workforce declared validation keeps its approved 400 response', async () => {
+  const response = await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+    method: 'POST',
+    cookie: adminCookie(),
+    body: { type: 'policy', scopeType: 'invalid-scope' },
+  }))
+  const payload = await response.json()
+
+  assert.equal(response.status, 400)
+  assert.deepEqual(payload, {
+    ok: false,
+    code: 'invalid_policy_scope',
+    message: 'A valid policy scope is required.',
+  })
+})
+
+test('workforce unexpected database failure hides private details behind a reference ID', async () => {
+  const functionName = 'route_test_reject_private_workforce_insert'
+  const triggerName = 'route_test_reject_private_workforce_insert'
+  await queryPostgres(`DROP TRIGGER IF EXISTS ${triggerName} ON workforce_policies`)
+  await queryPostgres(`DROP FUNCTION IF EXISTS ${functionName}()`)
+  await queryPostgres(`
+    CREATE FUNCTION ${functionName}() RETURNS trigger LANGUAGE plpgsql AS $function$
+    BEGIN
+      IF NEW.scope_id = 'task11-private-error-office' THEN
+        RAISE EXCEPTION 'postgres://private-workforce-user:private-password@private-host/faceid'
+          USING ERRCODE = 'P0001';
+      END IF;
+      RETURN NEW;
+    END
+    $function$
+  `)
+  await queryPostgres(`
+    CREATE TRIGGER ${triggerName}
+    BEFORE INSERT ON workforce_policies
+    FOR EACH ROW EXECUTE FUNCTION ${functionName}()
+  `)
+
+  const originalConsoleError = console.error
+  console.error = () => {}
+  try {
+    const response = await createWorkforceRecord(sameOriginRequest('/api/hr/workforce-records', {
+      method: 'POST',
+      cookie: adminCookie(),
+      body: {
+        type: 'policy',
+        scopeType: 'office',
+        scopeId: 'task11-private-error-office',
+      },
+    }))
+    const payload = await response.json()
+
+    assert.equal(response.status, 500)
+    assert.match(payload.errorId, /^[0-9a-f-]{36}$/i)
+    assert.equal(payload.message, `Unable to save workforce record. Reference: ${payload.errorId}`)
+    assert.deepEqual(Object.keys(payload).sort(), ['errorId', 'message', 'ok'])
+    assert.doesNotMatch(
+      JSON.stringify(payload),
+      /private-workforce-user|private-password|private-host|P0001/i,
+    )
+  } finally {
+    console.error = originalConsoleError
+    await queryPostgres(`DROP TRIGGER IF EXISTS ${triggerName} ON workforce_policies`)
+    await queryPostgres(`DROP FUNCTION IF EXISTS ${functionName}()`)
+  }
+})
+
 for (const type of ['holiday', 'policy', 'leave', 'order']) {
   test(`workforce SQL bounds ${type} rows before application filtering`, async (t) => {
     const fixtures = await createWorkforceSqlFixtures()

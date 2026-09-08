@@ -5,6 +5,7 @@ import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCoo
 import { writeAuditLog } from '@/lib/audit-log'
 import { getActiveRegionalAdminCount } from '@/lib/admin-directory'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import {
   deleteLocalAdminProfile,
   getLocalAdminProfileById,
@@ -104,10 +105,10 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to update admin record.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admins/[adminId]:PUT',
+      publicMessage: 'Failed to update admin record.',
+    })
   }
 }
 
@@ -172,10 +173,10 @@ export async function DELETE(request, { params }) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to delete admin record.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admins/[adminId]:DELETE',
+      publicMessage: 'Failed to delete admin record.',
+    })
   }
 }
 

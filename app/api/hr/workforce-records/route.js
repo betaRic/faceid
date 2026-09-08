@@ -10,6 +10,7 @@ import {
 import { getLocalOfficeRecord } from "@/lib/postgres/attendance-store";
 import { findOfficeDivision } from "@/lib/offices";
 import { createOriginGuard } from "@/lib/csrf";
+import { SafeRequestError, serverErrorResponse } from "@/lib/http/server-error";
 import { queryPostgres, withPostgresTransaction } from "@/lib/postgres/client";
 import { auditActorFromSession, writeAuditLog } from "@/lib/audit-log";
 import {
@@ -350,7 +351,10 @@ export async function POST(request) {
           { status: 403 },
         );
       const rows = philippineHolidaySeed(body.seedYear);
-      if (!rows.length) throw new Error("Choose a valid holiday year.");
+      if (!rows.length) throw new SafeRequestError("Choose a valid holiday year.", {
+        status: 400,
+        code: "invalid_holiday_year",
+      });
       for (const row of rows) {
         await queryPostgres(
           "INSERT INTO holidays (id, holiday_date, name, scope_type) VALUES ($1,$2,$3,'national') ON CONFLICT (holiday_date, scope_type, office_id, division_id) DO NOTHING",
@@ -382,7 +386,10 @@ export async function POST(request) {
         (scopeType !== "national" && !officeId) ||
         (scopeType === "division" && !divisionId)
       )
-        throw new Error("Holiday date, name, and scope are required.");
+        throw new SafeRequestError("Holiday date, name, and scope are required.", {
+          status: 400,
+          code: "invalid_holiday",
+        });
       if (
         scopeType === "national" &&
         !canManageRecord(session, "holiday", "")
@@ -412,7 +419,10 @@ export async function POST(request) {
       const end = text(body.endDate);
       const officeId = await personOffice(personId);
       if (!personId || !validDate(start) || !validDate(end) || end < start)
-        throw new Error("Employee and a valid date range are required.");
+        throw new SafeRequestError("Employee and a valid date range are required.", {
+          status: 400,
+          code: "invalid_leave_dates",
+        });
       if (!sessionAllowsOffice(session, officeId))
         return NextResponse.json(
           { ok: false, message: "This session cannot manage that employee." },
@@ -421,12 +431,14 @@ export async function POST(request) {
       if (type === "leave") {
         const leaveType = text(body.leaveType).toUpperCase();
         if (!LEAVE_TYPES.includes(leaveType))
-          throw new Error(
+          throw new SafeRequestError(
             "Leave type must be VL, SL, CTO, or WL (Wellness Leave).",
+            { status: 400, code: "invalid_leave_type" },
           );
         if (await hasRangeConflict("employee_leaves", personId, start, end))
-          throw new Error(
+          throw new SafeRequestError(
             "This employee already has an overlapping leave record.",
+            { status: 400, code: "workforce_date_conflict" },
           );
         await queryPostgres(
           "INSERT INTO employee_leaves (id, person_id, leave_type, start_date, end_date, remarks) VALUES ($1,$2,$3,$4,$5,$6)",
@@ -438,7 +450,10 @@ export async function POST(request) {
       const start = text(body.startDate);
       const end = text(body.endDate);
       if (!personIds.length || !validDate(start) || !validDate(end) || end < start)
-        throw new Error("At least one employee and a valid date range are required.");
+        throw new SafeRequestError("At least one employee and a valid date range are required.", {
+          status: 400,
+          code: "invalid_official_order",
+        });
       if (!(await sessionCanManagePeople(session, personIds)))
         return NextResponse.json(
           { ok: false, message: "This session cannot manage one or more selected employees." },
@@ -446,7 +461,10 @@ export async function POST(request) {
         );
       for (const personId of personIds) {
         if (await hasOrderRangeConflict(personId, start, end))
-          throw new Error("A selected employee already has an overlapping official order.");
+          throw new SafeRequestError("A selected employee already has an overlapping official order.", {
+            status: 400,
+            code: "workforce_date_conflict",
+          });
       }
       await withPostgresTransaction(async (client) => {
         await client.query(
@@ -468,7 +486,10 @@ export async function POST(request) {
         : "";
       const scopeId = scopeType === "organization" ? "" : text(body.scopeId);
       if (!scopeType || (scopeType !== "organization" && !scopeId))
-        throw new Error("A valid policy scope is required.");
+        throw new SafeRequestError("A valid policy scope is required.", {
+          status: 400,
+          code: "invalid_policy_scope",
+        });
       if (
         (scopeType === "organization" || scopeType === "division") &&
         !(session.role === "admin" && session.scope === "regional")
@@ -524,16 +545,10 @@ export async function POST(request) {
     });
     return NextResponse.json({ ok: true, id: persistedId });
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to save workforce record.",
-      },
-      { status: 400 },
-    );
+    return serverErrorResponse(error, {
+      context: "api/hr/workforce-records:POST",
+      publicMessage: "Unable to save workforce record.",
+    });
   }
 }
 
@@ -625,7 +640,10 @@ export async function PATCH(request) {
       const date = text(body.date);
       const name = text(body.name);
       if (!validDate(date) || !name)
-        throw new Error("Holiday date and name are required.");
+        throw new SafeRequestError("Holiday date and name are required.", {
+          status: 400,
+          code: "invalid_holiday",
+        });
       await queryPostgres(
         "UPDATE holidays SET holiday_date=$2, name=$3, remarks=$4, updated_at=now() WHERE id=$1",
         [id, date, name, text(body.remarks)],
@@ -640,15 +658,19 @@ export async function PATCH(request) {
         end < start ||
         !LEAVE_TYPES.includes(leaveType)
       )
-        throw new Error("A valid leave type and date range are required.");
+        throw new SafeRequestError("A valid leave type and date range are required.", {
+          status: 400,
+          code: "invalid_leave_type",
+        });
       const personResult = await queryPostgres(
         "SELECT person_id FROM employee_leaves WHERE id=$1",
         [id],
       );
       const personId = personResult.rows[0]?.person_id;
       if (await hasRangeConflict("employee_leaves", personId, start, end, id))
-        throw new Error(
+        throw new SafeRequestError(
           "This employee already has an overlapping leave record.",
+          { status: 400, code: "workforce_date_conflict" },
         );
       await queryPostgres(
         "UPDATE employee_leaves SET leave_type=$2,start_date=$3,end_date=$4,remarks=$5,updated_at=now() WHERE id=$1",
@@ -659,9 +681,15 @@ export async function PATCH(request) {
       const end = text(body.endDate);
       const personIds = uniquePersonIds(body.personIds, body.personId);
       if (!validDate(start) || !validDate(end) || end < start)
-        throw new Error("A valid date range is required.");
+        throw new SafeRequestError("A valid date range is required.", {
+          status: 400,
+          code: "invalid_official_order",
+        });
       if (!personIds.length)
-        throw new Error("Select at least one employee for this official order.");
+        throw new SafeRequestError("Select at least one employee for this official order.", {
+          status: 400,
+          code: "invalid_official_order",
+        });
       if (!(await sessionCanManagePeople(session, personIds)))
         return NextResponse.json(
           { ok: false, message: "This session cannot manage one or more selected employees." },
@@ -669,7 +697,10 @@ export async function PATCH(request) {
         );
       for (const personId of personIds) {
         if (await hasOrderRangeConflict(personId, start, end, id))
-          throw new Error("A selected employee already has an overlapping official order.");
+          throw new SafeRequestError("A selected employee already has an overlapping official order.", {
+            status: 400,
+            code: "workforce_date_conflict",
+          });
       }
       await withPostgresTransaction(async (client) => {
         await client.query(
@@ -708,16 +739,10 @@ export async function PATCH(request) {
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to update workforce record.",
-      },
-      { status: 400 },
-    );
+    return serverErrorResponse(error, {
+      context: "api/hr/workforce-records:PATCH",
+      publicMessage: "Unable to update workforce record.",
+    });
   }
 }
 

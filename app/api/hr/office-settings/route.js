@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auditActorFromSession } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { clearOfficeRecordCache, getOfficeRecord } from '@/lib/office-directory'
 import { pickHrWorkPolicy, toHrOfficeSettings } from '@/lib/offices/hr-office-settings'
@@ -82,7 +83,10 @@ export async function GET(request) {
     if (access.error) return access.error
     return NextResponse.json({ ok: true, office: toHrOfficeSettings(access.office) })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Unable to load office settings.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/hr/office-settings:GET',
+      publicMessage: 'Unable to load office settings.',
+    })
   }
 }
 
@@ -128,6 +132,9 @@ export async function PUT(request) {
 
     return NextResponse.json({ ok: true, office: toHrOfficeSettings(storedOffice) })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Unable to save office settings.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/hr/office-settings:PUT',
+      publicMessage: 'Unable to save office settings.',
+    })
   }
 }

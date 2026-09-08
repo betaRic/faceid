@@ -5,6 +5,7 @@ import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCoo
 import { writeAuditLog } from '@/lib/audit-log'
 import { clearOfficeRecordCache } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { normalizeDivisionList, REGIONAL_OFFICE_TYPE } from '@/lib/offices'
 import { localOfficeExists, upsertLocalOffice } from '@/lib/postgres/report-store'
 
@@ -155,10 +156,10 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, office }, { status: 201 })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to create office.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admin/offices:POST',
+      publicMessage: 'Failed to create office.',
+    })
   }
 }
 

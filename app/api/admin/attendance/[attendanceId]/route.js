@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { resolveStaffAttendanceSession, sessionAllowsOffice } from '@/lib/employee-access'
 import { auditActorFromSession, writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { kvDel } from '@/lib/kv-utils'
 import { deriveDailyAttendanceRecord } from '@/lib/daily-attendance'
 import { resolveWorkforcePolicyForDate } from '@/lib/workforce-policy'
@@ -99,7 +100,10 @@ export async function DELETE(request, { params }) {
     })
     return NextResponse.json({ ok: true })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete attendance entry.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/admin/attendance/[attendanceId]:DELETE',
+      publicMessage: 'Failed to delete attendance entry.',
+    })
   }
 }
 
@@ -141,6 +145,9 @@ export async function PATCH(request, { params }) {
     })
     return NextResponse.json({ ok: true, fieldDutyStatus: status })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to review field-duty request.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/admin/attendance/[attendanceId]:PATCH',
+      publicMessage: 'Failed to review field-duty request.',
+    })
   }
 }

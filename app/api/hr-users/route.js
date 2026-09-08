@@ -7,6 +7,7 @@ import { getOfficeRecord } from '@/lib/office-directory'
 import { validateHrOfficeAssignment } from '@/lib/hr-scope'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { createLocalHrProfile, localEmailExists } from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
@@ -46,10 +47,10 @@ export async function GET(request) {
     const hrUsers = await listHrProfiles(db)
     return NextResponse.json({ ok: true, hrUsers })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load HR user records.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/hr-users:GET',
+      publicMessage: 'Failed to load HR user records.',
+    })
   }
 }
 
@@ -109,10 +110,10 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, id: recordId })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to create HR user record.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/hr-users:POST',
+      publicMessage: 'Failed to create HR user record.',
+    })
   }
 }
 

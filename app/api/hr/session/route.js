@@ -5,6 +5,7 @@ import { createHrSessionCookieValue, getHrSessionCookieName, getHrSessionMaxAge,
 import { getHrProfileById } from '@/lib/hr-directory'
 import { postgresEnabled } from '@/lib/postgres/client'
 import { staffSessionCookieOptions } from '@/lib/staff-session-cookie'
+import { serverErrorResponse } from '@/lib/http/server-error'
 
 export async function GET(request) {
   const cookieValue = request.cookies.get(getHrSessionCookieName())?.value
@@ -52,10 +53,10 @@ export async function GET(request) {
 
     return response
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load HR session.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/hr/session:GET',
+      publicMessage: 'Failed to load HR session.',
+    })
   }
 }
 

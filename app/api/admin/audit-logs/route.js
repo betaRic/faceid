@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getAdminSessionCookieName, parseAdminSessionCookieValue, resolveAdminSession } from '@/lib/admin-auth'
 import { resolveReportWindow } from '@/lib/report-window'
 import { listLocalAuditLogs } from '@/lib/postgres/report-store'
+import { serverErrorResponse } from '@/lib/http/server-error'
 
 function summarize(logs, window) {
   const byDecisionCode = {}; const byDate = {}; const byHour = {}
@@ -38,6 +39,9 @@ export async function GET(request) {
     if (summary) return NextResponse.json(summarize(logs, window))
     return NextResponse.json({ logs, nextOffset: logs.length ? String(Number(offset || 0) + logs.length) : null, total: logs.length, window: summarize([], window).window })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to load audit logs.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/admin/audit-logs:GET',
+      publicMessage: 'Failed to load audit logs.',
+    })
   }
 }

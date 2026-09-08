@@ -5,6 +5,7 @@ import { getAdminSessionCookieName, isRegionalAdminSession, parseAdminSessionCoo
 import { listAdminProfiles } from '@/lib/admin-directory'
 import { writeAuditLog } from '@/lib/audit-log'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { createLocalAdminProfile, localEmailExists } from '@/lib/postgres/user-store'
 
 function normalizeBody(body) {
@@ -44,10 +45,10 @@ export async function GET(request) {
     const admins = await listAdminProfiles(db)
     return NextResponse.json({ ok: true, admins })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to load admin records.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admins:GET',
+      publicMessage: 'Failed to load admin records.',
+    })
   }
 }
 
@@ -104,10 +105,10 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, id: recordId })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to create admin record.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admins:POST',
+      publicMessage: 'Failed to create admin record.',
+    })
   }
 }
 

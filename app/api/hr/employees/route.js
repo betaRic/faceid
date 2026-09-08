@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getHrSessionCookieName, parseHrSessionCookieValue, resolveHrSession } from '@/lib/hr-auth'
 import { getSessionOfficeFilter } from '@/lib/employee-access'
 import { listLocalHrEmployeeAccessCodeDirectory, listLocalHrEmployees } from '@/lib/postgres/report-store'
+import { serverErrorResponse } from '@/lib/http/server-error'
 
 const PAGE_SIZE = 20
 const text = value => String(value || '').trim()
@@ -27,6 +28,9 @@ export async function GET(request) {
     })
     return NextResponse.json({ ok: true, employees, pagination: { page, pageSize: PAGE_SIZE, total, hasMore: page * PAGE_SIZE < total } })
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to load employees.' }, { status: 500 })
+    return serverErrorResponse(error, {
+      context: 'api/hr/employees:GET',
+      publicMessage: 'Failed to load employees.',
+    })
   }
 }

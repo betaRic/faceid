@@ -5,6 +5,7 @@ import { adminSessionAllowsOffice, isRegionalAdminSession, parseAdminSessionCook
 import { writeAuditLog } from '@/lib/audit-log'
 import { clearOfficeRecordCache } from '@/lib/office-directory'
 import { createOriginGuard } from '@/lib/csrf'
+import { serverErrorResponse } from '@/lib/http/server-error'
 import { normalizeDivisionList, REGIONAL_OFFICE_TYPE } from '@/lib/offices'
 import { deleteLocalOffice, getLocalOfficeReferenceCounts, localOfficeExists, upsertLocalOffice } from '@/lib/postgres/report-store'
 
@@ -147,13 +148,10 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({ ok: true, office })
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message: error instanceof Error ? error.message : 'Failed to save office configuration.',
-      },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admin/offices/[officeId]:PUT',
+      publicMessage: 'Failed to save office configuration.',
+    })
   }
 }
 
@@ -212,10 +210,10 @@ export async function DELETE(request, { params }) {
 
     return NextResponse.json({ ok: true, officeId })
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : 'Failed to delete office.' },
-      { status: 500 },
-    )
+    return serverErrorResponse(error, {
+      context: 'api/admin/offices/[officeId]:DELETE',
+      publicMessage: 'Failed to delete office.',
+    })
   }
 }
 
