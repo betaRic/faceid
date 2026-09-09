@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:hosting": "node scripts/clean-next-dev.mjs && next build && node scripts/materialize-next-externals.mjs",
+    "build:hosting": "node scripts/check-hosting-env.mjs && node scripts/clean-next-dev.mjs && next build && node scripts/materialize-next-externals.mjs",
+    "check:hosting-env": "node scripts/check-hosting-env.mjs",
     "start": "next start",
     "test": "node --test tests/postgres/test-database.test.mjs tests/security/removed-biometric-reset.test.mjs tests/security/postgres-only-runtime.test.mjs tests/server-error.test.mjs tests/security/server-error-responses.test.mjs && node tests/run-tests.mjs && node tests/run-contract-tests.mjs && npm run test:ui",
     "test:memory": "node scripts/test-biometric-memory.mjs",
