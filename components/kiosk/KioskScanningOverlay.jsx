@@ -3,6 +3,7 @@ import CaptureDistanceHud from '@/components/biometrics/CaptureDistanceHud'
 import CaptureGuideHud from '@/components/biometrics/CaptureGuideHud'
 import { toCompactGuideLabel } from '@/lib/biometrics/compact-guide-copy'
 import { Icon } from '@/components/ui'
+import styles from './KioskScanningOverlay.module.css'
 
 const OVAL_STYLE = { borderRadius: '44% / 34%' }
 
@@ -25,6 +26,7 @@ export default function KioskScanningOverlay({
   const isVerifying = kioskState === 'verifying'
   const hasCapturedFrame = Boolean(capturedFrameUrl)
   const showLiveVideo = !hasCapturedFrame
+  const showScanEffect = camera.camOn && (isScanning || isVerifying) && !isConfirmed && !isBlocked && !isUnknown
 
   const ringState = isVerifying
     ? 'ring-2 ring-blue-400/80'
@@ -109,6 +111,12 @@ export default function KioskScanningOverlay({
               />
             )}
             <canvas ref={camera.canvasRef} style={{ display: 'none' }} />
+            {showScanEffect && (
+              <div aria-hidden="true" className={`${styles.effect} ${isVerifying ? styles.verifying : ''}`}>
+                <div className={styles.grid} />
+                <div className={styles.sweep}><div className={styles.beam} /></div>
+              </div>
+            )}
             <div aria-hidden="true" className="absolute inset-0 border border-white/15" style={OVAL_STYLE} />
           </div>
         </div>

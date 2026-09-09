@@ -1,0 +1,51 @@
+/* Display only: never drawn onto the camera's capture canvas. */
+.effect {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: #67e8f9;
+  overflow: hidden;
+}
+
+.verifying { color: #93c5fd; }
+
+.grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  background-image: linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+.sweep {
+  position: absolute;
+  inset: 0;
+  animation: face-scan-sweep 2.8s ease-in-out infinite alternate;
+}
+
+.beam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor 25%, currentColor 75%, transparent);
+  box-shadow: 0 0 12px currentColor;
+}
+
+.beam::before {
+  content: '';
+  position: absolute;
+  inset: -24px 0 2px;
+  background: linear-gradient(transparent, currentColor);
+  opacity: 0.12;
+}
+
+@keyframes face-scan-sweep {
+  from { transform: translateY(12%); }
+  to { transform: translateY(88%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sweep { animation: none; transform: translateY(50%); }
+}

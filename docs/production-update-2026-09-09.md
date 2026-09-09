@@ -1,5 +1,16 @@
 # Production database updated; application upload prepared
 
+## September 10 scanning visual restored
+
+Latest hosting build: `rPEcVXpgtvIJk9YYEhI6B`, including the location improvement
+below. Use the complete worktree `.next` folder, not the older `current-upload`.
+A CSS-only sweep and faint grid now appear inside the face oval during scanning
+and verification. Result states and camera-off states hide the effect; reduced
+motion uses a static line. The decoration does not enter the video capture canvas
+or change matching, anti-spoofing, or attendance recording. Eight existing scan UI
+tests and the Node 22 hosting build passed. Real-device appearance and frame-rate
+impact have not been measured. No live upload was performed.
+
 ## September 10 desktop location improvement
 
 Location startup now watches for improving device readings within one deadline
