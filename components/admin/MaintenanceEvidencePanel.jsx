@@ -322,7 +322,7 @@ export function MaintenanceEvidencePanel() {
           <EvidenceGroup title="Regional runtime">
             <EvidenceValue label="Database" value={system.database?.connected ? 'Connected' : 'Unavailable'} detail={system.database?.serverVersion ? `PostgreSQL ${system.database.serverVersion}` : ''} />
             <EvidenceValue label="Database latency" value={formatMs(system.database?.latencyMs)} />
-            <EvidenceValue label="Migrations" value={system.migrations?.status || 'unknown'} detail={`${system.migrations?.pending?.length ?? 0} pending`} />
+            <EvidenceValue label="Database updates" value={system.migrations?.status === 'healthy' ? 'Database up to date' : system.migrations?.status === 'failing' ? 'Database update required' : 'Unable to check'} detail={system.migrations?.status === 'failing' ? `${system.migrations.pending.length} required update(s) missing` : undefined} />
             <EvidenceValue label="File storage" value={system.storage?.status || 'unknown'} />
             <EvidenceValue label="Human models" value={system.models?.human?.status || 'unknown'} />
             <EvidenceValue label="OpenVINO files" value={system.models?.openvino?.status || 'unknown'} detail={system.models?.openvino?.inferenceVerified ? 'Inference verified' : 'Inference not verified'} />

@@ -1,5 +1,34 @@
 # Production database updated; application upload prepared
 
+## September 10 application revision
+
+Current upload: `D:/faceattend-test-data/releases/current-upload`.
+Build ID: `YSw2CBost0SmszdoTHTgv`. Use this folder instead of the September 9
+package below. The older package remains because automated approval review
+blocked its replacement/cleanup; this revision used a new folder without deletion.
+
+The revised maintenance check bundles its required update list into the app and
+compares it to the installed database history. Extra historical entries no longer
+trigger warnings. Missing required updates still fail; unavailable history remains
+unknown. SQL files are no longer read by this dashboard check and are not needed
+in the upload. Source migrations remain in Git for development and recovery.
+
+The home header now has a visible Login link beside the theme selector, leading
+to `/login`. The revised upload consists of `.next` and `app.js` only; this
+supersedes the earlier instruction below to upload `db/migrations`. No new database
+change is required for this revision. The existing daily-summary warning is a
+separate check and is not suppressed by the update-status change.
+
+Verification: new database-status regression checks passed, including absent
+server SQL files, historical seed entries, missing updates and unavailable
+history. All non-UI npm test stages passed. The full UI run passed 79 tests but
+could not start the admin test worker; rerunning that file separately passed all
+25 tests. Browser inspection confirmed Login beside the theme selector and
+successful navigation to `/login`. A read-only check of the local database
+returned healthy updates, zero pending updates, no migration action, 73 employees
+and 362 attendance entries. The Node 22 hosting build passed. No database updates
+or production application uploads were performed for this revision.
+
 The operator explicitly confirmed no one was using the live app and authorized
 updating its database before replacing the application. The hosted app was not
 stopped by this task. The older app must be replaced before attendance resumes:

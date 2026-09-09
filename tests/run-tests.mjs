@@ -1697,9 +1697,7 @@ await run('system evidence is read-only, complete, and secret-free', async () =>
     },
     cwd: 'D:/projects/faceid',
     access: async () => undefined,
-    readdir: async directory => String(directory).endsWith('migrations')
-      ? ['0001_local_core.sql']
-      : [],
+    requiredUpdates: ['0001_local_core.sql'],
     readFile: async file => String(file).endsWith('BUILD_ID') ? 'build-123\n' : '',
     uptime: () => 120,
     nodeVersion: 'v22.18.0',

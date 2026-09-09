@@ -111,7 +111,16 @@ export default function AppShell({
           <div className="ml-auto flex items-center gap-2">
             {actions}
             <ThemeSelector />
-            {pathname !== '/' ? (
+            {pathname === '/' ? (
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 rounded-control border border-line bg-surface px-3 text-sm font-semibold text-primary transition-colors hover:bg-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                href="/login"
+                onClick={() => handleNavigate('/login')}
+              >
+                <Icon name="security" />
+                <span>Login</span>
+              </Link>
+            ) : (
               <Link
                 aria-label={`${staffLabel} staff access`}
                 className={cx(
@@ -126,7 +135,7 @@ export default function AppShell({
                 <Icon name="security" />
                 <span className="hidden sm:inline">{staffLabel}</span>
               </Link>
-            ) : null}
+            )}
 
             {canRenderNavigation ? (
               <IconButton

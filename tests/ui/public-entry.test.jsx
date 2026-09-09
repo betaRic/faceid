@@ -16,6 +16,7 @@ describe('public entry experience', () => {
 
     expect(screen.getByRole('link', { name: /scan attendance/i })).toBeVisible()
     expect(screen.getByRole('link', { name: /register employee/i })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login')
     expect(screen.queryByRole('link', { name: /(?:staff|admin|hr).*portal/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/staff workspace/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/live system/i)).not.toBeInTheDocument()
