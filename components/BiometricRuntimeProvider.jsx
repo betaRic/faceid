@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useCamera } from '@/hooks/useCamera'
+import { requestBestDeviceLocation } from '@/lib/device-location'
 import { areDetectorModelsReady, areModelsReady, getModelLoadStatus, loadModels } from '@/lib/biometrics/human'
 import {
   LOCATION_BOOT_TIMEOUT_MS,
@@ -42,22 +43,6 @@ function getWifiSsid() {
   return navigator.connection.ssid || null
 }
 
-function requestDeviceLocation(options = {}) {
-  return new Promise((resolve, reject) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      reject(new Error('Location services are not available on this device.'))
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: LOCATION_BOOT_TIMEOUT_MS,
-      maximumAge: LOCATION_CACHE_MAX_AGE_MS,
-      ...options,
-    })
-  })
-}
-
 async function hasGrantedDevicePermissions(requireLocation) {
   if (typeof navigator === 'undefined' || !navigator.permissions?.query) return false
   try {
@@ -85,44 +70,6 @@ function getLocationErrorMessage(error) {
   return error?.message || 'Unable to determine device location.'
 }
 
-async function requestBestDeviceLocation({ timeout, maximumAge, sampleCount, targetAccuracyMeters }) {
-  const attempts = Math.max(1, Math.min(5, Number(sampleCount) || 1))
-  const totalTimeout = Math.max(8000, Number(timeout) || LOCATION_BOOT_TIMEOUT_MS)
-  // Give phones enough time for the initial GPS fix. Subsequent samples only refine it.
-  const initialTimeout = attempts === 1
-    ? totalTimeout
-    : Math.max(8000, totalTimeout - ((attempts - 1) * 5000))
-  let best = null
-  let lastError = null
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      const position = await requestDeviceLocation({
-        timeout: attempt === 0 ? initialTimeout : 5000,
-        maximumAge,
-      })
-      if (!best || Number(position.coords.accuracy || Infinity) < Number(best.coords.accuracy || Infinity)) best = position
-      if (Number(best.coords.accuracy || Infinity) <= Number(targetAccuracyMeters || 0)) break
-    } catch (error) {
-      lastError = error
-      // Some Android browsers cannot provide a high-accuracy GPS fix indoors
-      // but can still supply a usable network location. Keep the same policy
-      // accuracy limit; this only changes how the reading is acquired.
-      if (attempt === 0 && Number(error?.code) !== 1) {
-        try {
-          const fallback = await requestDeviceLocation({
-            enableHighAccuracy: false,
-            timeout: Math.min(10000, totalTimeout),
-            maximumAge: 60_000,
-          })
-          if (!best || Number(fallback.coords.accuracy || Infinity) < Number(best.coords.accuracy || Infinity)) best = fallback
-        } catch (fallbackError) { lastError = fallbackError }
-      }
-    }
-  }
-  if (best) return best
-  throw lastError || new Error('Unable to determine device location.')
-}
-
 export function BiometricRuntimeProvider({ children }) {
   const pathname = usePathname()
   const camera = useCamera()
@@ -140,6 +87,9 @@ export function BiometricRuntimeProvider({ children }) {
   const locationPolicyRef = useRef({ bootTimeoutMs: LOCATION_BOOT_TIMEOUT_MS, targetAccuracyMeters: 50, maxAccuracyMeters: 250, sampleCount: 3 })
   const [permissionRequestPending, setPermissionRequestPending] = useState(false)
   const [autoStartKey, setAutoStartKey] = useState(0)
+  const locationRequestRef = useRef(null)
+
+  useEffect(() => () => locationRequestRef.current?.abort(), [pathname])
 
   useEffect(() => {
     let active = true
@@ -233,13 +183,24 @@ export function BiometricRuntimeProvider({ children }) {
     const policy = locationPolicyRef.current
     // Start both browser permission requests before awaiting either result. This
     // preserves the tap gesture Safari requires for camera and GPS prompts.
-    const cameraPromise = startCamera()
+    locationRequestRef.current?.abort()
+    const controller = new AbortController()
+    locationRequestRef.current = controller
+    let locationFailed = false
+    const cameraPromise = camOn ? Promise.resolve() : startCamera()
     const locationPromise = kioskRoute
       ? requestBestDeviceLocation({
+        ...policy,
         timeout: policy.bootTimeoutMs,
         maximumAge: 0,
-        ...policy,
-      })
+        signal: controller.signal,
+        onProgress: ({ accuracyMeters }) => {
+          if (controller.signal.aborted) return
+          setBootStage('location')
+          setLocationState(current => ({ ...current, accuracyMeters,
+            status: `Location estimate: ±${Math.round(accuracyMeters)} m. Waiting for a clearer reading…` }))
+        },
+      }).catch(error => { locationFailed = true; throw error })
       : Promise.resolve(null)
 
     if (kioskRoute) {
@@ -247,16 +208,19 @@ export function BiometricRuntimeProvider({ children }) {
         ...current,
         bypassed: false,
         error: null,
+        ready: false,
         status: 'Requesting device location...',
       }))
     }
 
     try {
       const [_, position] = await Promise.all([cameraPromise, locationPromise])
+      if (controller.signal.aborted) return
       if (kioskRoute && position) {
         const accuracyMeters = Number(position.coords.accuracy)
         if (Number.isFinite(accuracyMeters) && accuracyMeters > Number(policy.maxAccuracyMeters)) {
-          throw new Error(`Location accuracy is ±${Math.round(accuracyMeters)} m. Improve the device location signal and try again.`)
+          locationFailed = true
+          throw new Error(`Your device reports an approximate location (±${Math.round(accuracyMeters)} m). Attendance requires ±${Math.round(policy.maxAccuracyMeters)} m or better. Enable precise location if available. On a desktop or laptop, turn on Wi-Fi and Location services, or use a phone at the office. Then check again.`)
         }
         setLocationState({
           bypassed: false,
@@ -274,20 +238,22 @@ export function BiometricRuntimeProvider({ children }) {
       }
       setBootStage('ready')
     } catch (error) {
-      if (kioskRoute) {
+      if (controller.signal.aborted) return
+      controller.abort()
+      if (kioskRoute && locationFailed) {
         setLocationState(current => ({
           ...current,
           error: getLocationErrorMessage(error),
-          ready: Boolean(current.coords),
-          status: current.coords ? 'Using last known location' : 'Location unavailable',
+          ready: false,
+          status: 'Location needs attention',
         }))
       }
-      setRuntimeError(error?.message || 'Camera or location permission could not be started.')
+      setRuntimeError(locationFailed ? getLocationErrorMessage(error) : error?.message || 'Unable to start the camera.')
       setBootStage('error')
     } finally {
       setPermissionRequestPending(false)
     }
-  }, [kioskRoute, permissionRequestPending, requiresImmediateCamera, startCamera])
+  }, [camOn, kioskRoute, permissionRequestPending, requiresImmediateCamera, startCamera])
 
   useEffect(() => {
     if (!autoStartKey) return
@@ -299,13 +265,18 @@ export function BiometricRuntimeProvider({ children }) {
     if (!kioskRoute || !locationState.ready) return undefined
 
     let cancelled = false
+    let refreshing = false
+    const controller = new AbortController()
     const refreshLocation = async () => {
+      if (refreshing) return
+      refreshing = true
       try {
         const policy = locationPolicyRef.current
         const position = await requestBestDeviceLocation({
+          ...policy,
           timeout: 8000,
           maximumAge: LOCATION_CACHE_MAX_AGE_MS,
-          ...policy,
+          signal: controller.signal,
         })
         const accuracyMeters = Number(position.coords.accuracy)
         if (cancelled || (Number.isFinite(accuracyMeters) && accuracyMeters > Number(policy.maxAccuracyMeters))) return
@@ -322,12 +293,13 @@ export function BiometricRuntimeProvider({ children }) {
       } catch {
         // Keep the last verified coordinate. A later scan still applies server-side
         // geofence validation and can ask the user to retry if the policy requires it.
-      }
+      } finally { refreshing = false }
     }
 
     const interval = window.setInterval(refreshLocation, LOCATION_REFRESH_INTERVAL_MS)
     return () => {
       cancelled = true
+      controller.abort()
       window.clearInterval(interval)
     }
   }, [kioskRoute, locationState.ready])

@@ -11,6 +11,15 @@ import ThemeProvider from '@/components/ThemeProvider'
 afterEach(() => vi.restoreAllMocks())
 
 describe('public entry experience', () => {
+  it('explains location trouble separately from face scanning and retries location', async () => {
+    const retry = vi.fn()
+    render(<ThemeProvider><BiometricWorkspaceGate page="scan" bootStage="error"
+      errorMessage="Your device reports an approximate location (±323 m)."
+      locationState={{ error: 'Location too approximate' }} onRequestPermissions={retry} /></ThemeProvider>)
+    expect(screen.getByRole('heading', { name: 'Location needs attention' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
   it('keeps only essential public entry actions', () => {
     render(<ThemeProvider><PlatformNavigator /></ThemeProvider>)
 

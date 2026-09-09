@@ -1,5 +1,33 @@
 # Production database updated; application upload prepared
 
+## September 10 desktop location improvement
+
+Location startup now watches for improving device readings within one deadline
+(default 30 seconds), stops early at the requested accuracy, and keeps the best
+real reading. Invalid or stale readings are ignored. Permission denial and page
+exit stop tracking; background refreshes cannot overlap. A location retry reuses
+an already-running camera. The screen shows progress and explains coarse desktop
+location separately from face verification failures.
+
+The maximum accepted accuracy and server office boundary checks are unchanged.
+A desktop that continues reporting +/-323 m still cannot pass a 250 m requirement.
+Real-device improvement has not yet been measured. No database, environment,
+startup-file, dependency, or face-matching change is included.
+
+Verification: 11 focused location/UI tests, 37 contract checks, and 118 existing
+pure-function checks passed. The initial test attempt failed to start a worker;
+the successful focused rerun used one thread. These tests simulate device readings;
+they do not prove that the reported desktop will provide a better location.
+
+For this revision use the complete `.next` from
+`D:/projects/faceid/.worktrees/codex-release-1-hardening/.next`. The Node 22 hosting
+build passed with ID `a0ylj2CpntXDmHazbOUhX`; the settings check confirmed local
+development settings were excluded. `D:/faceattend-test-data/releases/current-upload` still contains
+the preceding build and does not include this location change. No duplicate upload
+folder was created. Keep the already-updated live `app.js`, `.env`, and `web.config`.
+After upload and restart, check the reported desktop and one phone at the office:
+progress, permission denial/retry, location acceptance, and a recorded 1:1 scan.
+
 ## September 10 application revision
 
 Current upload: `D:/faceattend-test-data/releases/current-upload`.

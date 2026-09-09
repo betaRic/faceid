@@ -13,14 +13,15 @@ export default function BiometricWorkspaceGate({
   permissionRequestPending = false,
   loadingLabel = '',
 }) {
-  const title = page === 'register' ? 'Preparing enrollment workspace' : 'Preparing scan workspace'
+  const locationError = Boolean(locationState?.error && errorMessage)
+  const title = locationError ? 'Location needs attention' : page === 'register' ? 'Preparing enrollment workspace' : 'Preparing scan workspace'
   const needsPermission = bootStage === 'permission'
   const detail = errorMessage
     ? errorMessage
     : needsPermission
       ? 'Allow Camera and Location after selecting the button below. Both are required before attendance scanning can begin.'
       : bootStage === 'location'
-        ? 'Checking the device location before the camera is shown.'
+        ? 'Waiting for a more precise location. Scanning will open when the checks finish.'
         : bootStage === 'camera'
           ? 'Starting the camera after the biometric runtime is ready.'
           : 'Loading the biometric runtime before the camera is shown.'
