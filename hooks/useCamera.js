@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getVideoTrackSettingsSnapshot, isProbablyMobileDevice } from '@/lib/biometrics/device-profile'
+import { getCaptureGeometry } from '@/lib/biometrics/capture-geometry'
 
 export function useCamera() {
   const videoRef = useRef(null)
@@ -137,6 +138,21 @@ export function useCamera() {
     
     if (!video || video.readyState < 2) {
       return null
+    }
+
+    if (options.cropAspectRatio !== undefined) {
+      const geometry = getCaptureGeometry(video.videoWidth, video.videoHeight, options)
+      if (!geometry) return null
+
+      // Burst selection retains multiple frames, so each crop needs its own canvas.
+      const cropped = document.createElement('canvas')
+      cropped.width = geometry.outputWidth
+      cropped.height = geometry.outputHeight
+      const ctx = cropped.getContext('2d')
+      if (!ctx) return null
+      ctx.drawImage(video, geometry.x, geometry.y, geometry.width, geometry.height,
+        0, 0, geometry.outputWidth, geometry.outputHeight)
+      return cropped
     }
     
     const sourceWidth = video.videoWidth || video.offsetWidth || 640

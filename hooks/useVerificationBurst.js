@@ -17,7 +17,7 @@ import {
   VERIFICATION_TOP_DESCRIPTORS,
 } from '@/lib/config'
 import { MIN_SCAN_STRICT_FRAMES } from '@/lib/attendance/capture-policy'
-import { selectOvalReadyFace, buildOvalCaptureCanvas } from '@/lib/biometrics/oval-capture'
+import { selectOvalReadyFace, OVAL_CAPTURE_ASPECT_RATIO } from '@/lib/biometrics/oval-capture'
 
 const wait = duration => new Promise(resolve => {
   window.setTimeout(resolve, duration)
@@ -88,11 +88,11 @@ export function useVerificationBurst(camera) {
     let strictCaptureCount = 0
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const rawCanvas = camera.captureImageData({
+      const canvas = camera.captureImageData({
         maxWidth: PREVIEW_MAX_DIMENSION,
         maxHeight: PREVIEW_MAX_DIMENSION,
+        cropAspectRatio: OVAL_CAPTURE_ASPECT_RATIO,
       })
-      const canvas = buildOvalCaptureCanvas(rawCanvas)
       if (!canvas) {
         if (attempt < maxAttempts - 1) await wait(frameInterval)
         continue

@@ -13,7 +13,7 @@ const testFiles = entries
 if (testFiles.length === 0) {
   console.log('No contract tests found.')
 } else {
-  const result = spawnSync(process.execPath, ['--test', ...testFiles], {
+  const result = spawnSync(process.execPath, ['--experimental-loader', './tests/postgres/route-loader.mjs', '--test', ...testFiles], {
     cwd: projectRoot,
     shell: false,
     stdio: 'inherit',

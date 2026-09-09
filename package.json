@@ -12,6 +12,7 @@
     "build:hosting": "node scripts/clean-next-dev.mjs && next build && node scripts/materialize-next-externals.mjs",
     "start": "next start",
     "test": "node --test tests/postgres/test-database.test.mjs tests/security/removed-biometric-reset.test.mjs tests/security/postgres-only-runtime.test.mjs tests/server-error.test.mjs tests/security/server-error-responses.test.mjs && node tests/run-tests.mjs && node tests/run-contract-tests.mjs && npm run test:ui",
+    "test:memory": "node scripts/test-biometric-memory.mjs",
     "test:ui": "vitest run",
     "test:ui:watch": "vitest",
     "test:contracts": "node tests/run-contract-tests.mjs",

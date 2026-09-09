@@ -37,6 +37,9 @@ if (testFiles) {
     const result = spawnSync(process.execPath, [
       '--experimental-loader', loaderUrl,
       '--test',
+      // Files share one database; gallery-wide checks must not see another
+      // file's temporary identity fixtures. In-test concurrency remains enabled.
+      '--test-concurrency=1',
       ...process.argv.slice(2),
       ...testFiles,
     ], {
