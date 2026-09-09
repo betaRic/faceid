@@ -593,6 +593,27 @@ describe('admin employee operations', () => {
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeVisible()
   })
 
+  it('includes separate phone failures in the existing download and shows incomplete coverage', async () => {
+    const payload = maintenancePayload({ phoneReports: { available: true, loaded: 500, total: 700, truncated: true,
+      source: 'unverified_phone_reports', reports: [{ reason: 'no_usable_face' }] } })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => payload }))
+    let downloaded
+    const BaseURL = globalThis.URL
+    vi.stubGlobal('URL', class extends BaseURL {
+      static createObjectURL(blob) { downloaded = blob; return 'blob:report' }
+      static revokeObjectURL() {}
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<MaintenanceEvidencePanel />)
+    expect(await screen.findByText(/500 of 700 phone failure reports/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Export JSON' }))
+    const text = await new Promise(resolve => {
+      const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsText(downloaded)
+    })
+    expect(JSON.parse(text).phoneReports).toEqual(payload.phoneReports)
+    expect(JSON.parse(text).evidence.loadedEvents).toBe(payload.evidence.loadedEvents)
+  })
+
   it('keeps last successful maintenance evidence when refresh fails', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => maintenancePayload() })

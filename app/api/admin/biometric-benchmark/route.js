@@ -6,6 +6,7 @@ import { buildMaintenanceEvidenceReport } from '@/lib/maintenance/event-evidence
 import { buildSystemEvidence } from '@/lib/maintenance/system-evidence'
 import { resolveReportWindow } from '@/lib/report-window'
 import { queryPostgres } from '@/lib/postgres/client'
+import { loadPhoneScanReports } from '@/lib/postgres/phone-scan-reports'
 
 const MAINTENANCE_EVENT_DETAIL_LIMIT = 1200
 
@@ -72,7 +73,7 @@ export async function GET(request) {
       )
     `
 
-    const [countResult, eventsResult, personsResult, system] = await Promise.all([
+    const [countResult, eventsResult, personsResult, system, phoneReports] = await Promise.all([
         queryPostgres(
           `SELECT count(*)::integer AS count FROM scan_events WHERE ${eventWhere}`,
           eventParams,
@@ -110,6 +111,9 @@ export async function GET(request) {
           [officeId],
         ),
         resolvedSession.scope === 'regional' ? loadRegionalSystemEvidence() : null,
+        // Phone observations have no verified employee/office identity. Never
+        // mix them into server outcome rates or leak them to an office scope.
+        resolvedSession.scope === 'regional' ? loadPhoneScanReports(window) : null,
       ])
 
       const currentEmployees = personsResult.rows
@@ -130,6 +134,7 @@ export async function GET(request) {
       ok: true,
       ...report,
       system,
+      phoneReports,
       scope: {
         role: resolvedSession.role,
         scope: resolvedSession.scope,

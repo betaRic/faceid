@@ -223,6 +223,14 @@ export function MaintenanceEvidencePanel() {
         </div>
       ) : null}
 
+      {payload.phoneReports ? (
+        <p className="mt-4 text-sm leading-6 text-secondary" role="status">
+          {payload.phoneReports.available
+            ? `${payload.phoneReports.loaded} of ${payload.phoneReports.total} phone failure reports included in Export JSON. ${payload.phoneReports.truncated ? 'Some reports are left out; choose a shorter period. ' : ''}These are phone reports, separate from confirmed attendance results. Reports are kept for 14 days. A lost connection or closed page can leave failures unreported.`
+            : 'Phone failure reports are unavailable. Export JSON still includes the other available results.'}
+        </p>
+      ) : null}
+
       <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatusCard evidence={statuses.telemetry} label="Telemetry" />
         <StatusCard evidence={statuses.verification1to1} label="1:1 verification" />

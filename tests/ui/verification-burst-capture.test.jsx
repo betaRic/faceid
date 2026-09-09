@@ -10,6 +10,24 @@ vi.mock('@/lib/biometrics/human', () => ({
 }))
 
 describe('verification burst capture integration', () => {
+  it('reports missing face evidence without a photo and keeps the null result', async () => {
+    const detect = vi.fn(async () => ({ face: [] }))
+    getHumanVerification.mockResolvedValue({ detect })
+    const canvas = { width: 436, height: 640, toDataURL: vi.fn() }
+    const onFailure = vi.fn()
+    const { result } = renderHook(() => useVerificationBurst({ camOn: true, captureImageData: () => canvas }))
+    expect(await result.current.captureVerificationBurst({ onFailure })).toBeNull()
+    expect(onFailure).toHaveBeenCalledOnce()
+    expect(onFailure.mock.calls[0][0]).toMatchObject({ reason: 'no_usable_face', metrics: { capturedFrames: 0, strictFrames: 0, width: 436, height: 640 } })
+    expect(canvas.toDataURL).not.toHaveBeenCalled()
+  })
+
+  it('optional failure callback cannot turn an ordinary rejection into an exception', async () => {
+    getHumanVerification.mockResolvedValue({ detect: async () => ({ face: [] }) })
+    const { result } = renderHook(() => useVerificationBurst({ camOn: true, captureImageData: () => ({ width: 400, height: 600 }) }))
+    await expect(result.current.captureVerificationBurst({ onFailure: () => { throw Error('report failed') } })).resolves.toBeNull()
+  })
+
   it('detects and uploads independently retained native crops in the same coordinates', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage: vi.fn() }))
     const encodedCanvases = []

@@ -1234,6 +1234,7 @@ test('maintenance evidence scopes before the server detail cap and reports hones
   assert.equal(officePayload.evidence.totalWindowEvents, 1)
   assert.equal(officePayload.evidence.loadedEvents, 1)
   assert.equal(officePayload.system, null)
+  assert.equal(officePayload.phoneReports, null)
   assert.equal(
     officePayload.breakdowns.categories.reduce((sum, item) => sum + item.count, 0),
     officePayload.evidence.loadedEvents,
@@ -1251,6 +1252,8 @@ test('maintenance evidence scopes before the server detail cap and reports hones
   assert.notEqual(regionalPayload.statuses.telemetry.status, 'sufficient')
   assert.notEqual(regionalPayload.statuses.verification1to1.status, 'stable')
   assert.ok(regionalPayload.system)
+  assert.equal(regionalPayload.phoneReports.available, true)
+  assert.equal(regionalPayload.phoneReports.source, 'unverified_phone_reports')
 })
 
 test('biometric follow-up stays separate from pending employee approval', async () => {

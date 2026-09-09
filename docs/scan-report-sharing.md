@@ -20,8 +20,11 @@ means some records were left out. A complete window means all recorded events
 in that period were loaded; it does not mean every attempted scan was recorded.
 
 The file includes counts, failure groups, phone/browser groups, processing times,
-and employee references for some repeated mismatches. It is a summary, not a
-list of every failed attempt. It does not contain face photos, face vectors,
+and employee references for some repeated server-side mismatches. It also includes
+up to 500 recent phone failure reports in a separate `phoneReports` section.
+Those phone reports have temporary page-session references, not employee names
+or employee identity. They must not be added to the confirmed scan totals.
+It does not contain face photos, face vectors,
 employee access codes or database passwords. It does contain internal employee
 references and system information, so share it as an internal support file.
 No full database backup or employee face records are needed for this first review.
@@ -39,32 +42,46 @@ accepted scan belonged to the right person. A wrong-person report still needs
 human confirmation. They also cannot reveal missing visual details such as glare
 or blur that were not measured or retained.
 
-## Missing information found during this review
+## Automatic phone reports added in this update
 
-Some phone-side failures happen before attendance is submitted. For example,
-`useVerificationBurst` can return no usable capture, and `useKioskLoop` then shows
-**No reliable face match was found** and returns without sending a scan event.
-The current summary therefore misses an important class of the reported problem.
-Camera permissions, a closed page and lost connectivity can also prevent delivery.
+The updated scanner automatically sends a small report when a started scan
+cannot collect usable face frames, has too few ready frames, fails to process a
+face, or cannot complete its attendance request. It also reports exceptions in
+preview processing. Available details include the failure step, elapsed time,
+camera dimensions and captured/ready-frame counts. These are observations from
+the phone, not proof of the person's identity or an attendance result.
+
+Reporting does not wait before showing the existing scan result. One retry is
+allowed if delivery fails. Nothing is stored persistently on the phone. Reports
+are deduplicated and retained for 14 days. Cleanup runs at startup and hourly,
+at most 5,000 old rows per pass; a stopped site resumes cleanup on startup.
+
+The server accepts at most 120 reports per network address per minute and 10,000
+per day across the site. Existing trusted-proxy settings must supply a usable
+address in production; reporting fails closed if they do not. These are separate
+limits from attendance. A busy site or missing network information can leave
+reports undelivered. No reporting failure changes attendance acceptance.
+
+The Regional Admin download includes the newest 500 phone reports in the chosen
+period (within the 14-day retention window). It says when more reports exist or
+the report store is unavailable. Office-scoped users do not receive these reports
+because the phone does not establish a trusted employee/office identity.
+
+Initial camera permission failures, pages that never finish loading, ordinary
+idle/no-face waiting before a scan starts, a closed page and lost connectivity
+can still go unreported. This is not a promise to record every camera problem.
 
 Unexpected attendance service failures have a separate server error record and
-an audit entry with a tracking reference. Those are not included in this scan
-summary. Challenge rejection and early request rejection are also not guaranteed
-to appear in it. Do not call this download a complete automatic error report.
+an audit entry with a tracking reference. When the scanner receives that reference,
+its phone report preserves it. The internal server error text and audit entries
+are not bundled in this download. Request failures may be recorded by the phone
+even when no server scan event exists. Do not call this a complete error archive.
 
-The next reporting change should record bounded, best-effort phone-side failure
-summaries and include safe server-error references in an admin download. Record
-the time, failure step, reason, elapsed time, camera dimensions and available
-quality measurements. Record an employee reference only when it is established;
-an entered code is not proof of who stood in front of the camera. Exclude photos,
-face vectors, access codes, precise location and arbitrary error text. Limit
-submissions and isolate reporting failures so attendance cannot depend on them.
-Any event sent by a phone must remain labelled as a phone report, not verified
-server evidence. Network delivery can fail, so collection coverage needs an
-explicit limitation rather than a promise to record every failure.
-
-This reporting extension is **not included** in the saved scan-improvement changes.
-The existing download can be used now for the information it already contains.
+Deployment requires additive migration `0018_phone_scan_reports.sql` in addition
+to the earlier reviewed migrations. Apply it to the intended database using the
+normal migration process. Never run the test database reset on employee data.
+Until that table exists, phone collection/export is unavailable; ordinary
+attendance continues. Automatic face learning remains off.
 
 ## Fixing a problem versus restoring the previous version
 

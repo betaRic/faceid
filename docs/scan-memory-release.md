@@ -53,7 +53,11 @@ disabled; server anti-spoof stays required.
   they need load measurement before activation.
 - The offline tool measures biometric matching only. It does not simulate the
   challenge, camera authenticity, anti-spoof, location or payroll workflow, and
-  its naive union is not an approved production recognition policy.
+   its naive union is not an approved production recognition policy.
+
+The follow-up phone failure reporting change adds migration 0018 and a separate
+section in the existing report download. It does not require face-memory
+collection. See `scan-report-sharing.md` for scope, limits and download steps.
 
 ## Local verification
 

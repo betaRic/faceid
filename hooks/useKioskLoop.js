@@ -16,6 +16,7 @@
 
 import { useCallback, useRef } from 'react'
 import { requestAttendanceChallenge } from '@/lib/data-store'
+import { reportScanFailure } from '@/lib/scan-failure-reporter'
 import { getNavigatorDeviceProfile } from '@/lib/biometrics/device-profile'
 import { detectFaceBoxes } from '@/lib/biometrics/human'
 import { SCAN_CAPTURE_POLICY_VERSION } from '@/lib/attendance/capture-policy'
@@ -130,6 +131,18 @@ export function useKioskLoop({
 
     busyRef.current = true
     const scanStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    let reportContext = { stage: 'preview' }
+    let failureReported = false
+    const reportFailure = (reason, details = {}) => {
+      if (failureReported) return
+      failureReported = true
+      try {
+        reportScanFailure({ ...reportContext, ...details, reason,
+          elapsedMs: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - scanStartedAt,
+          metrics: { ...reportContext.metrics, ...details.metrics },
+        })
+      } catch { /* Reporting never changes attendance or its retry controls. */ }
+    }
     try {
       const rawCanvas = camera.captureImageData({
         maxWidth: KIOSK_IDLE_DETECTION_MAX_DIMENSION,
@@ -239,6 +252,10 @@ export function useKioskLoop({
           trackFacingMode: trackSettings.facingMode || '',
           trackResizeMode: trackSettings.resizeMode || '',
         }
+        reportContext = { stage: 'capture', device: captureContext.mobile ? 'mobile' : 'desktop',
+          browser: getBrowserLabel(captureContext.userAgent),
+          metrics: { trackWidth: trackSettings.width, trackHeight: trackSettings.height },
+        }
         const challengePromise = requestAttendanceChallenge({
           kioskContext: {
             kioskId: captureContext.kioskId || '',
@@ -266,9 +283,10 @@ export function useKioskLoop({
         )
 
         const verificationStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
-        const burstResult = await captureVerificationBurst()
+        const burstResult = await captureVerificationBurst({ onFailure: detail => reportFailure(detail.reason, detail) })
 
         if (!burstResult) {
+          reportFailure('no_usable_face')
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setCapturedFrameUrl(null)
           setKioskState('unknown')
@@ -291,6 +309,7 @@ export function useKioskLoop({
         const primaryVerification = selectPrimaryFace(burstResult.detections, bestCanvas.width, bestCanvas.height)
 
         if (!primaryVerification?.detection?.descriptor) {
+          reportFailure('missing_descriptor')
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('unknown')
           pausedRef.current = true
@@ -302,6 +321,7 @@ export function useKioskLoop({
         if (allCaptures.length > 1) {
           const multiFaceFrames = allCaptures.filter(c => c.detections && c.detections.length > 1)
           if (multiFaceFrames.length > 0) {
+            reportFailure('multiple_faces', { metrics: { multiFaceFrames: multiFaceFrames.length } })
             recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
             setKioskState('blocked')
             pausedRef.current = true
@@ -315,6 +335,7 @@ export function useKioskLoop({
           ? fusedDescriptor
           : Array.from(primaryVerification.detection.descriptor)
         if (descriptor.length !== DESCRIPTOR_LENGTH) {
+          reportFailure('invalid_descriptor')
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           setKioskState('unknown')
           pausedRef.current = true
@@ -391,6 +412,7 @@ export function useKioskLoop({
         }
 
         try {
+          reportContext.stage = 'challenge'
           const challengeState = await challengePromise
           if (!challengeState.ok) throw challengeState.error
 
@@ -405,6 +427,7 @@ export function useKioskLoop({
             challenge: challengeResult.challenge,
             riskFlags: Array.isArray(challengeResult.riskFlags) ? challengeResult.riskFlags : [],
           }
+          reportContext.stage = 'submission'
           const result = await onLogAttendance(submissionEntry)
           recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, true)
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, true)
@@ -433,11 +456,13 @@ export function useKioskLoop({
             setKioskState('confirmed')
             setAlertState(null)
           } else {
+            reportFailure('missing_result')
             setKioskState('unknown')
             pausedRef.current = true
             showAlertAndResume('No reliable face match was found. Ensure you are enrolled.', 3000)
           }
         } catch (error) {
+          reportFailure(reportContext.stage === 'challenge' ? 'challenge_failed' : 'submission_failed', { errorId: error?.errorId })
           recordNetwork?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - networkStartedAt, false)
           recordVerification?.((typeof performance !== 'undefined' ? performance.now() : Date.now()) - verificationStartedAt, false)
           const decisionCode = error?.decisionCode || 'blocked_server_error'
@@ -490,6 +515,7 @@ export function useKioskLoop({
         confirmRef.current = 0
       }
     } catch (error) {
+      reportFailure(reportContext.stage === 'preview' ? 'preview_processing_failed' : 'capture_processing_failed', { errorId: error?.errorId })
       attemptCooldownUntilRef.current = Date.now() + KIOSK_ATTEMPT_COOLDOWN_MS
       confirmRef.current = 0
       const decisionCode = error?.decisionCode || 'blocked_server_error'

@@ -77,7 +77,7 @@ function selectBestFallbackFace(detections) {
 }
 
 export function useVerificationBurst(camera) {
-  const captureVerificationBurst = useCallback(async () => {
+  const captureVerificationBurst = useCallback(async ({ onFailure } = {}) => {
     const human = await getHumanVerification()
     const captures = []
     const landmarksBuffer = []
@@ -86,8 +86,12 @@ export function useVerificationBurst(camera) {
     const frameInterval = isMobile ? VERIFICATION_BURST_MOBILE_INTERVAL_MS : VERIFICATION_BURST_INTERVAL_MS
     const maxAttempts = targetFrames + (isMobile ? 3 : 2)
     let strictCaptureCount = 0
+    let attempts = 0
+    let width = 0
+    let height = 0
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      attempts++
       const canvas = camera.captureImageData({
         maxWidth: PREVIEW_MAX_DIMENSION,
         maxHeight: PREVIEW_MAX_DIMENSION,
@@ -98,6 +102,8 @@ export function useVerificationBurst(camera) {
         continue
       }
       if (!camera.camOn) break
+      width = canvas.width
+      height = canvas.height
 
       const result = await human.detect(canvas)
       const detections = result.face.map(mapDetectedFace)
@@ -129,10 +135,21 @@ export function useVerificationBurst(camera) {
       if (attempt < maxAttempts - 1) await wait(frameInterval)
     }
 
-    if (captures.length === 0) return null
-
     const strictCaptures = captures.filter(capture => capture?.primary?.strictOval)
-    if (strictCaptures.length < MIN_SCAN_STRICT_FRAMES) return null
+    if (captures.length === 0 || strictCaptures.length < MIN_SCAN_STRICT_FRAMES) {
+      try {
+        onFailure?.({
+          reason: captures.length === 0 ? 'no_usable_face' : 'insufficient_ready_frames',
+          metrics: { attempts, width, height, capturedFrames: captures.length,
+            strictFrames: strictCaptures.length,
+            multiFaceFrames: captures.filter(capture => capture.detections.length > 1).length,
+            bestFaceAreaRatio: captures.length ? Math.max(...captures.map(capture => capture.metrics.faceAreaRatio)) : 0,
+            bestCenteredness: captures.length ? Math.max(...captures.map(capture => capture.metrics.centeredness)) : 0,
+          },
+        })
+      } catch { /* Optional reporting must not change capture behavior. */ }
+      return null
+    }
 
     const selectedCaptures = selectStableVerificationCaptures(strictCaptures, {
       aggregationCount: Math.min(3, strictCaptures.length),
