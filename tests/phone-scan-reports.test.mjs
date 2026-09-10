@@ -8,6 +8,16 @@ const id = '12345678-1234-4234-8234-123456789abc'
 const payload = () => ({ id, sessionId: id, reason: 'no_usable_face', stage: 'capture', elapsedMs: 300,
   metrics: { capturedFrames: 0, trackWidth: 1280 }, device: 'mobile', browser: 'Chrome' })
 
+test('location success uses existing bounded endpoint and strips private fields', async () => {
+  let saved
+  const post = createPhoneScanPost({ guard: async () => null, rate: async () => ({ ok: true }), save: async row => { saved = row } })
+  const response = await post(new Request('http://localhost/api/scan-reports', { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...payload(), stage: 'location', reason: 'ready', latitude: 6, accessCode: 'secret', metrics: { bestAccuracy: 83 } }) }))
+  assert.equal(response.status, 202)
+  assert.equal(saved.stage, 'location'); assert.equal(saved.metrics.bestAccuracy, 83)
+  assert.equal(saved.accessCode, undefined); assert.equal(saved.latitude, undefined)
+})
+
 test('phone report allowlist drops secrets and rejects malformed evidence', () => {
   const result = sanitizePhoneScanReport({ ...payload(), accessCode: 'secret', photo: 'data:image/jpeg;base64,secret',
     metrics: { ...payload().metrics, descriptor: [1,2], trackHeight: Infinity }, employeeId: 'private' })

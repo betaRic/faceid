@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, ErrorState, LoadingState, Status, Surface } from '@/components/ui'
+import LocationEvidencePanel from './LocationEvidencePanel'
 
 const REFRESH_INTERVAL_MS = 120_000
 
@@ -25,7 +26,7 @@ function reportParams(period) {
     const value = Object.fromEntries(parts.map(part => [part.type, part.value]))
     params.set('month', `${value.year}-${value.month}`)
   } else {
-    params.set('days', '14')
+    params.set('days', period === 'week' ? '7' : '14')
   }
   return params
 }
@@ -196,6 +197,7 @@ export function MaintenanceEvidencePanel() {
           <div className="flex flex-wrap gap-1" aria-label="Evidence period">
             {[
               ['today', 'Today'],
+              ['week', '7 days'],
               ['month', 'This month'],
               ['recent', '14 days'],
             ].map(([key, label]) => (
@@ -223,6 +225,7 @@ export function MaintenanceEvidencePanel() {
         </div>
       ) : null}
 
+      <LocationEvidencePanel evidence={payload.locationReports} />
       {payload.phoneReports ? (
         <p className="mt-4 text-sm leading-6 text-secondary" role="status">
           {payload.phoneReports.available

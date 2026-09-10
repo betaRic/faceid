@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname } from 'next/navigation'
 import { useCamera } from '@/hooks/useCamera'
 import { getLocationStartupOptions, requestBestDeviceLocation } from '@/lib/device-location'
+import { reportLocationCheck } from '@/lib/scan-failure-reporter'
 import { areDetectorModelsReady, areModelsReady, getModelLoadStatus, loadModels } from '@/lib/biometrics/human'
 import {
   LOCATION_BOOT_TIMEOUT_MS,
@@ -88,6 +89,7 @@ export function BiometricRuntimeProvider({ children }) {
   const [permissionRequestPending, setPermissionRequestPending] = useState(false)
   const [autoStartKey, setAutoStartKey] = useState(0)
   const locationRequestRef = useRef(null)
+  const locationAttemptRef = useRef(0)
 
   useEffect(() => () => locationRequestRef.current?.abort(), [pathname])
 
@@ -187,11 +189,17 @@ export function BiometricRuntimeProvider({ children }) {
     const controller = new AbortController()
     locationRequestRef.current = controller
     let locationFailed = false
+    const locationAttempt = ++locationAttemptRef.current
+    let locationPermission = 'unknown'
+    // Observe permission opportunistically; never await it before starting GPS.
+    try { navigator.permissions?.query({ name: 'geolocation' }).then(result => { locationPermission = result.state }).catch(() => {}) } catch {}
     const cameraPromise = camOn ? Promise.resolve() : startCamera()
     const locationPromise = kioskRoute
       ? requestBestDeviceLocation({
         ...getLocationStartupOptions(policy),
         signal: controller.signal,
+        onComplete: observation => reportLocationCheck({ ...observation, buildId: policy.buildId,
+          permission: locationPermission, metrics: { ...observation.metrics, attempt: locationAttempt } }),
         onProgress: ({ accuracyMeters }) => {
           if (controller.signal.aborted) return
           setBootStage('location')

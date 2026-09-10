@@ -1,5 +1,33 @@
 # Production database updated; application upload prepared
 
+## September 10 automatic location diagnostics
+
+Regional Admin maintenance now records and compares automatic location-startup
+observations from normal scan use. Employees receive no new controls or questions.
+The report separates ready, imprecise, timeout, permission-denied, unavailable,
+unsupported and cancelled results. It includes device category, operating system,
+browser family and major version, app build, the browser-reported connection type
+when available, first/best reported accuracy, wait times, reading age and retry count.
+Coordinates, employee identity, access codes, images and face data are excluded.
+
+Maintenance provides Today, 7 days, 14 days and existing month periods, plus device,
+operating-system, browser, connection and build filters. Comparisons keep different
+builds and location policies separate. Groups remain Not enough data until they have
+30 completed checks over 3 days and 5 browser sessions; incomplete windows cannot be
+ranked. Browser-reported network quality does not prove LAN, Wi-Fi or mobile data.
+The existing JSON export includes all location groups and up to 500 recent details.
+Raw observations retain the existing 14-day limit. Office-scoped HR accounts do not
+receive this Regional Admin evidence.
+
+No database migration was needed because the existing bounded scan-report storage is
+reused. Diagnostic collection has a separate queue from face-failure reporting and
+never waits before location startup completes. Delivery failure does not block scanning.
+Office boundaries, accuracy limits, 1:1 face verification and anti-spoofing are unchanged.
+
+Verification: 47 reporting and validation checks, 49 focused UI/access checks and 118
+existing calculation checks passed. Node 22 hosting build passed with build ID
+`CFMcDy-yNzMNYQDIlf6nU`. Actual production browser observations require the updated app
+to run during normal attendance use. No live upload was performed.
 ## September 10 desktop startup delay correction
 
 The earlier location change still waited for the preferred 50 m accuracy even
