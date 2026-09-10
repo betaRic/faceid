@@ -16,4 +16,15 @@ describe('attendance summary identity', () => {
 
     expect(result.map(row => row.personId).sort()).toEqual(['person-a', 'person-b'])
   })
+
+  test('does not merge unresolved legacy rows by employee number', () => {
+    const attendance = [
+      { id: 'legacy-a', employeeId: '12170', name: 'Unknown employee', dateKey: '2026-09-10', timestamp: 1, action: 'checkin' },
+      { id: 'legacy-b', employeeId: '12170', name: 'Unknown employee', dateKey: '2026-09-10', timestamp: 2, action: 'checkout' },
+    ]
+
+    const result = buildAttendanceSummary({ attendance, persons: [], offices: [], targetDate: '2026-09-10' })
+
+    expect(result).toHaveLength(2)
+  })
 })
