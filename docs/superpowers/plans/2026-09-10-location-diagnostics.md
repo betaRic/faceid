@@ -24,4 +24,3 @@ Implementation adjustment: bounded 10,000-row diagnostic load rather than unboun
 aggregation. If truncated, suppress rankings and clearly mark incomplete evidence.
 Existing 14-day retention and ingestion rate limits remain. Initial observations are
 descriptive only, not proof of browser superiority or physical-device identity.
-
