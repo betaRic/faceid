@@ -1,5 +1,26 @@
 # Production database updated; application upload prepared
 
+## September 10 desktop startup delay correction
+
+The earlier location change still waited for the preferred 50 m accuracy even
+when an 83 m reading already met the configured 250 m acceptance limit. Desktop
+startup now stops at the configured acceptance limit and permits browser-cached
+positions up to 30 seconds old. Original position timestamps are preserved.
+No coordinates are saved in local storage and browser permission remains required.
+Phone and tablet startup retains the previous fresh-reading and preferred-accuracy
+behavior, including iPads presenting a Mac browser identity. Unrecognized devices
+retain the existing behavior. Office boundary enforcement is unchanged.
+
+Verification: 28 focused location and scan/public UI tests and 37 contract checks
+passed. Thread-worker startup failures required a successful single-fork rerun.
+Actual desktop refresh latency still requires device verification after upload.
+The RICTU report is paused at the user's request pending this correction.
+Node 22 hosting build passed: `PrMgJiJsYv1-sPCTlDZMi`. Upload the complete `.next`
+from `D:/projects/faceid/.worktrees/codex-release-1-hardening/.next`; the previously
+prepared `2026-09-10-rPEcVXpgtvIJk9YYEhI6B` folder does not contain this correction.
+The existing `app.js`, live settings, database, and scan animation are unchanged.
+No live application upload was performed.
+
 ## September 10 scanning visual restored
 
 Latest hosting build: `rPEcVXpgtvIJk9YYEhI6B`, including the location improvement

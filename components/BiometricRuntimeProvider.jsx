@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useCamera } from '@/hooks/useCamera'
-import { requestBestDeviceLocation } from '@/lib/device-location'
+import { getLocationStartupOptions, requestBestDeviceLocation } from '@/lib/device-location'
 import { areDetectorModelsReady, areModelsReady, getModelLoadStatus, loadModels } from '@/lib/biometrics/human'
 import {
   LOCATION_BOOT_TIMEOUT_MS,
@@ -190,9 +190,7 @@ export function BiometricRuntimeProvider({ children }) {
     const cameraPromise = camOn ? Promise.resolve() : startCamera()
     const locationPromise = kioskRoute
       ? requestBestDeviceLocation({
-        ...policy,
-        timeout: policy.bootTimeoutMs,
-        maximumAge: 0,
+        ...getLocationStartupOptions(policy),
         signal: controller.signal,
         onProgress: ({ accuracyMeters }) => {
           if (controller.signal.aborted) return
@@ -232,7 +230,7 @@ export function BiometricRuntimeProvider({ children }) {
           error: null,
           ready: true,
           status: 'Location ready',
-          updatedAt: Date.now(),
+          updatedAt: position.timestamp,
           wifiSsid: getWifiSsid(),
         })
       }

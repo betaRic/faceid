@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { requestBestDeviceLocation } from '@/lib/device-location'
+import { requestBestDeviceLocation, getLocationStartupOptions } from '@/lib/device-location'
 
 afterEach(() => vi.useRealTimers())
 function device() {
@@ -12,6 +12,46 @@ function device() {
   return { geo, receive: p => receive(p), fail: e => fail(e) }
 }
 const position = accuracy => ({ timestamp: Date.now(), coords: { latitude: 6.1, longitude: 125.1, accuracy } })
+const policy = { bootTimeoutMs: 30000, targetAccuracyMeters: 50, maxAccuracyMeters: 250 }
+const desktop = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', maxTouchPoints: 0 }
+
+it('opens desktop scanning immediately for an acceptable 83 metre reading', async () => {
+  const d = device()
+  const pending = requestBestDeviceLocation({ ...getLocationStartupOptions(policy, desktop), geolocation: d.geo })
+  d.receive(position(83))
+  expect(d.geo.clearWatch).toHaveBeenCalledWith(7)
+  expect((await pending).coords.accuracy).toBe(83)
+})
+
+it('permits a recent browser reading on desktop refresh without rewriting its timestamp', async () => {
+  const d = device(), cached = { ...position(83), timestamp: Date.now() - 20000 }
+  const pending = requestBestDeviceLocation({ ...getLocationStartupOptions(policy, desktop), geolocation: d.geo })
+  expect(d.geo.watchPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), expect.objectContaining({ maximumAge: 30000 }))
+  d.receive(cached)
+  expect(await pending).toBe(cached)
+})
+
+it('rejects expired desktop cache and keeps waiting for an acceptable fresh reading', async () => {
+  const d = device()
+  const pending = requestBestDeviceLocation({ ...getLocationStartupOptions(policy, desktop), geolocation: d.geo })
+  d.receive({ ...position(83), timestamp: Date.now() - 31000 })
+  d.receive(position(323))
+  expect(d.geo.clearWatch).not.toHaveBeenCalled()
+  d.receive(position(83))
+  expect((await pending).coords.accuracy).toBe(83)
+})
+
+it.each([
+  { userAgent: 'iPhone' }, { userAgent: 'Android', userAgentData: { mobile: false } },
+  { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', maxTouchPoints: 5 },
+  { userAgent: 'Windows NT Tablet', maxTouchPoints: 10 }, {},
+])('preserves fresh precise startup for phones tablets and unknown devices: %j', nav => {
+  expect(getLocationStartupOptions(policy, nav)).toMatchObject({ maximumAge: 0, targetAccuracyMeters: 50 })
+})
+
+it('honors a stricter desktop accuracy policy', () => {
+  expect(getLocationStartupOptions({ ...policy, maxAccuracyMeters: 60 }, desktop).targetAccuracyMeters).toBe(60)
+})
 
 it('waits for a better reading instead of settling on the first coarse desktop fix', async () => {
   vi.useFakeTimers()
