@@ -10,7 +10,7 @@ export default function LocationEvidencePanel({ evidence }) {
   const all = evidence.groups || []
   const groups = all.filter(row => Object.entries(filters).every(([key, value]) => !value || row[key] === value))
   const recent = (evidence.reports || []).filter(row => Object.entries(filters).every(([key, value]) => !value || row[key] === value)).slice(0, 20)
-  return <details className="mt-5 border-t border-line pt-3" open>
+  return <details className="mt-5 border-t border-line pt-3">
     <summary className="min-h-11 cursor-pointer py-2 text-base font-semibold text-primary">Location and devices</summary>
     {!evidence.available ? <p className="py-3 text-sm text-secondary">Location reports are unavailable. Attendance is not affected.</p> : <>
       <p className="mt-2 text-sm text-secondary">{evidence.examined} of {evidence.total} received checks reviewed. Kept for 14 days. These are browser observations, not verified attendance outcomes. Closed pages or lost connections can leave checks unreported.</p>

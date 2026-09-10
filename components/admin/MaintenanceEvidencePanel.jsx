@@ -343,17 +343,17 @@ export function MaintenanceEvidencePanel() {
         ) : null}
       </div>
 
-      <LocationEvidencePanel evidence={payload.locationReports} />
       {payload.phoneReports ? (
-        <section className="mt-5 border-t border-line pt-5" aria-labelledby="maintenance-phone-reports-title">
-          <h3 className="text-base font-semibold text-foreground" id="maintenance-phone-reports-title">Phone failure reports</h3>
+        <section className="mt-5 border-t border-line pt-5" aria-labelledby="maintenance-scan-reports-title">
+          <h3 className="text-base font-semibold text-foreground" id="maintenance-scan-reports-title">Scan page failure reports</h3>
           <p className="mt-2 text-sm leading-6 text-secondary" role="status">
             {payload.phoneReports.available
-              ? `${payload.phoneReports.loaded} of ${payload.phoneReports.total} phone failure reports included in Export JSON. ${payload.phoneReports.truncated ? 'Some reports are left out; choose a shorter period. ' : ''}These are phone reports, separate from confirmed attendance results. Reports are kept for 14 days. A lost connection or closed page can leave failures unreported.`
-              : 'Phone failure reports are unavailable. Export JSON still includes the other available results.'}
+              ? `${payload.phoneReports.loaded} of ${payload.phoneReports.total} scan page failure reports included in Export JSON. ${payload.phoneReports.truncated ? 'Some reports are left out; choose a shorter period. ' : ''}These reports are separate from confirmed attendance results. Reports are kept for 14 days. A lost connection or closed page can leave failures unreported.`
+              : 'Scan page failure reports are unavailable. Export JSON still includes the other available results.'}
           </p>
         </section>
       ) : null}
+      <LocationEvidencePanel evidence={payload.locationReports} />
     </Surface>
   )
 }

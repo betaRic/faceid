@@ -613,7 +613,7 @@ describe('admin employee operations', () => {
       'Telemetry completeness',
       'Regional runtime',
     ])
-    expect(screen.getByRole('heading', { name: 'Phone failure reports' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Scan page failure reports' })).toBeVisible()
   })
 
   it('includes separate phone failures in the existing download and shows incomplete coverage', async () => {
@@ -628,7 +628,7 @@ describe('admin employee operations', () => {
     })
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     render(<MaintenanceEvidencePanel />)
-    expect(await screen.findByText(/500 of 700 phone failure reports/)).toBeVisible()
+    expect(await screen.findByText(/500 of 700 scan page failure reports/)).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Export JSON' }))
     const text = await new Promise(resolve => {
       const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsText(downloaded)
