@@ -44,8 +44,8 @@ export async function GET(request) {
     const attendance = (await listLocalAttendanceLogs({ dateKey: date, direction: 'asc', limit: 2000 }))
       .filter(entry => permitsOffice(entry.officeId))
       .filter(entry => officeFilter === 'all' || entry.officeId === officeFilter)
-    const employeeIds = [...new Set(attendance.map(entry => entry.employeeId).filter(Boolean))]
-    const people = employeeIds.length ? await queryPostgres('SELECT id, employee_id, name, office_id, office_name, division_id, division_name FROM persons WHERE employee_id = ANY($1::text[])', [employeeIds]) : { rows: [] }
+    const personIds = [...new Set(attendance.map(entry => entry.personId).filter(Boolean))]
+    const people = personIds.length ? await queryPostgres('SELECT id, employee_id, name, office_id, office_name, division_id, division_name FROM persons WHERE id = ANY($1::text[])', [personIds]) : { rows: [] }
     const persons = people.rows.map(row => ({ id: row.id, employeeId: row.employee_id, name: row.name, officeId: row.office_id, officeName: row.office_name, divisionId: row.division_id, divisionName: row.division_name }))
     const records = buildAttendanceSummary({ attendance, persons, offices, targetDate: date })
       .filter(row => divisionFilter === 'all' || row.divisionId === divisionFilter)
