@@ -64,7 +64,7 @@ function StatusCard({ label, evidence }) {
 
 function EvidenceGroup({ title, children }) {
   return (
-    <details className="border-t border-line py-1 first:border-t-0">
+    <details className="border-t border-line py-1 first:border-t-0" data-maintenance-section={title}>
       <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
         {title}
       </summary>
@@ -225,15 +225,6 @@ export function MaintenanceEvidencePanel() {
         </div>
       ) : null}
 
-      <LocationEvidencePanel evidence={payload.locationReports} />
-      {payload.phoneReports ? (
-        <p className="mt-4 text-sm leading-6 text-secondary" role="status">
-          {payload.phoneReports.available
-            ? `${payload.phoneReports.loaded} of ${payload.phoneReports.total} phone failure reports included in Export JSON. ${payload.phoneReports.truncated ? 'Some reports are left out; choose a shorter period. ' : ''}These are phone reports, separate from confirmed attendance results. Reports are kept for 14 days. A lost connection or closed page can leave failures unreported.`
-            : 'Phone failure reports are unavailable. Export JSON still includes the other available results.'}
-        </p>
-      ) : null}
-
       <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatusCard evidence={statuses.telemetry} label="Telemetry" />
         <StatusCard evidence={statuses.verification1to1} label="1:1 verification" />
@@ -279,6 +270,10 @@ export function MaintenanceEvidencePanel() {
       ) : null}
 
       <div className="mt-5 border-t border-line">
+        <EvidenceGroup title="Event outcomes">
+          <Breakdown items={payload.breakdowns?.categories} />
+        </EvidenceGroup>
+
         <EvidenceGroup title="1:1 verification">
           <EvidenceValue label="Comparison outcomes" value={verification.denominator ?? 0} />
           <EvidenceValue label="Verified identity" value={formatPercent(verification.verifiedIdentityRate)} detail={`${verification.verifiedIdentityCount ?? 0} outcomes`} />
@@ -286,19 +281,6 @@ export function MaintenanceEvidencePanel() {
           <EvidenceValue label="Verified distance p95" value={formatNumber(verification.verifiedDistance?.p95)} />
           <EvidenceValue label="Mismatch distance median" value={formatNumber(verification.mismatchDistance?.p50)} />
           <EvidenceValue label="Observed threshold median" value={formatNumber(verification.threshold?.median)} detail="Observed configuration only; not a recommendation." />
-        </EvidenceGroup>
-
-        <EvidenceGroup title="Event outcomes">
-          <Breakdown items={payload.breakdowns?.categories} />
-        </EvidenceGroup>
-
-        <EvidenceGroup title="Telemetry completeness">
-          <EvidenceValue label="Window coverage" value={formatPercent(evidence.coverageRate)} detail={`${evidence.loadedEvents ?? 0} of ${evidence.totalWindowEvents ?? 0} events loaded`} />
-          <EvidenceValue label="Identity attribution" value={formatPercent(evidence.identityAttributionCoverageRate)} />
-          <EvidenceValue label="Server-authoritative evidence" value={formatPercent(evidence.serverAuthoritativeCoverageRate)} />
-          <EvidenceValue label="Match distance coverage" value={formatPercent(evidence.matchDistanceCoverageRate)} />
-          <EvidenceValue label="Timing coverage" value={formatPercent(evidence.timingCoverageRate)} />
-          <EvidenceValue label="Unknown outcomes" value={evidence.unknownOutcomeCount ?? 0} />
         </EvidenceGroup>
 
         <EvidenceGroup title="Capture and devices">
@@ -321,6 +303,15 @@ export function MaintenanceEvidencePanel() {
           <EvidenceValue label="Unattributed failures" value={population.unattributedVerificationFailures ?? 0} />
         </EvidenceGroup>
 
+        <EvidenceGroup title="Telemetry completeness">
+          <EvidenceValue label="Window coverage" value={formatPercent(evidence.coverageRate)} detail={`${evidence.loadedEvents ?? 0} of ${evidence.totalWindowEvents ?? 0} events loaded`} />
+          <EvidenceValue label="Identity attribution" value={formatPercent(evidence.identityAttributionCoverageRate)} />
+          <EvidenceValue label="Server-authoritative evidence" value={formatPercent(evidence.serverAuthoritativeCoverageRate)} />
+          <EvidenceValue label="Match distance coverage" value={formatPercent(evidence.matchDistanceCoverageRate)} />
+          <EvidenceValue label="Timing coverage" value={formatPercent(evidence.timingCoverageRate)} />
+          <EvidenceValue label="Unknown outcomes" value={evidence.unknownOutcomeCount ?? 0} />
+        </EvidenceGroup>
+
         {system ? (
           <EvidenceGroup title="Regional runtime">
             <EvidenceValue label="Database" value={system.database?.connected ? 'Connected' : 'Unavailable'} detail={system.database?.serverVersion ? `PostgreSQL ${system.database.serverVersion}` : ''} />
@@ -334,6 +325,18 @@ export function MaintenanceEvidencePanel() {
           </EvidenceGroup>
         ) : null}
       </div>
+
+      <LocationEvidencePanel evidence={payload.locationReports} />
+      {payload.phoneReports ? (
+        <section className="mt-5 border-t border-line pt-5" aria-labelledby="maintenance-phone-reports-title">
+          <h3 className="text-base font-semibold text-foreground" id="maintenance-phone-reports-title">Phone failure reports</h3>
+          <p className="mt-2 text-sm leading-6 text-secondary" role="status">
+            {payload.phoneReports.available
+              ? `${payload.phoneReports.loaded} of ${payload.phoneReports.total} phone failure reports included in Export JSON. ${payload.phoneReports.truncated ? 'Some reports are left out; choose a shorter period. ' : ''}These are phone reports, separate from confirmed attendance results. Reports are kept for 14 days. A lost connection or closed page can leave failures unreported.`
+              : 'Phone failure reports are unavailable. Export JSON still includes the other available results.'}
+          </p>
+        </section>
+      ) : null}
     </Surface>
   )
 }

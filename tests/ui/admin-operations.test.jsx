@@ -596,6 +596,25 @@ describe('admin employee operations', () => {
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeVisible()
   })
 
+  it('shows maintenance evidence in operator reading order', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => maintenancePayload({ phoneReports: { available: true, loaded: 0, total: 0, truncated: false } }),
+    }))
+    const { container } = render(<MaintenanceEvidencePanel />)
+    await screen.findByRole('heading', { name: 'System maintenance' })
+    expect([...container.querySelectorAll('[data-maintenance-section]')].map(node => node.dataset.maintenanceSection)).toEqual([
+      'Event outcomes',
+      '1:1 verification',
+      'Capture and devices',
+      'Performance',
+      'Employee coverage',
+      'Telemetry completeness',
+      'Regional runtime',
+    ])
+    expect(screen.getByRole('heading', { name: 'Phone failure reports' })).toBeVisible()
+  })
+
   it('includes separate phone failures in the existing download and shows incomplete coverage', async () => {
     const payload = maintenancePayload({ phoneReports: { available: true, loaded: 500, total: 700, truncated: true,
       source: 'unverified_phone_reports', reports: [{ reason: 'no_usable_face' }] } })
