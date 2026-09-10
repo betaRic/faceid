@@ -103,7 +103,7 @@ export async function GET(request) {
         ),
         queryPostgres(
           `
-            SELECT id, employee_id, office_id
+            SELECT id, employee_id, name, office_id
             FROM persons
             WHERE active = true AND approval_status = 'approved'
               AND ($1 = '' OR office_id = $1)
@@ -121,6 +121,7 @@ export async function GET(request) {
         .map(row => ({
           personId: row.id,
           employeeId: row.employee_id,
+          name: row.name,
           officeId: row.office_id,
         }))
       const events = eventsResult.rows.map(mapScanEvent)

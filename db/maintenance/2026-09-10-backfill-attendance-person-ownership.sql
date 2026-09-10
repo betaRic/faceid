@@ -4,6 +4,7 @@
 -- Before running live, record the counts from the two SELECT statements below.
 
 BEGIN;
+SET LOCAL search_path TO public;
 
 -- The owner supplied this explicit mapping: every old 12170 row belongs to Michael.
 DO $$
@@ -26,6 +27,41 @@ BEGIN
   SET person_id = michael_id
   WHERE (person_id IS NULL OR person_id = '')
     AND employee_id = '12170';
+END $$;
+
+-- These older rows carry a complete name but no employee number. The current
+-- directory has exactly one approved person for each name, so this is safe and
+-- repeatable. Do not broaden this rule to partial or duplicate names.
+DO $$
+DECLARE
+  person_record record;
+  matching_people integer;
+BEGIN
+  FOR person_record IN
+    SELECT DISTINCT name
+    FROM attendance
+    WHERE (person_id IS NULL OR person_id = '')
+      AND name IN ('Pama, Michael John', 'Borra, Rico Ceazar A')
+  LOOP
+    SELECT count(*)::integer INTO matching_people
+    FROM persons
+    WHERE name = person_record.name
+      AND active = true
+      AND approval_status = 'approved';
+
+    IF matching_people <> 1 THEN
+      RAISE EXCEPTION 'Expected exactly one active approved person for legacy name %; found %', person_record.name, matching_people;
+    END IF;
+
+    UPDATE attendance AS a
+    SET person_id = p.id
+    FROM persons AS p
+    WHERE (a.person_id IS NULL OR a.person_id = '')
+      AND a.name = person_record.name
+      AND p.name = person_record.name
+      AND p.active = true
+      AND p.approval_status = 'approved';
+  END LOOP;
 END $$;
 
 -- Repair other old rows only when the employee number belongs to one person.

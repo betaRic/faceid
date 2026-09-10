@@ -605,6 +605,7 @@ describe('admin employee operations', () => {
     await screen.findByRole('heading', { name: 'System maintenance' })
     expect([...container.querySelectorAll('[data-maintenance-section]')].map(node => node.dataset.maintenanceSection)).toEqual([
       'Event outcomes',
+      'Failures by person',
       '1:1 verification',
       'Capture and devices',
       'Performance',

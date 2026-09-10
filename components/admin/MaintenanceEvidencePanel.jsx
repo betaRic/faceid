@@ -95,6 +95,18 @@ function Breakdown({ items = [] }) {
   ))
 }
 
+function PersonFailures({ items = [] }) {
+  if (!items.length) return <p className="text-sm text-secondary">No identified failed scans in this window.</p>
+  return items.map(item => (
+    <EvidenceValue
+      detail={(item.decisions || []).map(decision => `${String(decision.key || 'unknown').replaceAll('_', ' ')}: ${decision.count}`).join(' · ')}
+      key={item.personId}
+      label={[item.name, item.employeeId ? `Employee ${item.employeeId}` : ''].filter(Boolean).join(' · ')}
+      value={`${item.attempts} failed ${item.attempts === 1 ? 'scan' : 'scans'}`}
+    />
+  ))
+}
+
 export function MaintenanceEvidencePanel() {
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -272,6 +284,11 @@ export function MaintenanceEvidencePanel() {
       <div className="mt-5 border-t border-line">
         <EvidenceGroup title="Event outcomes">
           <Breakdown items={payload.breakdowns?.categories} />
+        </EvidenceGroup>
+
+        <EvidenceGroup title="Failures by person">
+          <PersonFailures items={payload.failuresByPerson} />
+          {Number(payload.unattributedFailureCount || 0) > 0 ? <EvidenceValue label="Unidentified failed scans" value={payload.unattributedFailureCount} detail="The server could not safely link these attempts to one person." /> : null}
         </EvidenceGroup>
 
         <EvidenceGroup title="1:1 verification">
